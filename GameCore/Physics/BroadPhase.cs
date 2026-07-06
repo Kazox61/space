@@ -1,0 +1,103 @@
+using System;
+using System.Collections.Generic;
+using FFS.Libraries.StaticEcs;
+using Shenanicode.Rollback;
+using Fixed32;
+using Fixed;
+
+namespace Space.GameCore;
+
+public abstract partial class Core<TWorld> where TWorld : struct, ISessionType, IWorldType {
+	/// <summary>
+	/// Spatial index for shape proxies, backed by one <see cref="DynamicTree"/> per <see cref="BodyType"/>
+	/// (mirrors box3d's b3BroadPhase, which keeps a separate tree per body type). Not an ECS structure —
+	/// a plain resource wrapping proxy lifecycle and pair generation.
+	/// </summary>
+	public class BroadPhase : IResource {
+		private const int TypeCount = 3;
+		private const int TypeBits = 2;
+		private const int TypeMask = (1 << TypeBits) - 1;
+
+		private readonly DynamicTree[] _trees = { new(), new(), new() };
+		private readonly List<int> _movedProxies = new();
+		private readonly HashSet<(ulong, ulong)> _pairSet = new();
+
+		public int CreateProxy(BodyType type, FAABB aabb, ulong categoryBits, EntityGID shapeGid, bool forcePairCreation) {
+			var nodeIndex = _trees[(int)type].CreateProxy(aabb, categoryBits, shapeGid.Raw);
+			var proxyKey = PackProxyKey(nodeIndex, type);
+
+			if (forcePairCreation) {
+				_movedProxies.Add(proxyKey);
+			}
+
+			return proxyKey;
+		}
+
+		public void DestroyProxy(int proxyKey) {
+			UnpackProxyKey(proxyKey, out var nodeIndex, out var type);
+			_trees[(int)type].DestroyProxy(nodeIndex);
+			_movedProxies.Remove(proxyKey);
+		}
+
+		public void MoveProxy(int proxyKey, FAABB aabb) {
+			UnpackProxyKey(proxyKey, out var nodeIndex, out var type);
+			_trees[(int)type].MoveProxy(nodeIndex, aabb);
+			_movedProxies.Add(proxyKey);
+		}
+
+		/// <summary>
+		/// For every proxy that moved (or was created with <c>forcePairCreation</c>) since the last
+		/// call, queries the other trees for newly-overlapping proxies and invokes
+		/// <paramref name="onNewPair"/> once per genuinely new pair. Mirrors box3d's
+		/// b3UpdateBroadPhasePairs. Only does coarse AABB + per-node category-bit filtering — full
+		/// <see cref="Filter.ShouldCollide"/> (which also needs mask bits and group index from both
+		/// shapes) is the caller's job once it has entity access to both shapes.
+		/// </summary>
+		public void UpdatePairs(Action<EntityGID, EntityGID> onNewPair) {
+			foreach (var proxyKey in _movedProxies) {
+				UnpackProxyKey(proxyKey, out var nodeIndex, out var type);
+				var moverNode = _trees[(int)type].Nodes[nodeIndex];
+				var moverGid = new EntityGID(moverNode.UserData);
+				var fatAabb = moverNode.AABB;
+
+				for (var otherType = 0; otherType < TypeCount; otherType++) {
+					var capturedType = type;
+					var capturedNodeIndex = nodeIndex;
+					var capturedMoverGid = moverGid;
+
+					_trees[otherType].Query(fatAabb, ulong.MaxValue, (otherNodeIndex, otherUserData, _) => {
+						if (otherType == (int)capturedType && otherNodeIndex == capturedNodeIndex) {
+							return true;
+						}
+
+						var otherGid = new EntityGID(otherUserData);
+						var pairKey = capturedMoverGid.Raw < otherGid.Raw
+							? (capturedMoverGid.Raw, otherGid.Raw)
+							: (otherGid.Raw, capturedMoverGid.Raw);
+
+						if (_pairSet.Add(pairKey)) {
+							onNewPair(capturedMoverGid, otherGid);
+						}
+
+						return true;
+					});
+				}
+			}
+
+			_movedProxies.Clear();
+		}
+
+		/// <summary>Removes a pair from the dedup set so it can be re-created later (call when a contact is destroyed).</summary>
+		public void ForgetPair(EntityGID a, EntityGID b) {
+			var pairKey = a.Raw < b.Raw ? (a.Raw, b.Raw) : (b.Raw, a.Raw);
+			_pairSet.Remove(pairKey);
+		}
+
+		private static int PackProxyKey(int nodeIndex, BodyType type) => (nodeIndex << TypeBits) | (int)type;
+
+		private static void UnpackProxyKey(int proxyKey, out int nodeIndex, out BodyType type) {
+			nodeIndex = proxyKey >> TypeBits;
+			type = (BodyType)(proxyKey & TypeMask);
+		}
+	}
+}
