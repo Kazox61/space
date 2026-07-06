@@ -9,4 +9,5 @@ public struct ViewId : IComponent, ITrackableAdded, ITrackableDeleted {
 public enum ViewAsset {
 	Player,
 	Projectile,
+	Sphere,
 }

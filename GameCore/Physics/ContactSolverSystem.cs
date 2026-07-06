@@ -76,8 +76,11 @@ public abstract partial class Core<TWorld> where TWorld : struct, ISessionType, 
 			// needs "approaching but not yet touching" contacts so the speculative-margin branch in
 			// Solve (s > 0) can cap closing velocity before the bodies actually overlap. Skipping
 			// non-touching contacts here would let fast-moving bodies tunnel through in a single tick.
+			// Require both links in the filter itself (not just Contact) -- ContactSystem self-heals
+			// any Contact entity missing a link, but since it runs earlier in the same tick's
+			// pipeline rather than relying on that ordering, guard here too.
 			var constraints = new List<ContactConstraint>();
-			foreach (var contactEntity in W.Query<All<Contact>>().Entities()) {
+			foreach (var contactEntity in W.Query<All<Contact, W.Link<ShapeA>, W.Link<ShapeB>>>().Entities()) {
 				if (TryPrepare(contactEntity, world.EnableWarmStarting, contactSoftness, staticSoftness, out var constraint)) {
 					constraints.Add(constraint);
 				}

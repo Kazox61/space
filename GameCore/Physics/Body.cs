@@ -4,7 +4,7 @@ using Fixed;
 
 namespace Space.GameCore;
 
-public struct Body : IComponent, IComponentConfig<Body>, ITrackableChanged {
+public struct Body : IComponent, IComponentConfig<Body> {
 	public ushort Generation { get; internal set; }
 	public BodyType Type { get; set; }
 
@@ -43,9 +43,6 @@ public struct Body : IComponent, IComponentConfig<Body>, ITrackableChanged {
 	public bool EnableContactRecycling;
 
 	public FP SleepThreshold;
-
-	public string? Name;
-	public object? UserData;
 
 	/// <summary>
 	/// Solver working state: translation accumulated since the start of the current step, in world

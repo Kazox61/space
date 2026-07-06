@@ -15,7 +15,8 @@ public abstract partial class Core<TWorld> where TWorld : struct, ISessionType, 
 			Systems.SetResource(new PlanetRes());
 			Systems.SetResource(new PhysicsWorld());
 			Systems.SetResource(new BroadPhase());
-			Systems.Add(new SpawnSystem(), order: 0);
+			Systems.Add(new SpawnPlayerSystem(), order: 0);
+			Systems.Add(new SpawnSphereSystem(), order: 0);
 			Systems.Add(new DamageSystem(), order: 0);
 			Systems.Add(new DeathSystem(), order: 1);
 			Systems.Add(new MovementSystem(), order: 2);

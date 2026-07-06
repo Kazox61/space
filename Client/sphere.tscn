@@ -1,0 +1,23 @@
+[gd_scene format=3 uid="uid://be445c1y421lr"]
+
+[ext_resource type="Script" uid="uid://cip1dwd0y0jcp" path="res://synchronizer/EntityView.cs" id="1_8pulh"]
+[ext_resource type="Script" uid="uid://dj23otru1hpav" path="res://synchronizer/view_behavior/BodyViewBehavior.cs" id="2_veubm"]
+
+[sub_resource type="StandardMaterial3D" id="StandardMaterial3D_yqvkn"]
+albedo_color = Color(1, 0, 0, 1)
+
+[sub_resource type="SphereMesh" id="SphereMesh_jfow4"]
+
+[node name="Sphere" type="Node3D" unique_id=1979850678 node_paths=PackedStringArray("_entityBehaviours")]
+script = ExtResource("1_8pulh")
+_entityBehaviours = [NodePath("BodyViewBehavior")]
+
+[node name="MeshInstance3D" type="MeshInstance3D" parent="." unique_id=673944828]
+material_override = SubResource("StandardMaterial3D_yqvkn")
+mesh = SubResource("SphereMesh_jfow4")
+
+[node name="BodyViewBehavior" type="Node" parent="." unique_id=708216853 node_paths=PackedStringArray("_targetNodePosition", "_targetNodeRotation")]
+script = ExtResource("2_veubm")
+_targetNodePosition = NodePath("..")
+_targetNodeRotation = NodePath("..")
+metadata/_custom_type_script = "uid://dj23otru1hpav"

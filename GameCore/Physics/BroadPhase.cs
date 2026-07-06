@@ -1,6 +1,7 @@
 using System;
 using System.Collections.Generic;
 using FFS.Libraries.StaticEcs;
+using FFS.Libraries.StaticPack;
 using Shenanicode.Rollback;
 using Fixed32;
 using Fixed;
@@ -19,8 +20,9 @@ public abstract partial class Core<TWorld> where TWorld : struct, ISessionType, 
 		private const int TypeMask = (1 << TypeBits) - 1;
 
 		private readonly DynamicTree[] _trees = { new(), new(), new() };
-		private readonly List<int> _movedProxies = new();
-		private readonly HashSet<(ulong, ulong)> _pairSet = new();
+		// Not readonly: Read() below repopulates these via StaticPack's `ref` overloads.
+		private List<int> _movedProxies = new();
+		private HashSet<(ulong, ulong)> _pairSet = new();
 
 		public int CreateProxy(BodyType type, FAABB aabb, ulong categoryBits, EntityGID shapeGid, bool forcePairCreation) {
 			var nodeIndex = _trees[(int)type].CreateProxy(aabb, categoryBits, shapeGid.Raw);
@@ -98,6 +100,52 @@ public abstract partial class Core<TWorld> where TWorld : struct, ISessionType, 
 		private static void UnpackProxyKey(int proxyKey, out int nodeIndex, out BodyType type) {
 			nodeIndex = proxyKey >> TypeBits;
 			type = (BodyType)(proxyKey & TypeMask);
+		}
+
+		// Rollback (GameWorldRollback) snapshots the whole world every tick, so BroadPhase's three
+		// DynamicTrees and pair-dedup set must round-trip too -- otherwise Shape.ProxyKey (restored
+		// as ordinary component data) would index into stale/corrupted tree state after a rollback.
+		public Guid? Guid() => new("6f2f7f0a-6d0c-4f3e-9c2a-6e6b3d7c8a5b");
+
+		public void Write(ref BinaryPackWriter writer) {
+			foreach (var tree in _trees) {
+				writer.WriteInt(tree.NodesCapacity);
+				writer.WriteInt(tree.NodesCount);
+				writer.WriteInt(tree.FreeList);
+				writer.WriteInt(tree.Root);
+				writer.WriteInt(tree.ProxyCount);
+				writer.WriteArrayUnmanaged(tree.Nodes);
+			}
+
+			// WriteHashSet/WriteList need a registered packer for the element type -- (ulong,ulong)
+			// isn't one. The *Unmanaged array methods do a raw memory copy for any blittable type
+			// instead (and track their own length), so round-trip both collections through plain arrays.
+			var pairs = new (ulong, ulong)[_pairSet.Count];
+			_pairSet.CopyTo(pairs);
+			writer.WriteArrayUnmanaged(pairs);
+			writer.WriteArrayUnmanaged(_movedProxies.ToArray());
+		}
+
+		public void Read(ref BinaryPackReader reader, byte version) {
+			foreach (var tree in _trees) {
+				var nodesCapacity = reader.ReadInt();
+				var nodesCount = reader.ReadInt();
+				var freeList = reader.ReadInt();
+				var root = reader.ReadInt();
+				var proxyCount = reader.ReadInt();
+				var nodes = reader.ReadArrayUnmanaged<DynamicTree.TreeNode>();
+				tree.RestoreState(nodes, nodesCapacity, nodesCount, freeList, root, proxyCount);
+			}
+
+			var pairs = reader.ReadArrayUnmanaged<(ulong, ulong)>();
+			_pairSet.Clear();
+			foreach (var pair in pairs) {
+				_pairSet.Add(pair);
+			}
+
+			var moved = reader.ReadArrayUnmanaged<int>();
+			_movedProxies.Clear();
+			_movedProxies.AddRange(moved);
 		}
 	}
 }

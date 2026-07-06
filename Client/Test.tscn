@@ -35,6 +35,7 @@ transform = Transform3D(0.42261824, 0.6408564, -0.6408564, 0, 0.70710677, 0.7071
 shadow_enabled = true
 
 [node name="MeshInstance3D" type="MeshInstance3D" parent="." unique_id=1739131165]
+visible = false
 material_override = ExtResource("3_8tn2x")
 mesh = SubResource("SphereMesh_ivycn")
 

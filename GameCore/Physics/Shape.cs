@@ -12,7 +12,7 @@ namespace Space.GameCore;
 /// never registers. Broad-phase operations that need a world-bound <c>W.Entity</c>/<c>BroadPhase</c>
 /// live in <see cref="Core{TWorld}.ShapeBroadPhaseOps"/> instead of as methods here.
 /// </summary>
-public struct Shape : IComponent, IComponentConfig<Shape>, ITrackableAdded {
+public struct Shape : IComponent, IComponentConfig<Shape> {
 	public const int NullProxyKey = -1;
 	public ShapeType Type { get; internal set; }
 	/// <summary>Valid when <see cref="Type"/> is <see cref="ShapeType.Sphere"/>.</summary>
@@ -32,11 +32,6 @@ public struct Shape : IComponent, IComponentConfig<Shape>, ITrackableAdded {
 
 	/// <summary>Contact filtering data.</summary>
 	public Filter Filter;
-
-	/// <summary>Use this to store application specific shape data.</summary>
-	public object? UserData;
-
-	public string? Name;
 
 	/// <summary>
 	/// A sensor shape generates overlap events but never generates a collision response. Sensors do
@@ -148,11 +143,6 @@ public struct Shape : IComponent, IComponentConfig<Shape>, ITrackableAdded {
 			_ => new ShapeProxy { Points = Array.Empty<FVector3>(), Radius = FP.Zero },
 		};
 	}
-
-	/// <summary>
-	/// Surface materials used on mesh shapes per triangle. Ignored for convex shapes and compound shapes.
-	/// </summary>
-	public SurfaceMaterial[]? Materials;
 
 	/// <summary>
 	/// When shapes are created they scan the environment for collision the next time step. This can

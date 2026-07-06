@@ -16,7 +16,13 @@ public abstract partial class Core<TWorld> where TWorld : struct, ISessionType, 
 			var broadPhase = Systems.GetResource<BroadPhase>();
 			broadPhase.UpdatePairs(TryCreateContact);
 
-			W.Query<All<Contact>>().For(static (W.Entity contactEntity, ref Contact contact) => {
+			// Self-heal: TryCreateContact sets Contact + both links atomically, so this should never
+			// match anything -- but a Contact entity missing a link has been observed in practice
+			// across a client/server rollback boundary. Destroy rather than let the main loop below
+			// crash reading a link that isn't there.
+			W.Query<All<Contact>, Or<None<W.Link<ShapeA>>, None<W.Link<ShapeB>>>>().BatchDestroy();
+
+			W.Query<All<Contact, W.Link<ShapeA>, W.Link<ShapeB>>>().For(static (W.Entity contactEntity, ref Contact contact) => {
 				ref readonly var shapeALink = ref contactEntity.Read<W.Link<ShapeA>>();
 				ref readonly var shapeBLink = ref contactEntity.Read<W.Link<ShapeB>>();
 

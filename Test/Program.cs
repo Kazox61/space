@@ -23,6 +23,7 @@ public static class Program {
 		DropAndRestTest();
 		CapsuleOnSphereSmokeTest();
 		OverlappingSpawnStressTest();
+		RollbackRoundTripTest();
 
 		if (_failures == 0) {
 			Console.WriteLine("ALL CHECKS PASSED");
@@ -287,6 +288,78 @@ public static class Program {
 		Check("all bodies stay numerically bounded under heavy overlap", bounded);
 
 		Shutdown();
+	}
+
+	/// <summary>
+	/// Proves BroadPhase's DynamicTrees (not just plain ECS component data) survive a world-snapshot
+	/// round-trip -- the scenario GameWorldRollback exercises every tick. Snapshots mid-fall (close
+	/// approach, right as broadphase pairs/contacts are forming), advances the live world, restores
+	/// the snapshot, then replays the same number of ticks and checks the replay matches what the
+	/// live world actually did. A corrupted/empty tree would still run without throwing, but would
+	/// desync contacts from the live reference run -- exactly the bug this test is designed to catch.
+	/// </summary>
+	private static void RollbackRoundTripTest() {
+		Console.WriteLine("--- RollbackRoundTripTest ---");
+		Bootstrap();
+
+		var groundBody = W.NewEntity<Default>();
+		groundBody.Set(new Body {
+			Type = BodyType.Static,
+			Transform = new FWorldTransform(FPos.Zero, FQuaternion.Identity),
+		});
+		ShapeFactory.CreateShape(groundBody, Shape.MakeSphere(FVector3.Zero, FP.FromRatio(5, 1)));
+
+		var ballBody = W.NewEntity<Default>();
+		ballBody.Set(new Body {
+			Type = BodyType.Dynamic,
+			GravityScale = FP.One,
+			Transform = new FWorldTransform(new FPos(Fixed64.FP.Zero, Fixed64.FP.FromRatio(10, 1), Fixed64.FP.Zero), FQuaternion.Identity),
+		});
+		ShapeFactory.CreateShape(ballBody, Shape.MakeSphere(FVector3.Zero, FP.One));
+
+		// Step to a mid-fall point where broadphase pairs/contacts are actively forming.
+		for (var tick = 0; tick < 55; tick++) {
+			W.Tick();
+			Systems.Update();
+		}
+
+		var (snapshotY, snapshotSpeed, snapshotContacts) = SampleState(ballBody);
+		var snapshot = W.Serializer.CreateWorldSnapshot();
+
+		// Advance the live world further -- this is what "the future we're about to roll back" looks like.
+		const int replaySteps = 40;
+		for (var tick = 0; tick < replaySteps; tick++) {
+			W.Tick();
+			Systems.Update();
+		}
+
+		var (liveY, liveSpeed, liveContacts) = SampleState(ballBody);
+
+		// Restore the snapshot -- entity slots stay stable across a world-snapshot restore (that's
+		// the premise GameWorldRollback itself relies on), so ballBody is still the right handle.
+		W.Serializer.LoadWorldSnapshot(snapshot, hardReset: true);
+
+		var (restoredY, restoredSpeed, restoredContacts) = SampleState(ballBody);
+		Check("restored state matches the snapshot point exactly", restoredY == snapshotY && restoredSpeed == snapshotSpeed && restoredContacts == snapshotContacts);
+
+		// Replay the same number of ticks from the restored state and compare against the live reference run.
+		for (var tick = 0; tick < replaySteps; tick++) {
+			W.Tick();
+			Systems.Update();
+		}
+
+		var (replayedY, replayedSpeed, replayedContacts) = SampleState(ballBody);
+		Check("replay from a restored snapshot reproduces the live run's position", replayedY == liveY);
+		Check("replay from a restored snapshot reproduces the live run's velocity", replayedSpeed == liveSpeed);
+		Check("replay from a restored snapshot reproduces the live run's contact count", replayedContacts == liveContacts);
+
+		Shutdown();
+	}
+
+	private static (Fixed64.FP y, FP speed, int contacts) SampleState(W.Entity ballBody) {
+		ref readonly var body = ref ballBody.Read<Body>();
+		var contacts = W.Query<All<Contact>>().EntitiesCount();
+		return (body.Transform.Position.Y, FVector3.Length(body.LinearVelocity), contacts);
 	}
 
 	private static void Check(string label, bool condition) {

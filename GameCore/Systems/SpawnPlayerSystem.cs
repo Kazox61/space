@@ -4,7 +4,7 @@ using Shenanicode.Rollback;
 namespace Space.GameCore;
 
 public abstract partial class Core<TWorld> where TWorld : struct, ISessionType, IWorldType {
-	public struct SpawnSystem : ISystem {
+	public struct SpawnPlayerSystem : ISystem {
 		public void Update() {
 			foreach (var (channel, data) in S.GetAllSignals<PlayerConnectedSignal>()) {
 				W.NewEntity(new Player { PlayerGuid = data.PlayerGuid, InputChannel = channel });

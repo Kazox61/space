@@ -19,7 +19,7 @@ public partial class Test : Node3D {
 	public override void _EnterTree() {
 		var connection = new LiteNetLibServerConnection();
 		ClientSetup.CreateAndInitialize(connection);
-		connection.Connect("82.165.106.91", 8153);
+		connection.Connect("127.0.0.1", 8153);
 	}
 
 	public override void _Process(double delta) {
@@ -47,6 +47,7 @@ public partial class Test : Node3D {
 			var path = viewId.Value switch {
 				ViewAsset.Player => "res://player.tscn",
 				ViewAsset.Projectile => "res://projectile.tscn",
+				ViewAsset.Sphere => "res://sphere.tscn",
 				_ => ""
 			};
 			var packedScene = GD.Load<PackedScene>(path);
