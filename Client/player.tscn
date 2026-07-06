@@ -1,0 +1,35 @@
+[gd_scene format=3 uid="uid://sv6lfeph1nso"]
+
+[ext_resource type="Script" uid="uid://cip1dwd0y0jcp" path="res://synchronizer/EntityView.cs" id="1_onrkg"]
+[ext_resource type="Script" uid="uid://dgbo3w1kixhiy" path="res://synchronizer/view_behavior/TransformViewBehavior.cs" id="2_i3pqv"]
+[ext_resource type="Script" uid="uid://bbephpp4drco4" path="res://synchronizer/view_behavior/CameraViewBehavior.cs" id="3_i3pqv"]
+
+[sub_resource type="StandardMaterial3D" id="StandardMaterial3D_yqvkn"]
+albedo_color = Color(3.85046e-07, 0.76537454, 0.84069073, 1)
+
+[sub_resource type="CapsuleMesh" id="CapsuleMesh_jfow4"]
+
+[node name="Player" type="Node3D" unique_id=1321113511 node_paths=PackedStringArray("_entityBehaviours")]
+script = ExtResource("1_onrkg")
+_entityBehaviours = [NodePath("TransformViewBehavior"), NodePath("CameraViewBehavior")]
+
+[node name="MeshInstance3D" type="MeshInstance3D" parent="." unique_id=186001492]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 1, 0)
+material_override = SubResource("StandardMaterial3D_yqvkn")
+mesh = SubResource("CapsuleMesh_jfow4")
+
+[node name="TransformViewBehavior" type="Node" parent="." unique_id=2029104163 node_paths=PackedStringArray("_targetNodePosition", "_targetNodeRotation")]
+script = ExtResource("2_i3pqv")
+_targetNodePosition = NodePath("..")
+_targetNodeRotation = NodePath("..")
+metadata/_custom_type_script = "uid://dgbo3w1kixhiy"
+
+[node name="Camera3D" type="Camera3D" parent="." unique_id=1560367605]
+transform = Transform3D(1, 0, 0, 0, 0.57357645, 0.81915206, 0, -0.81915206, 0.57357645, 0, 24, 16)
+current = true
+fov = 30.0
+
+[node name="CameraViewBehavior" type="Node" parent="." unique_id=1616736107 node_paths=PackedStringArray("_camera")]
+script = ExtResource("3_i3pqv")
+_camera = NodePath("../Camera3D")
+metadata/_custom_type_script = "uid://bbephpp4drco4"

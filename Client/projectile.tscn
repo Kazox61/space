@@ -1,0 +1,25 @@
+[gd_scene format=3 uid="uid://bcgxoj4pa2tt6"]
+
+[ext_resource type="Script" uid="uid://cip1dwd0y0jcp" path="res://synchronizer/EntityView.cs" id="1_qxf0c"]
+[ext_resource type="Script" uid="uid://dgbo3w1kixhiy" path="res://synchronizer/view_behavior/TransformViewBehavior.cs" id="2_dgwo2"]
+
+[sub_resource type="StandardMaterial3D" id="StandardMaterial3D_yqvkn"]
+albedo_color = Color(0.6573599, 0.57420003, 0.99, 1)
+
+[sub_resource type="SphereMesh" id="SphereMesh_jfow4"]
+radius = 0.3
+height = 0.6
+
+[node name="Projectile" type="Node3D" unique_id=1628825434 node_paths=PackedStringArray("_entityBehaviours")]
+script = ExtResource("1_qxf0c")
+_entityBehaviours = [NodePath("TransformViewBehavior")]
+
+[node name="TransformViewBehavior" type="Node" parent="." unique_id=246817927 node_paths=PackedStringArray("_targetNodePosition", "_targetNodeRotation")]
+script = ExtResource("2_dgwo2")
+_targetNodePosition = NodePath("..")
+_targetNodeRotation = NodePath("..")
+metadata/_custom_type_script = "uid://dgbo3w1kixhiy"
+
+[node name="MeshInstance3D" type="MeshInstance3D" parent="." unique_id=302950410]
+material_override = SubResource("StandardMaterial3D_yqvkn")
+mesh = SubResource("SphereMesh_jfow4")

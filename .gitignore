@@ -1,0 +1,9 @@
+# Godot 4+ specific ignores
+.godot/
+/Client/android/
+
+.idea/
+.vs/
+obj/
+bin/
+.DS_Store

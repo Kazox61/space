@@ -1,0 +1,123 @@
+[gd_scene format=3 uid="uid://daakfmjk2otty"]
+
+[ext_resource type="Script" uid="uid://cr0dt7adw3v5s" path="res://ActionButton.cs" id="1_j3wxj"]
+
+[sub_resource type="StyleBoxFlat" id="StyleBoxFlat_nqa15"]
+content_margin_left = 0.0
+content_margin_top = 0.0
+content_margin_right = 0.0
+content_margin_bottom = 0.0
+bg_color = Color(0.1, 0.1, 0.1, 0.6)
+draw_center = false
+border_width_left = 20
+border_width_top = 20
+border_width_right = 20
+border_width_bottom = 20
+corner_radius_top_left = 10000
+corner_radius_top_right = 10000
+corner_radius_bottom_right = 10000
+corner_radius_bottom_left = 10000
+corner_detail = 20
+
+[sub_resource type="StyleBoxFlat" id="StyleBoxFlat_j3wxj"]
+content_margin_left = 0.0
+content_margin_top = 0.0
+content_margin_right = 0.0
+content_margin_bottom = 0.0
+bg_color = Color(0.1, 0.1, 0.1, 0.6)
+draw_center = false
+border_width_left = 20
+border_width_top = 20
+border_width_right = 20
+border_width_bottom = 20
+corner_radius_top_left = 10000
+corner_radius_top_right = 10000
+corner_radius_bottom_right = 10000
+corner_radius_bottom_left = 10000
+corner_detail = 20
+
+[sub_resource type="StyleBoxFlat" id="StyleBoxFlat_r8c4p"]
+content_margin_left = 0.0
+content_margin_top = 0.0
+content_margin_right = 0.0
+content_margin_bottom = 0.0
+bg_color = Color(0.8, 0.8, 0.8, 1)
+corner_radius_top_left = 10000
+corner_radius_top_right = 10000
+corner_radius_bottom_right = 10000
+corner_radius_bottom_left = 10000
+corner_detail = 20
+
+[node name="TouchscreenUi" type="Control" unique_id=1386424317]
+layout_mode = 3
+anchors_preset = 15
+anchor_right = 1.0
+anchor_bottom = 1.0
+grow_horizontal = 2
+grow_vertical = 2
+
+[node name="HBoxContainer" type="HBoxContainer" parent="." unique_id=1323480181]
+layout_mode = 1
+anchors_preset = 15
+anchor_right = 1.0
+anchor_bottom = 1.0
+grow_horizontal = 2
+grow_vertical = 2
+
+[node name="VirtualJoystick" type="VirtualJoystick" parent="HBoxContainer" unique_id=852687765]
+layout_mode = 2
+size_flags_horizontal = 3
+theme_override_styles/normal_joystick = SubResource("StyleBoxFlat_nqa15")
+theme_override_styles/pressed_joystick = SubResource("StyleBoxFlat_nqa15")
+joystick_mode = 1
+joystick_size = 300.0
+tip_size = 120.0
+deadzone_ratio = 0.2
+initial_offset_ratio = Vector2(0.35, 0.8)
+action_left = &"move_left"
+action_right = &"move_right"
+action_up = &"move_forward"
+action_down = &"move_backward"
+
+[node name="Control" type="Control" parent="HBoxContainer" unique_id=498096399]
+layout_mode = 2
+size_flags_horizontal = 3
+
+[node name="VirtualJoystick2" type="VirtualJoystick" parent="HBoxContainer/Control" unique_id=1790505480]
+layout_mode = 1
+anchors_preset = 15
+anchor_right = 1.0
+anchor_bottom = 1.0
+grow_horizontal = 2
+grow_vertical = 2
+size_flags_horizontal = 3
+theme_override_styles/normal_joystick = SubResource("StyleBoxFlat_j3wxj")
+theme_override_styles/pressed_joystick = SubResource("StyleBoxFlat_nqa15")
+joystick_mode = 1
+joystick_size = 300.0
+tip_size = 120.0
+deadzone_ratio = 0.2
+initial_offset_ratio = Vector2(0.65, 0.8)
+
+[node name="ActionButton" type="Button" parent="HBoxContainer/Control" unique_id=317816380]
+custom_minimum_size = Vector2(150, 150)
+layout_mode = 1
+anchors_preset = 3
+anchor_left = 1.0
+anchor_top = 1.0
+anchor_right = 1.0
+anchor_bottom = 1.0
+offset_left = -282.0
+offset_top = -613.0
+offset_right = -102.0
+offset_bottom = -433.0
+grow_horizontal = 0
+grow_vertical = 0
+theme_override_styles/normal = SubResource("StyleBoxFlat_r8c4p")
+theme_override_styles/pressed = SubResource("StyleBoxFlat_r8c4p")
+theme_override_styles/hover = SubResource("StyleBoxFlat_r8c4p")
+theme_override_styles/disabled = SubResource("StyleBoxFlat_r8c4p")
+theme_override_styles/focus = SubResource("StyleBoxFlat_r8c4p")
+script = ExtResource("1_j3wxj")
+action = &"jump"
+metadata/_custom_type_script = "uid://cr0dt7adw3v5s"

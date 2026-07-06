@@ -1,0 +1,53 @@
+[gd_scene format=3 uid="uid://cornmkwnwfhg4"]
+
+[ext_resource type="Material" uid="uid://crh4edqr4kdta" path="res://material/grid_mat.tres" id="1_ujdmt"]
+
+[sub_resource type="Environment" id="Environment_ii4j5"]
+background_mode = 1
+background_color = Color(0.14901961, 0.14901961, 0.14901961, 1)
+ambient_light_source = 2
+ambient_light_color = Color(0.36078432, 0.36078432, 0.36078432, 1)
+tonemap_mode = 2
+glow_enabled = true
+glow_levels/2 = 1.0
+glow_levels/4 = 1.0
+fog_enabled = true
+fog_mode = 1
+fog_light_color = Color(0.14901961, 0.14901961, 0.14901961, 1)
+fog_density = 1.0
+
+[sub_resource type="PlaneMesh" id="PlaneMesh_gvltb"]
+size = Vector2(500, 500)
+
+[node name="ClientGame" type="Node3D" unique_id=1884578069]
+
+[node name="WorldEnvironment" type="WorldEnvironment" parent="." unique_id=1437914574]
+environment = SubResource("Environment_ii4j5")
+
+[node name="DirectionalLight3D" type="DirectionalLight3D" parent="." unique_id=1456646423]
+transform = Transform3D(0.42261824, 0.6408564, -0.6408564, 0, 0.70710677, 0.70710677, 0.9063078, -0.29883623, 0.29883623, 0, 0, 0)
+shadow_enabled = true
+
+[node name="GroundMesh" type="MeshInstance3D" parent="." unique_id=1736104290]
+material_override = ExtResource("1_ujdmt")
+mesh = SubResource("PlaneMesh_gvltb")
+
+[node name="CSGCombiner3D" type="CSGCombiner3D" parent="." unique_id=1800448651]
+material_override = ExtResource("1_ujdmt")
+
+[node name="CSGBox3D" type="CSGBox3D" parent="CSGCombiner3D" unique_id=243933887]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 1, 0)
+size = Vector3(8, 2, 10)
+
+[node name="CSGPolygon3D" type="CSGPolygon3D" parent="CSGCombiner3D" unique_id=641113351]
+transform = Transform3D(-4.371139e-08, 0, -1, 0, 1, 0, 1, 0, -4.371139e-08, -4, 0, 5)
+polygon = PackedVector2Array(0, 0, 0, 2, 6, 0)
+depth = 8.0
+
+[node name="CSGBox3D2" type="CSGBox3D" parent="CSGCombiner3D" unique_id=1871052408]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 2, -13)
+size = Vector3(8, 4, 10)
+
+[node name="Camera3D" type="Camera3D" parent="." unique_id=1543624633]
+transform = Transform3D(1, 0, 0, 0, 0.7071068, 0.7071068, 0, -0.7071068, 0.7071068, 0, 11, 11)
+current = true

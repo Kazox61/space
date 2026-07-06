@@ -1,0 +1,17 @@
+using Shenanicode.Rollback;
+using FFS.Libraries.StaticPack;
+using FFS.Libraries.StaticEcs;
+
+namespace Space.GameCore;
+
+public abstract partial class Core<TWorld> where TWorld : struct, ISessionType, IWorldType {
+	public class GameWorldFullSyncHandler : IFullSyncHandler {
+		public void WriteFullSync(ref BinaryPackWriter writer) {
+			W.Serializer.CreateWorldSnapshot(ref writer);
+		}
+
+		public void ReadFullSync(ref BinaryPackReader reader) {
+			W.Serializer.LoadWorldSnapshot(ref reader, hardReset: true);
+		}
+	}
+}

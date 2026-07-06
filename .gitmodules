@@ -1,0 +1,18 @@
+[submodule "FixedPoint"]
+	path = FixedPoint
+	url = https://github.com/Kazox61/fixed-point.git
+[submodule "StaticRollbackLitenetlib"]
+	path = StaticRollbackLitenetlib
+	url = https://github.com/nilpunch/static-rollback-litenetlib.git
+[submodule "StaticRollback"]
+	path = StaticRollback
+	url = https://github.com/nilpunch/static-rollback
+[submodule "static-rollback"]
+	path = static-rollback
+	url = https://github.com/nilpunch/static-rollback
+[submodule "static-rollback-litenetlib"]
+	path = static-rollback-litenetlib
+	url = https://github.com/nilpunch/static-rollback-litenetlib.git
+[submodule "static-ecs"]
+	path = static-ecs
+	url = https://github.com/Felid-Force-Studios/StaticEcs.git

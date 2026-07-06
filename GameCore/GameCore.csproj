@@ -1,0 +1,12 @@
+﻿<Project Sdk="Microsoft.NET.Sdk">
+  <ItemGroup>
+    <ProjectReference Include="..\FixedPoint\Runtime\FixedPoint.csproj" />
+    <ProjectReference Include="..\static-rollback\Runtime\Shenanicode.Rollback.csproj" />
+    <ProjectReference Include="..\static-ecs\StaticEcs.csproj" />
+  </ItemGroup>
+  <PropertyGroup>
+    <TargetFramework>net8.0</TargetFramework>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <Nullable>enable</Nullable>
+  </PropertyGroup>
+</Project>

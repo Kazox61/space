@@ -1,0 +1,17 @@
+<Project Sdk="Godot.NET.Sdk/4.7.0">
+  <PropertyGroup>
+    <TargetFramework>net8.0</TargetFramework>
+    <TargetFramework Condition=" '$(GodotTargetPlatform)' == 'android' ">net9.0</TargetFramework>
+    <EnableDynamicLoading>true</EnableDynamicLoading>
+  </PropertyGroup>
+  <ItemGroup>
+    <ProjectReference Include="..\FixedPoint\Runtime\FixedPoint.csproj" />
+    <ProjectReference Include="..\static-rollback-litenetlib\Runtime\Shenanicode.Rollback.LiteNetLib.csproj" />
+    <ProjectReference Include="..\GameCore\GameCore.csproj" />
+    <ProjectReference Include="..\static-rollback\Runtime\Shenanicode.Rollback.csproj" />
+  </ItemGroup>
+
+  <Target Name="PrintConfig" BeforeTargets="Build">
+    <Message Importance="high" Text="ACTUAL CONFIGURATION IS: $(Configuration)" />
+  </Target>
+</Project>
