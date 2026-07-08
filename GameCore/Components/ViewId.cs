@@ -10,4 +10,5 @@ public enum ViewAsset {
 	Player,
 	Projectile,
 	Sphere,
+	BigSphere,
 }

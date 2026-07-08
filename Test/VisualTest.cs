@@ -61,7 +61,6 @@ public static class VisualTest {
 			Raylib.ClearBackground(Color.RayWhite);
 
 			Raylib.BeginMode3D(camera);
-			Raylib.DrawGrid(40, 1.0f);
 			DrawBodies();
 			Raylib.EndMode3D();
 
@@ -129,17 +128,17 @@ public static class VisualTest {
 				ref readonly var shape = ref shapeEntity.Read<Shape>();
 				switch (shape.Type) {
 					case ShapeType.Sphere: {
-						var worldCenter = FWorldTransform.TransformPoint(body.Transform, shape.SphereShape.Center);
-						Raylib.DrawSphere(ToVector3(worldCenter), (float)shape.SphereShape.Radius.ToDouble(), color);
-						break;
-					}
+							var worldCenter = FWorldTransform.TransformPoint(body.Transform, shape.SphereShape.Center);
+							Raylib.DrawSphere(ToVector3(worldCenter), (float)shape.SphereShape.Radius.ToDouble(), color);
+							break;
+						}
 
 					case ShapeType.Capsule: {
-						var c1 = FWorldTransform.TransformPoint(body.Transform, shape.CapsuleShape.Center1);
-						var c2 = FWorldTransform.TransformPoint(body.Transform, shape.CapsuleShape.Center2);
-						Raylib.DrawCapsule(ToVector3(c1), ToVector3(c2), (float)shape.CapsuleShape.Radius.ToDouble(), 12, 8, color);
-						break;
-					}
+							var c1 = FWorldTransform.TransformPoint(body.Transform, shape.CapsuleShape.Center1);
+							var c2 = FWorldTransform.TransformPoint(body.Transform, shape.CapsuleShape.Center2);
+							Raylib.DrawCapsule(ToVector3(c1), ToVector3(c2), (float)shape.CapsuleShape.Radius.ToDouble(), 12, 8, color);
+							break;
+						}
 				}
 			}
 		}

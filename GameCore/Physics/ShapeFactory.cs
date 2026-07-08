@@ -36,12 +36,12 @@ public abstract partial class Core<TWorld> where TWorld : struct, ISessionType, 
 		/// react to shape removal first (contacts, mass updates) should do so before calling this.
 		/// </summary>
 		public static void DestroyShape(W.Entity shapeEntity, BroadPhase broadPhase) {
-			ref var shape = ref shapeEntity.Ref<Shape>();
+			ref var shape = ref shapeEntity.Ref<Shape>()!; // shapeEntity is always created by CreateShape, which sets Shape.
 			ShapeBroadPhaseOps.DestroyProxy(ref shape, broadPhase);
 
 			var updateBodyMass = shape.UpdateBodyMass;
 			var hasOwner = shapeEntity.Has<W.Link<BodyOwner>>();
-			var body = hasOwner ? shapeEntity.Ref<W.Link<BodyOwner>>().Value : default;
+			var body = hasOwner ? shapeEntity.Ref<W.Link<BodyOwner>>()!.Value : default;
 
 			shapeEntity.Destroy();
 

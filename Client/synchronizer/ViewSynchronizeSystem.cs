@@ -14,7 +14,9 @@ public class ViewSynchronizeSystem : ISystem {
 			var viewId = entity.Read<ViewId>();
 			var path = viewId.Value switch {
 				ViewAsset.Player => "res://player.tscn",
-				ViewAsset.Projectile => "res://projectile.tscn"
+				ViewAsset.Projectile => "res://projectile.tscn",
+				ViewAsset.Sphere => "res://sphere.tscn",
+				ViewAsset.BigSphere => "res://big_sphere.tscn",
 			};
 			var packedScene = GD.Load<PackedScene>(path);
 			var view = packedScene.Instantiate<EntityView>();

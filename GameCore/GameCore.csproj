@@ -4,6 +4,12 @@
     <ProjectReference Include="..\static-rollback\Runtime\Shenanicode.Rollback.csproj" />
     <ProjectReference Include="..\static-ecs\StaticEcs.csproj" />
   </ItemGroup>
+  <ItemGroup>
+    <PackageReference Include="FFS.StaticEcs.Analyzers" Version="1.0.1">
+      <IncludeAssets>runtime; build; native; contentfiles; analyzers; buildtransitive</IncludeAssets>
+      <PrivateAssets>all</PrivateAssets>
+    </PackageReference>
+  </ItemGroup>
   <PropertyGroup>
     <TargetFramework>net8.0</TargetFramework>
     <ImplicitUsings>enable</ImplicitUsings>

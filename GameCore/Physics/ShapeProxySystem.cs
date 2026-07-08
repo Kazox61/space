@@ -23,16 +23,16 @@ public abstract partial class Core<TWorld> where TWorld : struct, ISessionType, 
 	/// </summary>
 	public struct ShapeProxySystem : ISystem {
 		public void Update() {
-			var broadPhase = Systems.GetResource<BroadPhase>();
+			var broadPhase = W.GetResource<BroadPhase>();
 
-			W.Query<All<Shape, W.Link<BodyOwner>>>().For(ref broadPhase,
+			W.Query<All<W.Link<BodyOwner>>>().For(ref broadPhase,
 				static (ref BroadPhase bp, W.Entity shapeEntity, ref Shape shape) => {
 					ref readonly var owner = ref shapeEntity.Read<W.Link<BodyOwner>>();
 					if (!owner.Value.TryUnpack<TWorld>(out var bodyEntity)) {
 						return;
 					}
 
-					ref readonly var body = ref bodyEntity.Read<Body>();
+					ref readonly var body = ref bodyEntity.Read<Body>()!; // BodyOwner always links to an entity with Body.
 
 					if (shape.ProxyKey == Shape.NullProxyKey) {
 						var forcePairCreation = body.Type != BodyType.Static || shape.InvokeContactCreation;

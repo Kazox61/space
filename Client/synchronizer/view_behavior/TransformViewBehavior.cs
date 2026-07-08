@@ -24,9 +24,13 @@ public partial class TransformViewBehavior : EntityBehavior {
 			return;
 		}
 
+		if (!entity.Has<Transform>()) {
+			return;
+		}
+
 		ref readonly var transform = ref entity.Read<Transform>();
 
-		_targetNodePosition.Position = new Vector3(
+		_targetNodePosition.GlobalPosition = new Vector3(
 			transform.Position.X.ToFloat(),
 			transform.Position.Y.ToFloat(),
 			transform.Position.Z.ToFloat()

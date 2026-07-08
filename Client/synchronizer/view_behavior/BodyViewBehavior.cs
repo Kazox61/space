@@ -25,9 +25,13 @@ public partial class BodyViewBehavior : EntityBehavior {
 			return;
 		}
 
+		if (!entity.Has<Body>()) {
+			return;
+		}
+
 		ref readonly var body = ref entity.Read<Body>();
 
-		_targetNodePosition.Position = new Vector3(
+		_targetNodePosition.GlobalPosition = new Vector3(
 			Fixed64.FConversions.ToFloat(body.Transform.Position.X),
 			Fixed64.FConversions.ToFloat(body.Transform.Position.Y),
 			Fixed64.FConversions.ToFloat(body.Transform.Position.Z)

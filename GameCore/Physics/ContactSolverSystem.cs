@@ -52,7 +52,7 @@ public abstract partial class Core<TWorld> where TWorld : struct, ISessionType, 
 		}
 
 		public void Update() {
-			var world = Systems.GetResource<PhysicsWorld>();
+			var world = W.GetResource<PhysicsWorld>();
 
 			var dt = Const.DeltaTime.To32();
 			var subStepCount = Math.Max(1, world.SubStepCount);
@@ -80,14 +80,16 @@ public abstract partial class Core<TWorld> where TWorld : struct, ISessionType, 
 			// any Contact entity missing a link, but since it runs earlier in the same tick's
 			// pipeline rather than relying on that ordering, guard here too.
 			var constraints = new List<ContactConstraint>();
+#pragma warning disable FFSECS0050 // Link<ShapeA> and Link<ShapeB> are distinct relation types; the analyzer's duplicate check compares by open-generic definition and can't tell them apart.
 			foreach (var contactEntity in W.Query<All<Contact, W.Link<ShapeA>, W.Link<ShapeB>>>().Entities()) {
+#pragma warning restore FFSECS0050
 				if (TryPrepare(contactEntity, world.EnableWarmStarting, contactSoftness, staticSoftness, out var constraint)) {
 					constraints.Add(constraint);
 				}
 			}
 
 			foreach (var entity in bodies) {
-				ref var body = ref entity.Ref<Body>();
+				ref var body = ref entity.Ref<Body>()!; // bodies is built from a Query<All<Body>> filter.
 				body.DeltaPosition = FVector3.Zero;
 				body.DeltaRotation = FQuaternion.Identity;
 			}
@@ -108,9 +110,10 @@ public abstract partial class Core<TWorld> where TWorld : struct, ISessionType, 
 		private static bool TryPrepare(W.Entity contactEntity, bool enableWarmStarting, Softness contactSoftness, Softness staticSoftness, out ContactConstraint constraint) {
 			constraint = default;
 
-			ref readonly var contact = ref contactEntity.Read<Contact>();
-			ref readonly var shapeALink = ref contactEntity.Read<W.Link<ShapeA>>();
-			ref readonly var shapeBLink = ref contactEntity.Read<W.Link<ShapeB>>();
+			// contactEntity always comes from Query<All<Contact, Link<ShapeA>, Link<ShapeB>>> in Update().
+			ref readonly var contact = ref contactEntity.Read<Contact>()!;
+			ref readonly var shapeALink = ref contactEntity.Read<W.Link<ShapeA>>()!;
+			ref readonly var shapeBLink = ref contactEntity.Read<W.Link<ShapeB>>()!;
 
 			if (!shapeALink.Value.TryUnpack<TWorld>(out var shapeAEntity) || !shapeBLink.Value.TryUnpack<TWorld>(out var shapeBEntity)) {
 				return false;
@@ -129,10 +132,10 @@ public abstract partial class Core<TWorld> where TWorld : struct, ISessionType, 
 				return false;
 			}
 
-			ref readonly var shapeDataA = ref shapeAEntity.Read<Shape>();
-			ref readonly var shapeDataB = ref shapeBEntity.Read<Shape>();
-			ref readonly var bodyA = ref bodyAEntity.Read<Body>();
-			ref readonly var bodyB = ref bodyBEntity.Read<Body>();
+			ref readonly var shapeDataA = ref shapeAEntity.Read<Shape>()!; // Link<ShapeA>/<ShapeB> always resolve to shape entities.
+			ref readonly var shapeDataB = ref shapeBEntity.Read<Shape>()!;
+			ref readonly var bodyA = ref bodyAEntity.Read<Body>()!; // TryGetBody only resolves entities with Body.
+			ref readonly var bodyB = ref bodyBEntity.Read<Body>()!;
 
 			// Manifold.Normal/Point0.Point are in shape A's local frame (Distance.ShapeDistance's
 			// contract) — rotate/transform into world using bodyA's transform now, before this tick's
@@ -223,7 +226,7 @@ public abstract partial class Core<TWorld> where TWorld : struct, ISessionType, 
 
 		private static void IntegrateVelocities(List<W.Entity> bodies, FP h, FVector3 gravity) {
 			foreach (var entity in bodies) {
-				ref var body = ref entity.Ref<Body>();
+				ref var body = ref entity.Ref<Body>()!; // bodies is built from a Query<All<Body>> filter.
 
 				var gravityScale = body.InvMass > FP.Zero ? body.GravityScale : FP.Zero;
 				var linearDamping = FP.One / (FP.One + h * body.LinearDamping);
@@ -241,7 +244,7 @@ public abstract partial class Core<TWorld> where TWorld : struct, ISessionType, 
 			var maxAngularSpeedSquared = maxAngularSpeed * maxAngularSpeed;
 
 			foreach (var entity in bodies) {
-				ref var body = ref entity.Ref<Body>();
+				ref var body = ref entity.Ref<Body>()!; // bodies is built from a Query<All<Body>> filter.
 
 				var v = body.LinearVelocity;
 				var w = body.AngularVelocity;
@@ -279,8 +282,8 @@ public abstract partial class Core<TWorld> where TWorld : struct, ISessionType, 
 			for (var i = 0; i < constraints.Count; i++) {
 				var c = constraints[i];
 
-				ref var bodyA = ref c.BodyA.Ref<Body>();
-				ref var bodyB = ref c.BodyB.Ref<Body>();
+				ref var bodyA = ref c.BodyA.Ref<Body>()!; // TryPrepare only stores entities with Body.
+				ref var bodyB = ref c.BodyB.Ref<Body>()!;
 
 				var dp = bodyB.DeltaPosition - bodyA.DeltaPosition;
 				var ds = dp + (bodyB.DeltaRotation * c.RB - bodyA.DeltaRotation * c.RA);
@@ -361,8 +364,8 @@ public abstract partial class Core<TWorld> where TWorld : struct, ISessionType, 
 					continue;
 				}
 
-				ref var bodyA = ref c.BodyA.Ref<Body>();
-				ref var bodyB = ref c.BodyB.Ref<Body>();
+				ref var bodyA = ref c.BodyA.Ref<Body>()!; // TryPrepare only stores entities with Body.
+				ref var bodyB = ref c.BodyB.Ref<Body>()!;
 
 				var vrA = bodyA.LinearVelocity + FVector3.Cross(bodyA.AngularVelocity, c.RA);
 				var vrB = bodyB.LinearVelocity + FVector3.Cross(bodyB.AngularVelocity, c.RB);
@@ -388,7 +391,8 @@ public abstract partial class Core<TWorld> where TWorld : struct, ISessionType, 
 			foreach (var entity in bodies) {
 				// Mut, not Ref: this is the one place Transform actually changes, and
 				// ShapeProxySystem's AABB-refresh pass only reacts to AllChanged<Body>.
-				ref var body = ref entity.Mut<Body>();
+				// bodies is built from a Query<All<Body>> filter.
+				ref var body = ref entity.Mut<Body>()!;
 
 				body.Center += body.DeltaPosition;
 				body.Transform.Rotation = FQuaternion.Normalize(body.DeltaRotation * body.Transform.Rotation);
@@ -405,7 +409,7 @@ public abstract partial class Core<TWorld> where TWorld : struct, ISessionType, 
 
 		private static void StoreImpulses(List<ContactConstraint> constraints) {
 			foreach (var c in constraints) {
-				ref var contact = ref c.ContactEntity.Ref<Contact>();
+				ref var contact = ref c.ContactEntity.Ref<Contact>()!; // TryPrepare only stores entities with Contact.
 				contact.Manifold.Point0.NormalImpulse = c.NormalImpulse;
 				contact.FrictionImpulseX = c.FrictionImpulseX;
 				contact.FrictionImpulseY = c.FrictionImpulseY;
@@ -413,8 +417,8 @@ public abstract partial class Core<TWorld> where TWorld : struct, ISessionType, 
 		}
 
 		private static void ApplyImpulse(W.Entity bodyAEntity, W.Entity bodyBEntity, FVector3 rA, FVector3 rB, FVector3 p) {
-			ref var bodyA = ref bodyAEntity.Ref<Body>();
-			ref var bodyB = ref bodyBEntity.Ref<Body>();
+			ref var bodyA = ref bodyAEntity.Ref<Body>()!; // Callers only pass entities with Body (WarmStart's constraint bodies).
+			ref var bodyB = ref bodyBEntity.Ref<Body>()!;
 
 			bodyA.LinearVelocity -= bodyA.InvMass * p;
 			bodyA.AngularVelocity -= bodyA.InvInertiaWorld * FVector3.Cross(rA, p);

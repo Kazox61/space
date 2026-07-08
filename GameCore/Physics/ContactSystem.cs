@@ -13,7 +13,7 @@ public abstract partial class Core<TWorld> where TWorld : struct, ISessionType, 
 	/// </summary>
 	public struct ContactSystem : ISystem {
 		public void Update() {
-			var broadPhase = Systems.GetResource<BroadPhase>();
+			var broadPhase = W.GetResource<BroadPhase>();
 			broadPhase.UpdatePairs(TryCreateContact);
 
 			// Self-heal: TryCreateContact sets Contact + both links atomically, so this should never
@@ -22,7 +22,9 @@ public abstract partial class Core<TWorld> where TWorld : struct, ISessionType, 
 			// crash reading a link that isn't there.
 			W.Query<All<Contact>, Or<None<W.Link<ShapeA>>, None<W.Link<ShapeB>>>>().BatchDestroy();
 
-			W.Query<All<Contact, W.Link<ShapeA>, W.Link<ShapeB>>>().For(static (W.Entity contactEntity, ref Contact contact) => {
+#pragma warning disable FFSECS0050 // Link<ShapeA> and Link<ShapeB> are distinct relation types; the analyzer's duplicate check compares by open-generic definition and can't tell them apart.
+			W.Query<All<W.Link<ShapeA>, W.Link<ShapeB>>>().For(static (W.Entity contactEntity, ref Contact contact) => {
+#pragma warning restore FFSECS0050
 				ref readonly var shapeALink = ref contactEntity.Read<W.Link<ShapeA>>();
 				ref readonly var shapeBLink = ref contactEntity.Read<W.Link<ShapeB>>();
 
@@ -31,15 +33,15 @@ public abstract partial class Core<TWorld> where TWorld : struct, ISessionType, 
 					return;
 				}
 
-				ref readonly var shapeDataA = ref entityA.Read<Shape>();
-				ref readonly var shapeDataB = ref entityB.Read<Shape>();
+				ref readonly var shapeDataA = ref entityA.Read<Shape>()!; // Link<ShapeA>/<ShapeB> always resolve to shape entities.
+				ref readonly var shapeDataB = ref entityB.Read<Shape>()!;
 
 				if (!FAABB.Overlaps(shapeDataA.FatAabb, shapeDataB.FatAabb)) {
 					if (contact.Touching) {
 						W.SendEvent(new ContactEndTouchEvent { ShapeA = entityA.GID, ShapeB = entityB.GID });
 					}
 
-					Systems.GetResource<BroadPhase>().ForgetPair(entityA.GID, entityB.GID);
+					W.GetResource<BroadPhase>().ForgetPair(entityA.GID, entityB.GID);
 					contactEntity.Destroy();
 					return;
 				}
@@ -66,7 +68,7 @@ public abstract partial class Core<TWorld> where TWorld : struct, ISessionType, 
 			if (shapeEntity.Has<W.Link<BodyOwner>>()) {
 				ref readonly var owner = ref shapeEntity.Read<W.Link<BodyOwner>>();
 				if (owner.Value.TryUnpack<TWorld>(out var bodyEntity)) {
-					transform = bodyEntity.Read<Body>().Transform;
+					transform = bodyEntity.Read<Body>()!.Transform; // BodyOwner always links to an entity with Body.
 					return true;
 				}
 			}
@@ -80,8 +82,8 @@ public abstract partial class Core<TWorld> where TWorld : struct, ISessionType, 
 				return;
 			}
 
-			ref readonly var shapeDataA = ref entityA.Read<Shape>();
-			ref readonly var shapeDataB = ref entityB.Read<Shape>();
+			ref readonly var shapeDataA = ref entityA.Read<Shape>()!; // Broad-phase pairs are always shape entities.
+			ref readonly var shapeDataB = ref entityB.Read<Shape>()!;
 
 			if (!Filter.ShouldCollide(shapeDataA.Filter, shapeDataB.Filter)) {
 				return;

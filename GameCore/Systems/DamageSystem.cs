@@ -15,7 +15,7 @@ public abstract partial class Core<TWorld> where TWorld : struct, ISessionType, 
 
 		public void Update() {
 			foreach (var e in damageReceiver) {
-				if (e.Value.Target.TryUnpack<TWorld>(out var target)) {
+				if (e.Value.Target.TryUnpack<TWorld>(out var target) && target.Has<Health>()) {
 					ref var health = ref target.Ref<Health>();
 					health.Value -= e.Value.Amount;
 					if (health.Value <= 0) {

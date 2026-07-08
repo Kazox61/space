@@ -13,7 +13,7 @@ public abstract partial class Core<TWorld> where TWorld : struct, ISessionType, 
 	/// </summary>
 	public static class BodyMassUpdate {
 		public static void Update(W.Entity bodyEntity) {
-			ref var body = ref bodyEntity.Ref<Body>();
+			ref var body = ref bodyEntity.Ref<Body>()!; // Callers only ever pass body entities.
 
 			body.Mass = FP.Zero;
 			body.Inertia = FMatrix3.Zero;
@@ -39,7 +39,7 @@ public abstract partial class Core<TWorld> where TWorld : struct, ISessionType, 
 					continue;
 				}
 
-				ref readonly var shape = ref shapeEntity.Read<Shape>();
+				ref readonly var shape = ref shapeEntity.Read<Shape>()!; // Links<Shapes> always resolves to shape entities.
 				if (shape.Density == FP.Zero) {
 					continue;
 				}

@@ -13,8 +13,11 @@ public abstract partial class Core<TWorld> where TWorld : struct, ISessionType, 
 			Systems.SetResource(new PhysicsRes());
 			Systems.SetResource(new CharacterRes());
 			Systems.SetResource(new PlanetRes());
-			Systems.SetResource(new PhysicsWorld());
-			Systems.SetResource(new BroadPhase());
+			// World-scoped (not Systems.SetResource): GameWorldRollback/GameWorldFullSyncHandler both
+			// snapshot via W.Serializer, which only walks World<TWorld>'s own resource registry --
+			// Systems<TSystemsType> keeps a completely separate one that never gets serialized here.
+			W.SetResource(new PhysicsWorld());
+			W.SetResource(new BroadPhase());
 			Systems.Add(new SpawnPlayerSystem(), order: 0);
 			Systems.Add(new SpawnSphereSystem(), order: 0);
 			Systems.Add(new DamageSystem(), order: 0);

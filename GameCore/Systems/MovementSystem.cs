@@ -8,7 +8,7 @@ namespace Space.GameCore;
 public abstract partial class Core<TWorld> where TWorld : struct, ISessionType, IWorldType {
 	public struct MovementSystem : ISystem {
 		public void Update() {
-			W.Query().For(static (W.Entity entity, ref PlayerInfo playerInfo, ref Transform transform, ref JumpState jumpState) => {
+			W.Query().For(static (W.Entity entity, ref PlayerInfo playerInfo, ref Transform transform, ref JumpState jumpState, ref Body body) => {
 				var input = S.GetInput<PlayerInput>(channel: playerInfo.InputChannel);
 				var moveInput = FVector2.NormalizeSafe(new FVector2(input.LastFresh().MoveX, input.LastFresh().MoveY));
 
@@ -62,13 +62,21 @@ public abstract partial class Core<TWorld> where TWorld : struct, ISessionType, 
 
 					var projectile = W.NewEntity<Projectile>();
 
-					ref var projectileTransform = ref projectile.Mut<Transform>();
+					// Projectile.OnCreate always sets Transform and Velocity.
+					ref var projectileTransform = ref projectile.Mut<Transform>()!;
 					projectileTransform.Position = transform.Position + up * FP.One;
 					projectileTransform.Rotation = SafeLookRotation(attackDir, up);
 
-					ref var projectileVelocity = ref projectile.Ref<Velocity>();
+					ref var projectileVelocity = ref projectile.Ref<Velocity>()!;
 					projectileVelocity.Value = attackDir * 10;
 				}
+
+				// Player movement is authored directly on Transform rather than through the
+				// solver, so mirror it onto the capsule's Body each tick (matching what
+				// BodyMassUpdate does for static/kinematic bodies: Center just tracks Transform).
+				var worldTransform = transform.ToWorldTransform();
+				body.Transform = worldTransform;
+				body.Center = worldTransform.Position;
 			});
 		}
 
