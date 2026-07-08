@@ -22,6 +22,9 @@ fog_depth_end = 50.0
 radius = 40.0
 height = 80.0
 
+[sub_resource type="BoxMesh" id="BoxMesh_jfow4"]
+size = Vector3(2, 1, 2)
+
 [node name="Test" type="Node3D" unique_id=1684976908]
 script = ExtResource("1_myinc")
 
@@ -38,6 +41,10 @@ shadow_enabled = true
 visible = false
 material_override = ExtResource("3_8tn2x")
 mesh = SubResource("SphereMesh_ivycn")
+
+[node name="MeshInstance3D2" type="MeshInstance3D" parent="." unique_id=1053988692]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 40, 0)
+mesh = SubResource("BoxMesh_jfow4")
 
 [connection signal="flicked" from="TouchscreenUi/HBoxContainer/Control/VirtualJoystick2" to="." method="OnAttack"]
 

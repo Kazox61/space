@@ -10,12 +10,15 @@ public struct Player : IEntityType {
 	public ushort InputChannel;
 
 	public void OnCreate<TWorld>(World<TWorld>.Entity entity) where TWorld : struct, IWorldType {
+		var transform = new Transform { Position = new FVector3(FP.Zero, 40.ToFP(), FP.Zero), Rotation = FQuaternion.Identity };
+
 		entity.Set(
 			new PlayerInfo { PlayerGuid = PlayerGuid, InputChannel = InputChannel },
 			new Health { Value = 10, MaxValue = 10 },
 			new ViewId { Value = ViewAsset.Player },
-			new Transform { Position = new FVector3(FP.Zero, 40.ToFP(), FP.Zero), Rotation = FQuaternion.Identity },
-			new JumpState { VerticalVelocity = FP.Zero, Grounded = true }
+			transform,
+			new JumpState { VerticalVelocity = FP.Zero, Grounded = true },
+			new Body { Type = BodyType.Kinematic, Transform = transform.ToWorldTransform() }
 		);
 	}
 }

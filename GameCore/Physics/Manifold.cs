@@ -15,10 +15,14 @@ public struct ManifoldPoint {
 
 /// <summary>
 /// A contact manifold between two shapes. Bounded to a single point: sphere/sphere,
-/// sphere/capsule, and capsule/capsule (the only shape pairs in scope for this pass) never need
-/// more than one contact point in the general case — box3d's own b3FeaturePair_single path for
-/// round shapes. box3d's capsule/capsule *does* add a second point when the capsules are nearly
-/// parallel (for resting stability); that refinement is deferred here (see <see cref="Collide"/>).
+/// sphere/capsule, capsule/capsule, and hull/sphere (the only shape pairs in scope for this pass)
+/// never need more than one contact point in the general case — box3d's own b3FeaturePair_single
+/// path for round shapes. box3d's capsule/capsule *does* add a second point when the capsules are
+/// nearly parallel (for resting stability); that refinement is deferred here (see <see cref="Collide"/>).
+/// Deferred entirely: hull/capsule and hull/hull. A box resting flat needs a multi-point manifold
+/// (box3d clips the reference face against the incident feature) to stay stable, which this
+/// single-point <see cref="Manifold"/> can't represent — so those pairs still fall through rather
+/// than settle. Box vs sphere/box vs ground-sphere works because a sphere only ever needs one point.
 /// </summary>
 public struct Manifold {
 	public FVector3 Normal;
@@ -44,6 +48,8 @@ public struct Manifold {
 			(ShapeType.Sphere, ShapeType.Capsule) => CollideSphereCapsule(a.SphereShape, b.CapsuleShape, xfBinA),
 			(ShapeType.Capsule, ShapeType.Sphere) => CollideCapsuleSphere(a.CapsuleShape, b.SphereShape, xfBinA),
 			(ShapeType.Capsule, ShapeType.Capsule) => CollideCapsuleCapsule(a.CapsuleShape, b.CapsuleShape, xfBinA),
+			(ShapeType.Hull, ShapeType.Sphere) => CollideHullSphere(a.HullShape, b.SphereShape, xfBinA),
+			(ShapeType.Sphere, ShapeType.Hull) => CollideSphereHull(a.SphereShape, b.HullShape, xfBinA),
 			_ => default,
 		};
 	}
@@ -98,6 +104,84 @@ public struct Manifold {
 		var b2 = FTransform.TransformPoint(xfBinA, b.Center2);
 		var (closestOnA, closestOnB) = SegmentSegmentClosestPoints(a.Center1, a.Center2, b1, b2);
 		return FromClosestPoints(closestOnA, closestOnB, a.Radius, b.Radius);
+	}
+
+	private static Manifold CollideHullSphere(Hull a, Sphere b, FTransform xfBinA) {
+		var centerB = FTransform.TransformPoint(xfBinA, b.Center);
+		return CollideBoxSphere(a.Center, a.Rotation, a.HalfExtents, centerB, b.Radius);
+	}
+
+	private static Manifold CollideSphereHull(Sphere a, Hull b, FTransform xfBinA) {
+		var boxCenter = FTransform.TransformPoint(xfBinA, b.Center);
+		var boxRotation = xfBinA.Rotation * b.Rotation;
+		var manifold = CollideBoxSphere(boxCenter, boxRotation, b.HalfExtents, a.Center, a.Radius);
+		// CollideBoxSphere's normal points from the box toward the sphere. Here the box is the pair's
+		// B shape and the sphere is A, so flip to keep this file's A-to-B normal convention.
+		manifold.Normal = -manifold.Normal;
+		return manifold;
+	}
+
+	/// <summary>
+	/// Box (zero-radius hull) versus sphere, all arguments already expressed in a common frame.
+	/// Ported from box3d's convex-manifold box/sphere path: clamp the sphere center into the box's
+	/// own local axes to find the closest surface point; if the center is already inside, push out
+	/// along the axis of least penetration instead (SAT for a point). The normal points from the box
+	/// toward the sphere.
+	/// </summary>
+	private static Manifold CollideBoxSphere(FVector3 boxCenter, FQuaternion boxRotation, FVector3 halfExtents, FVector3 sphereCenter, FP sphereRadius) {
+		var invRotation = FQuaternion.Inverse(boxRotation);
+		var localCenter = invRotation * (sphereCenter - boxCenter);
+		var h = halfExtents;
+
+		var clamped = FVector3.MaxComponents(FVector3.MinComponents(localCenter, h), -h);
+
+		FVector3 localPointOnBox;
+		FVector3 localNormal;
+		FP separation;
+
+		if (clamped == localCenter) {
+			// The sphere center is inside the box: push out along the axis of least penetration.
+			var penX = h.X - FP.Abs(localCenter.X);
+			var penY = h.Y - FP.Abs(localCenter.Y);
+			var penZ = h.Z - FP.Abs(localCenter.Z);
+
+			localPointOnBox = localCenter;
+			if (penX <= penY && penX <= penZ) {
+				localNormal = new FVector3(localCenter.X >= FP.Zero ? FP.One : -FP.One, FP.Zero, FP.Zero);
+				localPointOnBox.X = localCenter.X >= FP.Zero ? h.X : -h.X;
+				separation = -penX;
+			}
+			else if (penY <= penZ) {
+				localNormal = new FVector3(FP.Zero, localCenter.Y >= FP.Zero ? FP.One : -FP.One, FP.Zero);
+				localPointOnBox.Y = localCenter.Y >= FP.Zero ? h.Y : -h.Y;
+				separation = -penY;
+			}
+			else {
+				localNormal = new FVector3(FP.Zero, FP.Zero, localCenter.Z >= FP.Zero ? FP.One : -FP.One);
+				localPointOnBox.Z = localCenter.Z >= FP.Zero ? h.Z : -h.Z;
+				separation = -penZ;
+			}
+		}
+		else {
+			localPointOnBox = clamped;
+			var offset = localCenter - clamped;
+			var distance = FVector3.Length(offset);
+			localNormal = distance > FP.CalculationsEpsilon ? offset / distance : FVector3.Up;
+			separation = distance;
+		}
+
+		var normal = boxRotation * localNormal;
+		var pointOnBox = boxCenter + boxRotation * localPointOnBox;
+		var pointOnSphere = sphereCenter - sphereRadius * normal;
+
+		return new Manifold {
+			Normal = normal,
+			PointCount = 1,
+			Point0 = new ManifoldPoint {
+				Point = FP.Half * (pointOnBox + pointOnSphere),
+				Separation = separation - sphereRadius,
+			},
+		};
 	}
 
 	/// <summary>Closest point on segment [a, b] to point q. Ported from box3d's b3PointToSegmentDistance.</summary>

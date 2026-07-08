@@ -22,6 +22,7 @@ public static class Program {
 		TouchEventsTest();
 		DropAndRestTest();
 		CapsuleOnSphereSmokeTest();
+		BoxOnSphereSmokeTest();
 		OverlappingSpawnStressTest();
 		RollbackRoundTripTest();
 
@@ -38,8 +39,8 @@ public static class Program {
 		W.Create(GameWorldSetup.WorldConfig);
 		Systems.Create();
 		W.Types().RegisterAll(typeof(CoreRoot).Assembly);
-		Systems.SetResource(new PhysicsWorld());
-		Systems.SetResource(new BroadPhase());
+		W.SetResource(new PhysicsWorld());
+		W.SetResource(new BroadPhase());
 		Systems.Add(new ShapeProxySystem(), order: 0);
 		Systems.Add(new ContactSystem(), order: 1);
 		Systems.Add(new ContactSolverSystem(), order: 2);
@@ -220,6 +221,70 @@ public static class Program {
 		Check("capsule stays numerically bounded (no NaN/explosion)", bounded);
 		Check("capsule settles to a low speed", lastSpeed < 0.5);
 		Check("capsule ends up resting well above the ground center (didn't fall through)", lastY > groundRadius);
+
+		Shutdown();
+	}
+
+	/// <summary>
+	/// A box dropped centered above the ground sphere. Exercises Manifold.Collide's hull/sphere path
+	/// (the only manifold hull shapes currently participate in — see its remarks) and the Hull shape's
+	/// mass/AABB computation end to end. Centered rather than off-center for the same reason as
+	/// <see cref="CapsuleOnSphereSmokeTest"/>: resting on the shoulder of a sphere with one contact
+	/// point is inherently unstable and can legitimately roll off.
+	/// </summary>
+	private static void BoxOnSphereSmokeTest() {
+		Console.WriteLine("--- BoxOnSphereSmokeTest ---");
+		Bootstrap();
+
+		const double groundRadius = 5;
+		const double boxHalfExtent = 1;
+		const double startY = groundRadius + boxHalfExtent + 4;
+
+		var groundBody = W.NewEntity<Default>();
+		groundBody.Set(new Body {
+			Type = BodyType.Static,
+			Transform = new FWorldTransform(FPos.Zero, FQuaternion.Identity),
+		});
+		ShapeFactory.CreateShape(groundBody, Shape.MakeSphere(FVector3.Zero, FP.FromRatio((int)groundRadius, 1)));
+
+		var boxBody = W.NewEntity<Default>();
+		boxBody.Set(new Body {
+			Type = BodyType.Dynamic,
+			GravityScale = FP.One,
+			Transform = new FWorldTransform(new FPos(Fixed64.FP.Zero, Fixed64.FP.FromRatio((int)startY, 1), Fixed64.FP.Zero), FQuaternion.Identity),
+		});
+		var boxShape = Shape.MakeBox(FVector3.Zero, new FVector3(FP.One, FP.One, FP.One));
+		// See CapsuleOnSphereSmokeTest's remarks: keep density sane so inertia stays inside Fixed32's range.
+		boxShape.Density = FP.One;
+		ShapeFactory.CreateShape(boxBody, boxShape);
+
+		double lastY = startY;
+		double lastSpeed = 0;
+		var bounded = true;
+
+		const int totalTicks = 300;
+		for (var tick = 0; tick < totalTicks; tick++) {
+			W.Tick();
+			Systems.Update();
+
+			ref readonly var box = ref boxBody.Read<Body>();
+			var y = Fixed64.FConversions.ToDouble(box.Transform.Position.Y);
+			var speed = FVector3.Length(box.LinearVelocity).ToDouble();
+
+			if (double.IsNaN(y) || double.IsInfinity(y) || Math.Abs(y) > 1000) {
+				bounded = false;
+			}
+
+			lastY = y;
+			lastSpeed = speed;
+			if (tick % 30 == 0 || tick == totalTicks - 1) {
+				Console.WriteLine($"  tick {tick,4}: y={y:F4} speed={speed:F4}");
+			}
+		}
+
+		Check("box stays numerically bounded (no NaN/explosion)", bounded);
+		Check("box settles to a low speed", lastSpeed < 0.5);
+		Check("box ends up resting well above the ground center (didn't fall through)", lastY > groundRadius);
 
 		Shutdown();
 	}

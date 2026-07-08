@@ -21,6 +21,9 @@ public struct Shape : IComponent, IComponentConfig<Shape> {
 	/// <summary>Valid when <see cref="Type"/> is <see cref="ShapeType.Capsule"/>.</summary>
 	public Capsule CapsuleShape;
 
+	/// <summary>Valid when <see cref="Type"/> is <see cref="ShapeType.Hull"/>.</summary>
+	public Hull HullShape;
+
 	/// <summary>The density, usually in kg/m^3. Defaults to the density of water.</summary>
 	public FP Density;
 
@@ -78,6 +81,7 @@ public struct Shape : IComponent, IComponentConfig<Shape> {
 		return Type switch {
 			ShapeType.Sphere => Sphere.ComputeMass(SphereShape, Density),
 			ShapeType.Capsule => Capsule.ComputeMass(CapsuleShape, Density),
+			ShapeType.Hull => Hull.ComputeMass(HullShape, Density),
 			_ => default,
 		};
 	}
@@ -87,6 +91,7 @@ public struct Shape : IComponent, IComponentConfig<Shape> {
 		return Type switch {
 			ShapeType.Sphere => SphereShape.Center,
 			ShapeType.Capsule => FP.Half * (CapsuleShape.Center1 + CapsuleShape.Center2),
+			ShapeType.Hull => HullShape.Center,
 			_ => FVector3.Zero,
 		};
 	}
@@ -106,6 +111,11 @@ public struct Shape : IComponent, IComponentConfig<Shape> {
 				margin = FP.Half * FVector3.Distance(CapsuleShape.Center2, CapsuleShape.Center1) + CapsuleShape.Radius;
 				break;
 
+			case ShapeType.Hull:
+				// Distance from a box's center to any corner is |halfExtents|, regardless of rotation.
+				margin = FVector3.Length(HullShape.HalfExtents);
+				break;
+
 			default:
 				return B3Config.MaxAabbMargin;
 		}
@@ -118,6 +128,7 @@ public struct Shape : IComponent, IComponentConfig<Shape> {
 		return Type switch {
 			ShapeType.Sphere => Sphere.ComputeAABB(SphereShape, transform),
 			ShapeType.Capsule => Capsule.ComputeAABB(CapsuleShape, transform),
+			ShapeType.Hull => Hull.ComputeAABB(HullShape, transform),
 			_ => new FAABB(transform.Position, transform.Position),
 		};
 	}
@@ -140,6 +151,7 @@ public struct Shape : IComponent, IComponentConfig<Shape> {
 		return Type switch {
 			ShapeType.Sphere => new ShapeProxy { Points = new[] { SphereShape.Center }, Radius = SphereShape.Radius },
 			ShapeType.Capsule => new ShapeProxy { Points = new[] { CapsuleShape.Center1, CapsuleShape.Center2 }, Radius = CapsuleShape.Radius },
+			ShapeType.Hull => new ShapeProxy { Points = HullShape.GetCorners(), Radius = FP.Zero },
 			_ => new ShapeProxy { Points = Array.Empty<FVector3>(), Radius = FP.Zero },
 		};
 	}
@@ -181,6 +193,22 @@ public struct Shape : IComponent, IComponentConfig<Shape> {
 		var shape = DefaultTemplate;
 		shape.Type = ShapeType.Capsule;
 		shape.CapsuleShape = new Capsule(center1, center2, radius);
+		return shape;
+	}
+
+	/// <summary>Builds an axis-aligned box shape (via a box hull) with default material/filter/density, ready for <c>ShapeFactory.CreateShape</c>.</summary>
+	public static Shape MakeBox(FVector3 center, FVector3 halfExtents) {
+		var shape = DefaultTemplate;
+		shape.Type = ShapeType.Hull;
+		shape.HullShape = Hull.MakeBox(halfExtents, center);
+		return shape;
+	}
+
+	/// <summary>Builds a rotated box shape (via a box hull) with default material/filter/density, ready for <c>ShapeFactory.CreateShape</c>.</summary>
+	public static Shape MakeBox(FVector3 center, FVector3 halfExtents, FQuaternion rotation) {
+		var shape = DefaultTemplate;
+		shape.Type = ShapeType.Hull;
+		shape.HullShape = Hull.MakeBox(halfExtents, center, rotation);
 		return shape;
 	}
 }
