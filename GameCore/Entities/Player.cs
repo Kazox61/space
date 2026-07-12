@@ -20,7 +20,7 @@ public struct Player : IEntityType {
 		// the capsule's feet (origin + Center1.Y - Radius = origin - 1.0) exactly at the ground's top
 		// surface (0.5), matching the pogo suspension's own rest height (see
 		// CharacterMover.UpdatePogoGrounding), so the player doesn't visibly drop or rise on spawn.
-		var transform = new Transform { Position = new FVector3(FP.Zero, FP.One + FP.Half, FP.Zero), Rotation = FQuaternion.Identity };
+		var transform = new Transform { Position = new FVector3(((int)InputChannel).ToFP() * FP.Three, FP.One + FP.Half, FP.Zero), Rotation = FQuaternion.Identity };
 
 		entity.Set(
 			new PlayerInfo { PlayerGuid = PlayerGuid, InputChannel = InputChannel },

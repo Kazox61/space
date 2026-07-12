@@ -5,7 +5,7 @@
 [ext_resource type="Material" uid="uid://crh4edqr4kdta" path="res://material/grid_mat.tres" id="2_ry5bi"]
 
 [sub_resource type="BoxMesh" id="BoxMesh_ry5bi"]
-size = Vector3(50, 1, 50)
+size = Vector3(80, 1, 80)
 
 [node name="Platform" type="Node3D" unique_id=1979850678 node_paths=PackedStringArray("_entityBehaviours")]
 script = ExtResource("1_s8bxr")
