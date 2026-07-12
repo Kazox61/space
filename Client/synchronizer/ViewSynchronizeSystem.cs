@@ -18,6 +18,7 @@ public class ViewSynchronizeSystem : ISystem {
 				ViewAsset.Sphere => "res://sphere.tscn",
 				ViewAsset.Platform => "res://platform.tscn",
 				ViewAsset.Box => "res://box.tscn",
+				ViewAsset.Dummy => "res://dummy.tscn",
 			};
 			var packedScene = GD.Load<PackedScene>(path);
 			var view = packedScene.Instantiate<EntityView>();

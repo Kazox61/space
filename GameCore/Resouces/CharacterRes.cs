@@ -7,6 +7,9 @@ public class CharacterRes : IResource {
 	public FP JumpForce = 8.ToFP();
 	public FP MoveSpeed = 7.ToFP();
 
+	/// <summary>Muzzle velocity for <c>Core&lt;TWorld&gt;.ShootSystem</c>'s spawned projectiles.</summary>
+	public FP ProjectileSpeed = 12.ToFP();
+
 	/// <summary>Pogo suspension spring frequency, matching box3d's CharacterMover::SolveMove (samples/sample.cpp) default.</summary>
 	public FP PogoHertz = 4.ToFP();
 

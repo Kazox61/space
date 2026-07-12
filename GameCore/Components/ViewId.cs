@@ -12,4 +12,5 @@ public enum ViewAsset {
 	Sphere,
 	Platform,
 	Box,
+	Dummy,
 }

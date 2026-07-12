@@ -50,9 +50,9 @@ public partial class Test : Node3D {
 				ViewAsset.Sphere => "res://sphere.tscn",
 				ViewAsset.Platform => "res://platform.tscn",
 				ViewAsset.Box => "res://box.tscn",
+				ViewAsset.Dummy => "res://dummy.tscn",
 				_ => ""
 			};
-			GD.Print($"Loading view for entity {entity.GID} from {path} with viewId {viewId.Value}");
 			var packedScene = GD.Load<PackedScene>(path);
 			var view = packedScene.Instantiate<EntityView>();
 			_views[entity.GID] = view;

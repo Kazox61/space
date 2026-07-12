@@ -29,6 +29,14 @@ public struct Filter {
 		GroupIndex = 0,
 	};
 
+	/// <summary>
+	/// A negative group index unique to one player's input channel, so a player's own shapes (once
+	/// they have any) and their own projectiles never collide with each other -- see
+	/// <see cref="ShouldCollide"/>: equal negative group indices always skip collision, regardless of
+	/// category/mask bits. Shifted by 1 so channel 0 doesn't produce the no-op GroupIndex 0.
+	/// </summary>
+	public static int SelfGroup(ushort inputChannel) => -(inputChannel + 1);
+
 	/// <summary>Should two shapes with these filters collide?</summary>
 	public static bool ShouldCollide(Filter filterA, Filter filterB) {
 		if (filterA.GroupIndex == filterB.GroupIndex && filterA.GroupIndex != 0) {

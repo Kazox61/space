@@ -1,0 +1,23 @@
+[gd_scene format=3 uid="uid://c3u4vrgwkk0k5"]
+
+[ext_resource type="Script" uid="uid://cip1dwd0y0jcp" path="res://synchronizer/EntityView.cs" id="1_0umox"]
+[ext_resource type="Script" uid="uid://dgbo3w1kixhiy" path="res://synchronizer/view_behavior/TransformViewBehavior.cs" id="2_1324b"]
+
+[sub_resource type="StandardMaterial3D" id="StandardMaterial3D_yqvkn"]
+albedo_color = Color(1, 0.5150584, 0.4535687, 1)
+
+[sub_resource type="CapsuleMesh" id="CapsuleMesh_jfow4"]
+
+[node name="Dummy" type="Node3D" unique_id=1321113511 node_paths=PackedStringArray("_entityBehaviours")]
+script = ExtResource("1_0umox")
+_entityBehaviours = [NodePath("TransformViewBehavior")]
+
+[node name="MeshInstance3D" type="MeshInstance3D" parent="." unique_id=186001492]
+material_override = SubResource("StandardMaterial3D_yqvkn")
+mesh = SubResource("CapsuleMesh_jfow4")
+
+[node name="TransformViewBehavior" type="Node" parent="." unique_id=2029104163 node_paths=PackedStringArray("_targetNodePosition", "_targetNodeRotation")]
+script = ExtResource("2_1324b")
+_targetNodePosition = NodePath("..")
+_targetNodeRotation = NodePath("..")
+metadata/_custom_type_script = "uid://dgbo3w1kixhiy"
