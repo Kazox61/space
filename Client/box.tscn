@@ -1,0 +1,24 @@
+[gd_scene format=3 uid="uid://dqx8m3vf2k7n0"]
+
+[ext_resource type="Script" uid="uid://cip1dwd0y0jcp" path="res://synchronizer/EntityView.cs" id="1_box01"]
+[ext_resource type="Script" uid="uid://dgbo3w1kixhiy" path="res://synchronizer/view_behavior/TransformViewBehavior.cs" id="2_box02"]
+
+[sub_resource type="StandardMaterial3D" id="StandardMaterial3D_box01"]
+albedo_color = Color(1, 0.6, 0, 1)
+
+[sub_resource type="BoxMesh" id="BoxMesh_box01"]
+size = Vector3(4, 1, 4)
+
+[node name="Box" type="Node3D" unique_id=1979850679 node_paths=PackedStringArray("_entityBehaviours")]
+script = ExtResource("1_box01")
+_entityBehaviours = [NodePath("TransformViewBehavior")]
+
+[node name="MeshInstance3D" type="MeshInstance3D" parent="." unique_id=673944829]
+material_override = SubResource("StandardMaterial3D_box01")
+mesh = SubResource("BoxMesh_box01")
+
+[node name="TransformViewBehavior" type="Node" parent="." unique_id=708216854 node_paths=PackedStringArray("_targetNodePosition", "_targetNodeRotation")]
+script = ExtResource("2_box02")
+_targetNodePosition = NodePath("..")
+_targetNodeRotation = NodePath("..")
+metadata/_custom_type_script = "uid://dgbo3w1kixhiy"

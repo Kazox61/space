@@ -89,6 +89,27 @@ public abstract partial class Core<TWorld> where TWorld : struct, ISessionType, 
 			_movedProxies.Clear();
 		}
 
+		/// <summary>
+		/// Appends the GID of every shape whose proxy overlaps <paramref name="aabb"/>, across all
+		/// body-type trees, into <paramref name="results"/> (caller clears it first if a fresh set is
+		/// wanted). Unlike <see cref="UpdatePairs"/> this is a plain spatial query with no
+		/// pair-dedup/move-tracking bookkeeping -- for one-off queries like <c>CharacterMover</c>'s
+		/// cast/collide, not per-tick pair maintenance. Takes a caller-owned, reusable
+		/// <see cref="List{EntityGID}"/> rather than a delegate specifically so hot callers (a mover
+		/// queries the broad phase up to 10x/tick) can pass the same list back tick after tick: the
+		/// callback below is `static` and <paramref name="results"/> flows through
+		/// <see cref="DynamicTree.TreeQueryCallback"/>'s existing `object context` parameter as a plain
+		/// reference (no boxing, since it's already a reference type), so this allocates nothing per call.
+		/// </summary>
+		public void Query(FAABB aabb, List<EntityGID> results) {
+			for (var type = 0; type < TypeCount; type++) {
+				_trees[type].Query(aabb, ulong.MaxValue, static (_, userData, context) => {
+					((List<EntityGID>)context).Add(new EntityGID(userData));
+					return true;
+				}, results);
+			}
+		}
+
 		/// <summary>Removes a pair from the dedup set so it can be re-created later (call when a contact is destroyed).</summary>
 		public void ForgetPair(EntityGID a, EntityGID b) {
 			var pairKey = a.Raw < b.Raw ? (a.Raw, b.Raw) : (b.Raw, a.Raw);

@@ -86,6 +86,22 @@ public struct Shape : IComponent, IComponentConfig<Shape> {
 		};
 	}
 
+	/// <summary>
+	/// The effective rolling radius used to scale material <see cref="SurfaceMaterial.RollingResistance"/>
+	/// into a per-contact torque limit, matching box3d's b3UpdateConvexContact combining formula: a
+	/// sphere or capsule's own radius, or a quarter of a hull's inner radius (distance from its
+	/// center to the nearest face) for round-on-flat contacts. Zero for shape types with no natural
+	/// rolling radius (mesh, height field, compound).
+	/// </summary>
+	public FP RollingRadius() {
+		return Type switch {
+			ShapeType.Sphere => SphereShape.Radius,
+			ShapeType.Capsule => CapsuleShape.Radius,
+			ShapeType.Hull => FP.Quarter * FP.Min(HullShape.HalfExtents.X, FP.Min(HullShape.HalfExtents.Y, HullShape.HalfExtents.Z)),
+			_ => FP.Zero,
+		};
+	}
+
 	/// <summary>Compute the local-space centroid of this shape's geometry.</summary>
 	public FVector3 ComputeCentroid() {
 		return Type switch {

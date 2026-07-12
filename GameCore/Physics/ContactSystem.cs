@@ -52,7 +52,7 @@ public abstract partial class Core<TWorld> where TWorld : struct, ISessionType, 
 
 				var manifold = Manifold.Collide(shapeDataA, xfA, shapeDataB, xfB);
 				var wasTouching = contact.Touching;
-				var isTouching = manifold.PointCount > 0 && manifold.Point0.Separation <= B3Config.SpeculativeDistance;
+				var isTouching = manifold.PointCount > 0 && manifold.MinSeparation() <= B3Config.SpeculativeDistance;
 				contact.Manifold = manifold;
 				contact.Touching = isTouching;
 

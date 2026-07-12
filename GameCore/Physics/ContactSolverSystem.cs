@@ -18,6 +18,22 @@ public abstract partial class Core<TWorld> where TWorld : struct, ISessionType, 
 	/// solves against that tick's freshly recomputed manifolds.
 	/// </summary>
 	public struct ContactSolverSystem : ISystem {
+		/// <summary>Per-manifold-point normal constraint row; friction stays manifold-level (see <see cref="ContactConstraint.FrictionAnchorRA"/>), matching box3d's single friction anchor per manifold.</summary>
+		private struct ContactConstraintPoint {
+			/// <summary>World-frame anchor (center-of-mass relative), fixed at prepare time; rotated
+			/// live by each body's accumulated <see cref="Body.DeltaRotation"/> during solving.</summary>
+			public FVector3 RA;
+			public FVector3 RB;
+			public FP BaseSeparation;
+			public FP NormalMass;
+
+			/// <summary>Pre-solve relative normal velocity, captured once in Prepare, used by restitution.</summary>
+			public FP RelativeVelocity;
+
+			public FP NormalImpulse;
+			public FP TotalNormalImpulse;
+		}
+
 		private struct ContactConstraint {
 			public W.Entity ContactEntity;
 			public W.Entity BodyA;
@@ -26,14 +42,18 @@ public abstract partial class Core<TWorld> where TWorld : struct, ISessionType, 
 			public FVector3 Tangent1;
 			public FVector3 Tangent2;
 
-			/// <summary>World-frame anchor (center-of-mass relative), fixed at prepare time; rotated
-			/// live by each body's accumulated <see cref="Body.DeltaRotation"/> during solving.</summary>
-			public FVector3 RA;
-			public FVector3 RB;
-			public FP BaseSeparation;
-			public FP NormalMass;
+			public int PointCount;
+			public ContactConstraintPoint Point0;
+			public ContactConstraintPoint Point1;
+			public ContactConstraintPoint Point2;
+			public ContactConstraintPoint Point3;
 
-			// Pre-inverted 2x2 tangent mass matrix.
+			/// <summary>Friction is solved once per manifold, not per point (box3d's single friction/
+			/// twist anchor per manifold), through the average of every point's RA/RB.</summary>
+			public FVector3 FrictionAnchorRA;
+			public FVector3 FrictionAnchorRB;
+
+			// Pre-inverted 2x2 tangent mass matrix, computed at the friction anchor.
 			public FP TangentMassXX;
 			public FP TangentMassYY;
 			public FP TangentMassXY;
@@ -41,14 +61,40 @@ public abstract partial class Core<TWorld> where TWorld : struct, ISessionType, 
 			public FP Friction;
 			public FP Restitution;
 
-			/// <summary>Pre-solve relative normal velocity, captured once in Prepare, used by restitution.</summary>
-			public FP RelativeVelocity;
-
-			public FP NormalImpulse;
 			public FP FrictionImpulseX;
 			public FP FrictionImpulseY;
-			public FP TotalNormalImpulse;
 			public Softness Softness;
+
+			/// <summary>
+			/// Rolling resistance: a Coulomb-limited torque that drives the bodies' relative angular
+			/// velocity toward zero, ported from box3d's contact_solver.c. Zero (the common case,
+			/// since <see cref="SurfaceMaterial.RollingResistance"/> defaults to zero) skips the block
+			/// in <see cref="Solve"/> entirely.
+			/// </summary>
+			public FP RollingResistance;
+
+			/// <summary>Full 3x3 effective inverse-inertia-sum mass for the rolling-resistance constraint (not projected onto a 2D basis, unlike friction).</summary>
+			public FMatrix3 RollingMass;
+
+			public FVector3 RollingImpulse;
+
+			public ContactConstraintPoint GetPoint(int index) {
+				return index switch {
+					0 => Point0,
+					1 => Point1,
+					2 => Point2,
+					_ => Point3,
+				};
+			}
+
+			public void SetPoint(int index, ContactConstraintPoint point) {
+				switch (index) {
+					case 0: Point0 = point; break;
+					case 1: Point1 = point; break;
+					case 2: Point2 = point; break;
+					default: Point3 = point; break;
+				}
+			}
 		}
 
 		public void Update() {
@@ -128,7 +174,8 @@ public abstract partial class Core<TWorld> where TWorld : struct, ISessionType, 
 			// check). FVector3.Perp divides by the normal's assumed unit length, so skip solving this
 			// contact for this tick rather than crash; it'll either resolve next tick as the bodies
 			// separate a little, or get destroyed by ContactSystem once the AABBs stop overlapping.
-			if (FVector3.LengthSqr(contact.Manifold.Normal) < FP.CalculationsEpsilonSqr) {
+			ref readonly var manifold = ref contact.Manifold;
+			if (manifold.PointCount == 0 || FVector3.LengthSqr(manifold.Normal) < FP.CalculationsEpsilonSqr) {
 				return false;
 			}
 
@@ -137,34 +184,72 @@ public abstract partial class Core<TWorld> where TWorld : struct, ISessionType, 
 			ref readonly var bodyA = ref bodyAEntity.Read<Body>()!; // TryGetBody only resolves entities with Body.
 			ref readonly var bodyB = ref bodyBEntity.Read<Body>()!;
 
-			// Manifold.Normal/Point0.Point are in shape A's local frame (Distance.ShapeDistance's
+			// Manifold.Normal/points are in shape A's local frame (Distance.ShapeDistance's
 			// contract) — rotate/transform into world using bodyA's transform now, before this tick's
 			// integration moves anything.
-			var worldNormal = bodyA.Transform.Rotation * contact.Manifold.Normal;
-			var worldPoint = FWorldTransform.TransformPoint(bodyA.Transform, contact.Manifold.Point0.Point);
-
-			var rA = worldPoint - bodyA.Center;
-			var rB = worldPoint - bodyB.Center;
-
-			var baseSeparation = contact.Manifold.Point0.Separation - FVector3.Dot(rB - rA, worldNormal);
-
-			var tangent1 = FVector3.Perp(worldNormal);
-			var tangent2 = FVector3.Cross(tangent1, worldNormal);
+			var worldNormal = bodyA.Transform.Rotation * manifold.Normal;
 
 			var invMassA = bodyA.InvMass;
 			var invMassB = bodyB.InvMass;
 			var invIA = bodyA.InvInertiaWorld;
 			var invIB = bodyB.InvInertiaWorld;
 
-			var rnA = FVector3.Cross(rA, worldNormal);
-			var rnB = FVector3.Cross(rB, worldNormal);
-			var kNormal = invMassA + invMassB + FVector3.Dot(rnA, invIA * rnA) + FVector3.Dot(rnB, invIB * rnB);
-			var normalMass = kNormal > FP.Zero ? FP.One / kNormal : FP.Zero;
+			constraint.ContactEntity = contactEntity;
+			constraint.BodyA = bodyAEntity;
+			constraint.BodyB = bodyBEntity;
+			constraint.Normal = worldNormal;
+			constraint.PointCount = manifold.PointCount;
 
-			var rtA1 = FVector3.Cross(rA, tangent1);
-			var rtA2 = FVector3.Cross(rA, tangent2);
-			var rtB1 = FVector3.Cross(rB, tangent1);
-			var rtB2 = FVector3.Cross(rB, tangent2);
+			// Friction is solved once per manifold, through the average anchor of every point (matches
+			// box3d), rather than per point.
+			var frictionAnchorRA = FVector3.Zero;
+			var frictionAnchorRB = FVector3.Zero;
+
+			for (var i = 0; i < manifold.PointCount; i++) {
+				var manifoldPoint = manifold.GetPoint(i);
+				var worldPoint = FWorldTransform.TransformPoint(bodyA.Transform, manifoldPoint.Point);
+
+				var rA = worldPoint - bodyA.Center;
+				var rB = worldPoint - bodyB.Center;
+				frictionAnchorRA += rA;
+				frictionAnchorRB += rB;
+
+				var baseSeparation = manifoldPoint.Separation - FVector3.Dot(rB - rA, worldNormal);
+
+				var rnA = FVector3.Cross(rA, worldNormal);
+				var rnB = FVector3.Cross(rB, worldNormal);
+				var kNormal = invMassA + invMassB + FVector3.Dot(rnA, invIA * rnA) + FVector3.Dot(rnB, invIB * rnB);
+				var normalMass = kNormal > FP.Zero ? FP.One / kNormal : FP.Zero;
+
+				var vrA = bodyA.LinearVelocity + FVector3.Cross(bodyA.AngularVelocity, rA);
+				var vrB = bodyB.LinearVelocity + FVector3.Cross(bodyB.AngularVelocity, rB);
+				var relativeVelocity = FVector3.Dot(worldNormal, vrB - vrA);
+
+				constraint.SetPoint(i, new ContactConstraintPoint {
+					RA = rA,
+					RB = rB,
+					BaseSeparation = baseSeparation,
+					NormalMass = normalMass,
+					RelativeVelocity = relativeVelocity,
+					NormalImpulse = enableWarmStarting ? manifoldPoint.NormalImpulse : FP.Zero,
+					TotalNormalImpulse = FP.Zero,
+				});
+			}
+
+			frictionAnchorRA /= manifold.PointCount;
+			frictionAnchorRB /= manifold.PointCount;
+			constraint.FrictionAnchorRA = frictionAnchorRA;
+			constraint.FrictionAnchorRB = frictionAnchorRB;
+
+			var tangent1 = FVector3.Perp(worldNormal);
+			var tangent2 = FVector3.Cross(tangent1, worldNormal);
+			constraint.Tangent1 = tangent1;
+			constraint.Tangent2 = tangent2;
+
+			var rtA1 = FVector3.Cross(frictionAnchorRA, tangent1);
+			var rtA2 = FVector3.Cross(frictionAnchorRA, tangent2);
+			var rtB1 = FVector3.Cross(frictionAnchorRB, tangent1);
+			var rtB2 = FVector3.Cross(frictionAnchorRB, tangent2);
 
 			var kxx = invMassA + invMassB + FVector3.Dot(rtA1, invIA * rtA1) + FVector3.Dot(rtB1, invIB * rtB1);
 			var kyy = invMassA + invMassB + FVector3.Dot(rtA2, invIA * rtA2) + FVector3.Dot(rtB2, invIB * rtB2);
@@ -179,37 +264,23 @@ public abstract partial class Core<TWorld> where TWorld : struct, ISessionType, 
 				tangentMassXY = -kxy * invDet;
 			}
 
-			var vrA = bodyA.LinearVelocity + FVector3.Cross(bodyA.AngularVelocity, rA);
-			var vrB = bodyB.LinearVelocity + FVector3.Cross(bodyB.AngularVelocity, rB);
-			var relativeVelocity = FVector3.Dot(worldNormal, vrB - vrA);
+			constraint.TangentMassXX = tangentMassXX;
+			constraint.TangentMassYY = tangentMassYY;
+			constraint.TangentMassXY = tangentMassXY;
 
-			var friction = FP.Sqrt(shapeDataA.Material.Friction * shapeDataB.Material.Friction);
-			var restitution = FP.Max(shapeDataA.Material.Restitution, shapeDataB.Material.Restitution);
-			var softness = bodyA.Type == BodyType.Static || bodyB.Type == BodyType.Static ? staticSoftness : contactSoftness;
+			constraint.Friction = FP.Sqrt(shapeDataA.Material.Friction * shapeDataB.Material.Friction);
+			constraint.Restitution = FP.Max(shapeDataA.Material.Restitution, shapeDataB.Material.Restitution);
+			constraint.FrictionImpulseX = enableWarmStarting ? contact.FrictionImpulseX : FP.Zero;
+			constraint.FrictionImpulseY = enableWarmStarting ? contact.FrictionImpulseY : FP.Zero;
 
-			constraint = new ContactConstraint {
-				ContactEntity = contactEntity,
-				BodyA = bodyAEntity,
-				BodyB = bodyBEntity,
-				Normal = worldNormal,
-				Tangent1 = tangent1,
-				Tangent2 = tangent2,
-				RA = rA,
-				RB = rB,
-				BaseSeparation = baseSeparation,
-				NormalMass = normalMass,
-				TangentMassXX = tangentMassXX,
-				TangentMassYY = tangentMassYY,
-				TangentMassXY = tangentMassXY,
-				Friction = friction,
-				Restitution = restitution,
-				RelativeVelocity = relativeVelocity,
-				NormalImpulse = enableWarmStarting ? contact.Manifold.Point0.NormalImpulse : FP.Zero,
-				FrictionImpulseX = enableWarmStarting ? contact.FrictionImpulseX : FP.Zero,
-				FrictionImpulseY = enableWarmStarting ? contact.FrictionImpulseY : FP.Zero,
-				TotalNormalImpulse = FP.Zero,
-				Softness = softness,
-			};
+			// Rolling resistance combining, matching box3d's b3UpdateConvexContact: the stronger of
+			// the two materials' coefficients, scaled by whichever shape's own rolling radius is
+			// larger (a sphere/capsule's radius, or a quarter of a hull's inner radius).
+			constraint.RollingResistance = FP.Max(shapeDataA.Material.RollingResistance, shapeDataB.Material.RollingResistance)
+				* FP.Max(shapeDataA.RollingRadius(), shapeDataB.RollingRadius());
+			constraint.RollingMass = FMatrix3.Invert(invIA + invIB);
+			constraint.RollingImpulse = enableWarmStarting ? contact.RollingImpulse : FVector3.Zero;
+			constraint.Softness = bodyA.Type == BodyType.Static || bodyB.Type == BodyType.Static ? staticSoftness : contactSoftness;
 
 			return true;
 		}
@@ -273,8 +344,15 @@ public abstract partial class Core<TWorld> where TWorld : struct, ISessionType, 
 
 		private static void WarmStart(List<ContactConstraint> constraints) {
 			foreach (var c in constraints) {
-				var p = c.NormalImpulse * c.Normal + c.FrictionImpulseX * c.Tangent1 + c.FrictionImpulseY * c.Tangent2;
-				ApplyImpulse(c.BodyA, c.BodyB, c.RA, c.RB, p);
+				for (var k = 0; k < c.PointCount; k++) {
+					var pt = c.GetPoint(k);
+					ApplyImpulse(c.BodyA, c.BodyB, pt.RA, pt.RB, pt.NormalImpulse * c.Normal);
+				}
+
+				var friction = c.FrictionImpulseX * c.Tangent1 + c.FrictionImpulseY * c.Tangent2;
+				ApplyImpulse(c.BodyA, c.BodyB, c.FrictionAnchorRA, c.FrictionAnchorRB, friction);
+
+				ApplyAngularImpulse(c.BodyA, c.BodyB, c.RollingImpulse);
 			}
 		}
 
@@ -286,39 +364,73 @@ public abstract partial class Core<TWorld> where TWorld : struct, ISessionType, 
 				ref var bodyB = ref c.BodyB.Ref<Body>()!;
 
 				var dp = bodyB.DeltaPosition - bodyA.DeltaPosition;
-				var ds = dp + (bodyB.DeltaRotation * c.RB - bodyA.DeltaRotation * c.RA);
-				var s = FVector3.Dot(ds, c.Normal) + c.BaseSeparation;
+				var totalNormalImpulse = FP.Zero;
 
-				FP velocityBias = FP.Zero, massScale = FP.One, impulseScale = FP.Zero;
-				if (s > FP.Zero) {
-					// Speculative: not yet touching — cap approach velocity so this substep can't tunnel past the surface.
-					velocityBias = s * invH;
-				} else if (useBias) {
-					velocityBias = FP.Max(c.Softness.MassScale * c.Softness.BiasRate * s, -contactSpeed);
-					massScale = c.Softness.MassScale;
-					impulseScale = c.Softness.ImpulseScale;
+				for (var k = 0; k < c.PointCount; k++) {
+					var pt = c.GetPoint(k);
+
+					var ds = dp + (bodyB.DeltaRotation * pt.RB - bodyA.DeltaRotation * pt.RA);
+					var s = FVector3.Dot(ds, c.Normal) + pt.BaseSeparation;
+
+					FP velocityBias = FP.Zero, massScale = FP.One, impulseScale = FP.Zero;
+					if (s > FP.Zero) {
+						// Speculative: not yet touching — cap approach velocity so this substep can't tunnel past the surface.
+						velocityBias = s * invH;
+					} else if (useBias) {
+						velocityBias = FP.Max(c.Softness.MassScale * c.Softness.BiasRate * s, -contactSpeed);
+						massScale = c.Softness.MassScale;
+						impulseScale = c.Softness.ImpulseScale;
+					}
+
+					var vrA = bodyA.LinearVelocity + FVector3.Cross(bodyA.AngularVelocity, pt.RA);
+					var vrB = bodyB.LinearVelocity + FVector3.Cross(bodyB.AngularVelocity, pt.RB);
+					var vn = FVector3.Dot(vrB - vrA, c.Normal);
+
+					var deltaImpulse = -pt.NormalMass * (massScale * vn + velocityBias) - impulseScale * pt.NormalImpulse;
+					var newImpulse = FP.Max(pt.NormalImpulse + deltaImpulse, FP.Zero);
+					deltaImpulse = newImpulse - pt.NormalImpulse;
+					pt.NormalImpulse = newImpulse;
+					pt.TotalNormalImpulse += newImpulse;
+					totalNormalImpulse += pt.TotalNormalImpulse;
+
+					var p = deltaImpulse * c.Normal;
+					bodyA.LinearVelocity -= bodyA.InvMass * p;
+					bodyA.AngularVelocity -= bodyA.InvInertiaWorld * FVector3.Cross(pt.RA, p);
+					bodyB.LinearVelocity += bodyB.InvMass * p;
+					bodyB.AngularVelocity += bodyB.InvInertiaWorld * FVector3.Cross(pt.RB, p);
+
+					c.SetPoint(k, pt);
 				}
 
-				var vrA = bodyA.LinearVelocity + FVector3.Cross(bodyA.AngularVelocity, c.RA);
-				var vrB = bodyB.LinearVelocity + FVector3.Cross(bodyB.AngularVelocity, c.RB);
-				var vn = FVector3.Dot(vrB - vrA, c.Normal);
-
-				var deltaImpulse = -c.NormalMass * (massScale * vn + velocityBias) - impulseScale * c.NormalImpulse;
-				var newImpulse = FP.Max(c.NormalImpulse + deltaImpulse, FP.Zero);
-				deltaImpulse = newImpulse - c.NormalImpulse;
-				c.NormalImpulse = newImpulse;
-				c.TotalNormalImpulse += newImpulse;
-
-				var p = deltaImpulse * c.Normal;
-				bodyA.LinearVelocity -= bodyA.InvMass * p;
-				bodyA.AngularVelocity -= bodyA.InvInertiaWorld * FVector3.Cross(c.RA, p);
-				bodyB.LinearVelocity += bodyB.InvMass * p;
-				bodyB.AngularVelocity += bodyB.InvInertiaWorld * FVector3.Cross(c.RB, p);
-
-				// Friction only during the unbiased "relax" pass, matching box3d.
+				// Friction only during the unbiased "relax" pass, matching box3d. Solved once per
+				// manifold through the friction anchor (RA/RB averaged across points), not per point.
 				if (!useBias) {
-					vrA = bodyA.LinearVelocity + FVector3.Cross(bodyA.AngularVelocity, c.RA);
-					vrB = bodyB.LinearVelocity + FVector3.Cross(bodyB.AngularVelocity, c.RB);
+					// Rolling resistance, right before friction (matches box3d's ordering). A
+					// Coulomb-limited torque driving the bodies' relative angular velocity toward
+					// zero -- see ContactConstraint.RollingResistance's remarks. Skipped entirely
+					// when zero, which is the default (SurfaceMaterial.RollingResistance defaults to
+					// zero), so this has no effect unless a shape opts in.
+					if (c.RollingResistance > FP.Zero) {
+						var deltaRollingImpulse = -(c.RollingMass * (bodyB.AngularVelocity - bodyA.AngularVelocity));
+						var newRollingImpulse = c.RollingImpulse + deltaRollingImpulse;
+
+						// Box-clamp rather than box3d's precise Euclidean (disc) clamp, for the same
+						// Fixed32 squaring-overflow reason as the friction cone clamp below.
+						var maxRollingImpulse = FP.Abs(c.RollingResistance * totalNormalImpulse);
+						newRollingImpulse = new FVector3(
+							FP.Clamp(newRollingImpulse.X, -maxRollingImpulse, maxRollingImpulse),
+							FP.Clamp(newRollingImpulse.Y, -maxRollingImpulse, maxRollingImpulse),
+							FP.Clamp(newRollingImpulse.Z, -maxRollingImpulse, maxRollingImpulse));
+
+						deltaRollingImpulse = newRollingImpulse - c.RollingImpulse;
+						c.RollingImpulse = newRollingImpulse;
+
+						bodyA.AngularVelocity -= bodyA.InvInertiaWorld * deltaRollingImpulse;
+						bodyB.AngularVelocity += bodyB.InvInertiaWorld * deltaRollingImpulse;
+					}
+
+					var vrA = bodyA.LinearVelocity + FVector3.Cross(bodyA.AngularVelocity, c.FrictionAnchorRA);
+					var vrB = bodyB.LinearVelocity + FVector3.Cross(bodyB.AngularVelocity, c.FrictionAnchorRB);
 					var vr = vrB - vrA;
 					var vtX = FVector3.Dot(vr, c.Tangent1);
 					var vtY = FVector3.Dot(vr, c.Tangent2);
@@ -336,7 +448,7 @@ public abstract partial class Core<TWorld> where TWorld : struct, ISessionType, 
 					// large corrective impulses). A box clamp needs no squaring at all, so it can't
 					// overflow this way; the only cost is friction can be up to ~1.41x stronger exactly
 					// on the diagonal between tangent1/tangent2, which doesn't affect stability.
-					var maxImpulse = FP.Abs(c.Friction * c.TotalNormalImpulse);
+					var maxImpulse = FP.Abs(c.Friction * totalNormalImpulse);
 					newX = FP.Clamp(newX, -maxImpulse, maxImpulse);
 					newY = FP.Clamp(newY, -maxImpulse, maxImpulse);
 
@@ -347,9 +459,9 @@ public abstract partial class Core<TWorld> where TWorld : struct, ISessionType, 
 
 					var p2 = dImpulseX * c.Tangent1 + dImpulseY * c.Tangent2;
 					bodyA.LinearVelocity -= bodyA.InvMass * p2;
-					bodyA.AngularVelocity -= bodyA.InvInertiaWorld * FVector3.Cross(c.RA, p2);
+					bodyA.AngularVelocity -= bodyA.InvInertiaWorld * FVector3.Cross(c.FrictionAnchorRA, p2);
 					bodyB.LinearVelocity += bodyB.InvMass * p2;
-					bodyB.AngularVelocity += bodyB.InvInertiaWorld * FVector3.Cross(c.RB, p2);
+					bodyB.AngularVelocity += bodyB.InvInertiaWorld * FVector3.Cross(c.FrictionAnchorRB, p2);
 				}
 
 				constraints[i] = c;
@@ -360,28 +472,38 @@ public abstract partial class Core<TWorld> where TWorld : struct, ISessionType, 
 			for (var i = 0; i < constraints.Count; i++) {
 				var c = constraints[i];
 
-				if (c.Restitution == FP.Zero || c.RelativeVelocity > -restitutionThreshold || c.TotalNormalImpulse == FP.Zero) {
+				if (c.Restitution == FP.Zero) {
 					continue;
 				}
 
 				ref var bodyA = ref c.BodyA.Ref<Body>()!; // TryPrepare only stores entities with Body.
 				ref var bodyB = ref c.BodyB.Ref<Body>()!;
 
-				var vrA = bodyA.LinearVelocity + FVector3.Cross(bodyA.AngularVelocity, c.RA);
-				var vrB = bodyB.LinearVelocity + FVector3.Cross(bodyB.AngularVelocity, c.RB);
-				var vn = FVector3.Dot(vrB - vrA, c.Normal);
+				for (var k = 0; k < c.PointCount; k++) {
+					var pt = c.GetPoint(k);
 
-				var impulse = -c.NormalMass * (vn + c.Restitution * c.RelativeVelocity);
-				var newImpulse = FP.Max(c.NormalImpulse + impulse, FP.Zero);
-				impulse = newImpulse - c.NormalImpulse;
-				c.NormalImpulse = newImpulse;
-				c.TotalNormalImpulse += impulse;
+					if (pt.RelativeVelocity > -restitutionThreshold || pt.TotalNormalImpulse == FP.Zero) {
+						continue;
+					}
 
-				var p = impulse * c.Normal;
-				bodyA.LinearVelocity -= bodyA.InvMass * p;
-				bodyA.AngularVelocity -= bodyA.InvInertiaWorld * FVector3.Cross(c.RA, p);
-				bodyB.LinearVelocity += bodyB.InvMass * p;
-				bodyB.AngularVelocity += bodyB.InvInertiaWorld * FVector3.Cross(c.RB, p);
+					var vrA = bodyA.LinearVelocity + FVector3.Cross(bodyA.AngularVelocity, pt.RA);
+					var vrB = bodyB.LinearVelocity + FVector3.Cross(bodyB.AngularVelocity, pt.RB);
+					var vn = FVector3.Dot(vrB - vrA, c.Normal);
+
+					var impulse = -pt.NormalMass * (vn + c.Restitution * pt.RelativeVelocity);
+					var newImpulse = FP.Max(pt.NormalImpulse + impulse, FP.Zero);
+					impulse = newImpulse - pt.NormalImpulse;
+					pt.NormalImpulse = newImpulse;
+					pt.TotalNormalImpulse += impulse;
+
+					var p = impulse * c.Normal;
+					bodyA.LinearVelocity -= bodyA.InvMass * p;
+					bodyA.AngularVelocity -= bodyA.InvInertiaWorld * FVector3.Cross(pt.RA, p);
+					bodyB.LinearVelocity += bodyB.InvMass * p;
+					bodyB.AngularVelocity += bodyB.InvInertiaWorld * FVector3.Cross(pt.RB, p);
+
+					c.SetPoint(k, pt);
+				}
 
 				constraints[i] = c;
 			}
@@ -410,10 +532,25 @@ public abstract partial class Core<TWorld> where TWorld : struct, ISessionType, 
 		private static void StoreImpulses(List<ContactConstraint> constraints) {
 			foreach (var c in constraints) {
 				ref var contact = ref c.ContactEntity.Ref<Contact>()!; // TryPrepare only stores entities with Contact.
-				contact.Manifold.Point0.NormalImpulse = c.NormalImpulse;
+				for (var k = 0; k < c.PointCount; k++) {
+					var manifoldPoint = contact.Manifold.GetPoint(k);
+					manifoldPoint.NormalImpulse = c.GetPoint(k).NormalImpulse;
+					contact.Manifold.SetPoint(k, manifoldPoint);
+				}
+
 				contact.FrictionImpulseX = c.FrictionImpulseX;
 				contact.FrictionImpulseY = c.FrictionImpulseY;
+				contact.RollingImpulse = c.RollingImpulse;
 			}
+		}
+
+		/// <summary>Pure angular impulse (no linear component, no application point) -- used by the rolling-resistance constraint.</summary>
+		private static void ApplyAngularImpulse(W.Entity bodyAEntity, W.Entity bodyBEntity, FVector3 angularImpulse) {
+			ref var bodyA = ref bodyAEntity.Ref<Body>()!; // Callers only pass entities with Body (WarmStart's constraint bodies).
+			ref var bodyB = ref bodyBEntity.Ref<Body>()!;
+
+			bodyA.AngularVelocity -= bodyA.InvInertiaWorld * angularImpulse;
+			bodyB.AngularVelocity += bodyB.InvInertiaWorld * angularImpulse;
 		}
 
 		private static void ApplyImpulse(W.Entity bodyAEntity, W.Entity bodyBEntity, FVector3 rA, FVector3 rB, FVector3 p) {

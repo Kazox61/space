@@ -22,11 +22,12 @@ public abstract partial class Core<TWorld> where TWorld : struct, ISessionType, 
 			Systems.Add(new SpawnSphereSystem(), order: 0);
 			Systems.Add(new DamageSystem(), order: 0);
 			Systems.Add(new DeathSystem(), order: 1);
-			Systems.Add(new MovementSystem(), order: 2);
+			Systems.Add(new PlayerMoverSystem(), order: 2);
 			Systems.Add(new ProjectileMovementSystem(), order: 3);
 			Systems.Add(new ShapeProxySystem(), order: 4);
 			Systems.Add(new ContactSystem(), order: 5);
 			Systems.Add(new ContactSolverSystem(), order: 6);
+			Systems.Add(new BodyTransformSyncSystem(), order: 7);
 		}
 	}
 }

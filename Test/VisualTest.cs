@@ -26,7 +26,7 @@ public static class VisualTest {
 			Type = BodyType.Static,
 			Transform = new FWorldTransform(new FPos(Fixed64.FP.Zero, Fixed64.FP.FromRatio(-(int)GroundRadius, 1), Fixed64.FP.Zero), FQuaternion.Identity),
 		});
-		ShapeFactory.CreateShape(groundBody, Shape.MakeSphere(FVector3.Zero, FP.FromRatio((int)GroundRadius, 1)));
+		ShapeFactory.CreateShape(groundBody, Shape.MakeBox(FVector3.Zero, new FVector3(FP.FromRatio((int)GroundRadius, 1), FP.One, FP.FromRatio((int)GroundRadius, 1))));
 
 		SpawnSphere(new FVector3(FP.Zero, FP.FromRatio(6, 1), FP.Zero));
 

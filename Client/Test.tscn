@@ -2,7 +2,6 @@
 
 [ext_resource type="Script" uid="uid://8s5cf28weng7" path="res://setup/Test.cs" id="1_myinc"]
 [ext_resource type="PackedScene" uid="uid://daakfmjk2otty" path="res://touchscreen_ui.tscn" id="2_2au82"]
-[ext_resource type="Material" uid="uid://crh4edqr4kdta" path="res://material/grid_mat.tres" id="3_8tn2x"]
 
 [sub_resource type="Environment" id="Environment_aq4fw"]
 background_mode = 1
@@ -18,13 +17,6 @@ fog_light_color = Color(0.14901961, 0.14901961, 0.14901961, 1)
 fog_density = 1.0
 fog_depth_end = 50.0
 
-[sub_resource type="SphereMesh" id="SphereMesh_ivycn"]
-radius = 40.0
-height = 80.0
-
-[sub_resource type="BoxMesh" id="BoxMesh_jfow4"]
-size = Vector3(2, 1, 2)
-
 [node name="Test" type="Node3D" unique_id=1684976908]
 script = ExtResource("1_myinc")
 
@@ -36,15 +28,6 @@ environment = SubResource("Environment_aq4fw")
 [node name="DirectionalLight3D" type="DirectionalLight3D" parent="." unique_id=1251768306]
 transform = Transform3D(0.42261824, 0.6408564, -0.6408564, 0, 0.70710677, 0.70710677, 0.9063078, -0.29883623, 0.29883623, 0, 0, 0)
 shadow_enabled = true
-
-[node name="MeshInstance3D" type="MeshInstance3D" parent="." unique_id=1739131165]
-visible = false
-material_override = ExtResource("3_8tn2x")
-mesh = SubResource("SphereMesh_ivycn")
-
-[node name="MeshInstance3D2" type="MeshInstance3D" parent="." unique_id=1053988692]
-transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 40, 0)
-mesh = SubResource("BoxMesh_jfow4")
 
 [connection signal="flicked" from="TouchscreenUi/HBoxContainer/Control/VirtualJoystick2" to="." method="OnAttack"]
 

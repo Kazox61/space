@@ -1,6 +1,5 @@
 using FFS.Libraries.StaticEcs;
 using Shenanicode.Rollback;
-using Fixed32;
 
 namespace Space.GameCore;
 
@@ -8,11 +7,9 @@ public abstract partial class Core<TWorld> where TWorld : struct, ISessionType, 
 	public struct SpawnPlayerSystem : ISystem {
 		public void Update() {
 			foreach (var (channel, data) in S.GetAllSignals<PlayerConnectedSignal>()) {
-				var player = W.NewEntity(new Player { PlayerGuid = data.PlayerGuid, InputChannel = channel });
-
-				// Standing capsule: two half-radius hemispheres a body-length apart, feet at the body origin.
-				var capsule = Shape.MakeCapsule(new FVector3(FP.Zero, FP.Half, FP.Zero), new FVector3(FP.Zero, FP.One + FP.Half, FP.Zero), FP.Half);
-				ShapeFactory.CreateShape(player, capsule);
+				// Capsule dimensions live on Mover (set in Player.OnCreate) -- the player has no
+				// Body/Shape of its own, so there's nothing to create here.
+				W.NewEntity(new Player { PlayerGuid = data.PlayerGuid, InputChannel = channel });
 			}
 
 			foreach (var (channel, data) in S.GetAllSignals<PlayerDisconnectedSignal>()) {

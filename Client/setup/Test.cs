@@ -48,7 +48,8 @@ public partial class Test : Node3D {
 				ViewAsset.Player => "res://player.tscn",
 				ViewAsset.Projectile => "res://projectile.tscn",
 				ViewAsset.Sphere => "res://sphere.tscn",
-				ViewAsset.BigSphere => "res://big_sphere.tscn",
+				ViewAsset.Platform => "res://platform.tscn",
+				ViewAsset.Box => "res://box.tscn",
 				_ => ""
 			};
 			GD.Print($"Loading view for entity {entity.GID} from {path} with viewId {viewId.Value}");

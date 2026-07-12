@@ -21,4 +21,11 @@ public struct Contact : IComponent {
 	/// </summary>
 	public FP FrictionImpulseX;
 	public FP FrictionImpulseY;
+
+	/// <summary>
+	/// Warm-start rolling-resistance impulse (a full angular-velocity-difference impulse, not
+	/// projected onto a 2D tangent basis like friction), persisted across ticks. See
+	/// <c>ContactSolverSystem</c>'s rolling-resistance block, ported from box3d's contact_solver.c.
+	/// </summary>
+	public FVector3 RollingImpulse;
 }
