@@ -139,6 +139,16 @@ public struct Shape : IComponent, IComponentConfig<Shape> {
 		return FP.Min(B3Config.MaxAabbMargin, B3Config.AabbMarginFraction * margin);
 	}
 
+	/// <summary>Ray cast this shape in the frame its own geometry fields (e.g. <see cref="Sphere.Center"/>) live in -- callers own the world/local transform.</summary>
+	public CastOutput RayCast(RayCastInput input) {
+		return Type switch {
+			ShapeType.Sphere => Sphere.RayCast(SphereShape, input),
+			ShapeType.Capsule => Capsule.RayCast(CapsuleShape, input),
+			ShapeType.Hull => Hull.RayCast(HullShape, input),
+			_ => default,
+		};
+	}
+
 	/// <summary>Compute the (tight) AABB of this shape under a local transform.</summary>
 	public FAABB ComputeAABB(FTransform transform) {
 		return Type switch {

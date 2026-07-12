@@ -8,6 +8,35 @@ namespace Space.GameCore;
 /// (ISupportMappable-based, no closest-point-when-separated query) shipped by the fixed-point library.
 /// </summary>
 internal static class GJK {
+	/// <summary>
+	/// Cap on the largest component <see cref="ComputeSafeScale3"/>/<see cref="ComputeSafeScale4"/>
+	/// will allow through unscaled. See their remarks: chosen so a 4th-power-compounded product of
+	/// scaled points (the worst case in <see cref="BarycentricCoordsTri"/>) stays comfortably inside
+	/// Fixed32's ~32767 ceiling.
+	/// </summary>
+	private static readonly FP SafeMagnitude = FP.FromRatio(4, 1);
+
+	private static FP MaxAbsComponent(FVector3 v) {
+		return FP.Max(FP.Abs(v.X), FP.Max(FP.Abs(v.Y), FP.Abs(v.Z)));
+	}
+
+	/// <summary>
+	/// A factor that rescales a/b/c so no component exceeds <see cref="SafeMagnitude"/> (1 if
+	/// they're already small -- a genuine no-op for the ordinary small-shape case). See
+	/// <see cref="BarycentricCoordsTri"/>'s remarks for why every point going into one barycentric
+	/// computation must be scaled by the same factor.
+	/// </summary>
+	private static FP ComputeSafeScale3(FVector3 a, FVector3 b, FVector3 c) {
+		var max = FP.Max(MaxAbsComponent(a), FP.Max(MaxAbsComponent(b), MaxAbsComponent(c)));
+		return SafeMagnitude / FP.Max(SafeMagnitude, max);
+	}
+
+	/// <inheritdoc cref="ComputeSafeScale3"/>
+	private static FP ComputeSafeScale4(FVector3 a, FVector3 b, FVector3 c, FVector3 d) {
+		var max = FP.Max(MaxAbsComponent(a), FP.Max(MaxAbsComponent(b), FP.Max(MaxAbsComponent(c), MaxAbsComponent(d))));
+		return SafeMagnitude / FP.Max(SafeMagnitude, max);
+	}
+
 	private static FP ScalarTripleProduct(FVector3 a, FVector3 b, FVector3 c) {
 		return FVector3.Dot(a, FVector3.Cross(b, c));
 	}
@@ -42,7 +71,26 @@ internal static class GJK {
 		v = -FVector3.Dot(a, ab);
 	}
 
+	/// <summary>
+	/// Ported from box3d's b3BarycentricCoordsTri (distance.c), which chains two cross products of
+	/// the *raw* input points before dotting them together (bXc, abXac, then Dot(bXc, abXac)) -- a
+	/// 4th-power-compounded term. Fine for box3d's float32 (huge dynamic range, graceful precision
+	/// loss); silently overflows Fixed32's ~32767 ceiling for perfectly ordinary shape sizes (this
+	/// project's ground is 40 units across, and 40^4 alone is already far past the ceiling before
+	/// any cross-product amplification). Rescaling a/b/c by a common factor first -- once, shared
+	/// across all four cross-product terms below, never independently per-term, since preserving the
+	/// output *ratios* (u/divisor etc., which become simplex.Vx.A blend weights) requires numerator
+	/// and divisor to be scaled identically -- keeps every intermediate safe while leaving the
+	/// resulting weights unchanged (uniformly scaling a/b/c by k scales every term here by the same
+	/// power of k, so the ratios are invariant). Small shapes that were never at risk pass through
+	/// unscaled (ComputeSafeScale3 returns 1).
+	/// </summary>
 	private static void BarycentricCoordsTri(FVector3 a, FVector3 b, FVector3 c, out FP u, out FP v, out FP w, out FP divisor) {
+		var scale = ComputeSafeScale3(a, b, c);
+		a *= scale;
+		b *= scale;
+		c *= scale;
+
 		var ab = b - a;
 		var ac = c - a;
 
@@ -58,9 +106,16 @@ internal static class GJK {
 		w = FVector3.Dot(aXb, abXac);
 	}
 
+	/// <summary>See <see cref="BarycentricCoordsTri"/>'s remarks -- same box3d-raw-point overflow risk (here via chained ScalarTripleProduct calls), same shared-scale fix.</summary>
 	private static void BarycentricCoordsTet(
 		FVector3 a, FVector3 b, FVector3 c, FVector3 d,
 		out FP u, out FP v, out FP w, out FP x, out FP divisor) {
+		var scale = ComputeSafeScale4(a, b, c, d);
+		a *= scale;
+		b *= scale;
+		c *= scale;
+		d *= scale;
+
 		var ab = b - a;
 		var ac = c - a;
 		var ad = d - a;
@@ -85,10 +140,16 @@ internal static class GJK {
 				return FVector3.Distance(simplex.V0.W, simplex.V1.W);
 
 			case 3: {
+					// Same box3d-raw-point overflow risk as BarycentricCoordsTri (Cross of two edge
+					// vectors up to shape-extent scale, then squared inside Length's Sqrt(LengthSqr(..))
+					// -- see its remarks). This metric only ever feeds a same-formula relative
+					// comparison (old vs. fresh) plus a near-zero check, not an absolute physical
+					// area anywhere else, so scaling down first changes its units but not its use.
 					var a = simplex.V0.W;
 					var b = simplex.V1.W;
 					var c = simplex.V2.W;
-					return FVector3.Length(FVector3.Cross(b - a, c - a)) / 2;
+					var scale = ComputeSafeScale3(a, b, c);
+					return FVector3.Length(FVector3.Cross(scale * (b - a), scale * (c - a))) / 2;
 				}
 
 			case 4: {
@@ -96,7 +157,8 @@ internal static class GJK {
 					var b = simplex.V1.W;
 					var c = simplex.V2.W;
 					var d = simplex.V3.W;
-					return ScalarTripleProduct(b - a, c - a, d - a) / 6;
+					var scale = ComputeSafeScale4(a, b, c, d);
+					return ScalarTripleProduct(scale * (b - a), scale * (c - a), scale * (d - a)) / 6;
 				}
 
 			default:

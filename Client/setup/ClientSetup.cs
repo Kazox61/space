@@ -15,7 +15,8 @@ public static class ClientSetup {
 		CLNT.Create(GameSessionSetup.SessionConfig,
 			connection,
 			new GameWorldFullSyncHandler(),
-			logger: new GodotLogger("Client"));
+			logger: new GodotLogger("Client"),
+			tickSyncConfig: TickSyncConfig.Robust);
 		GameSessionSetup.Register();
 		CLNT.Initialize();
 

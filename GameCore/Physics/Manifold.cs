@@ -1,4 +1,5 @@
 using System;
+using System.Diagnostics;
 using Fixed32;
 using Fixed;
 
@@ -88,8 +89,20 @@ public struct Manifold {
 			(ShapeType.Hull, ShapeType.Capsule) => CollideHullCapsule(a.HullShape, b.CapsuleShape, xfBinA),
 			(ShapeType.Capsule, ShapeType.Hull) => CollideCapsuleHull(a.CapsuleShape, b.HullShape, xfBinA),
 			(ShapeType.Hull, ShapeType.Hull) => CollideHullHull(a.HullShape, b.HullShape, xfBinA),
-			_ => default,
+			_ => UnsupportedPair(a.Type, b.Type),
 		};
+	}
+
+	/// <summary>
+	/// Reached for any shape-type combination this port doesn't implement yet (mesh/height field/
+	/// compound, on either side). Returns an empty manifold -- these two shapes will never touch,
+	/// silently, exactly like every other unsupported pair here, but at least surfaces the
+	/// misconfiguration in DEBUG builds instead of looking identical to two shapes that are simply
+	/// far apart.
+	/// </summary>
+	private static Manifold UnsupportedPair(ShapeType a, ShapeType b) {
+		Debug.Assert(false, $"Manifold.Collide: no narrow-phase pair for ({a}, {b}) -- these two shapes will never generate a contact.");
+		return default;
 	}
 
 	/// <summary>Builds a single-point manifold from a closest-point pair and radii, all in A's frame.</summary>

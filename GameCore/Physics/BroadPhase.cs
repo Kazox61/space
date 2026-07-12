@@ -110,6 +110,44 @@ public abstract partial class Core<TWorld> where TWorld : struct, ISessionType, 
 			}
 		}
 
+		/// <summary>
+		/// Per-candidate ray-cast callback, invoked once per broad-phase leaf whose fat AABB the ray
+		/// still might cross. <paramref name="currentMaxFraction"/> is the closest fraction found so
+		/// far (shared across all three trees). Must return box3d's b3CastResultFcn 5-way contract:
+		/// 0 to stop the entire cast immediately; a value in (0, currentMaxFraction] to clip further
+		/// traversal to that fraction; a negative value to ignore this candidate; anything &gt;=
+		/// <paramref name="currentMaxFraction"/> to keep going without clipping (report-all-hits style).
+		/// The precise shape-vs-ray test (and therefore any Shape/Body/entity resolution) is entirely
+		/// the caller's job -- this class stays entity-resolution-free, matching <see cref="Query"/>.
+		/// </summary>
+		public delegate FP RayCastCallback(EntityGID shapeGid, FVector3 origin, FVector3 translation, FP currentMaxFraction);
+
+		/// <summary>
+		/// Casts a ray across all three body-type trees (static/kinematic/dynamic), threading one
+		/// shrinking <paramref name="maxFraction"/> across all of them so a closer hit in an earlier
+		/// tree prunes the later ones -- mirrors box3d's b3World_CastRay, which loops its own
+		/// static/kinematic/dynamic trees in a single query for the same reason.
+		/// </summary>
+		public void CastRay(FVector3 origin, FVector3 translation, FP maxFraction, RayCastCallback callback) {
+			var stopped = false;
+
+			for (var type = 0; type < TypeCount && !stopped; type++) {
+				var input = new DynamicTree.RayCastInput { Origin = origin, Direction = translation, MaxFraction = maxFraction };
+
+				_trees[type].RayCast(input, ulong.MaxValue, (ref DynamicTree.RayCastInput subInput, int _, ulong userData, object _) => {
+					var value = callback(new EntityGID(userData), origin, translation, subInput.MaxFraction);
+
+					if (value == FP.Zero) {
+						stopped = true;
+					} else if (value > FP.Zero && value <= maxFraction) {
+						maxFraction = value;
+					}
+
+					return value;
+				});
+			}
+		}
+
 		/// <summary>Removes a pair from the dedup set so it can be re-created later (call when a contact is destroyed).</summary>
 		public void ForgetPair(EntityGID a, EntityGID b) {
 			var pairKey = a.Raw < b.Raw ? (a.Raw, b.Raw) : (b.Raw, a.Raw);

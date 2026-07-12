@@ -137,10 +137,17 @@ public static class Distance {
 			}
 
 			if (simplex.Count == MaxSimplexVertices) {
-				// Overlap.
+				// Overlap. box3d's own b3ShapeDistance leaves Normal at its default here too (no
+				// well-defined separating normal for a confirmed 4-point Minkowski-difference
+				// overlap) -- harmless for callers that only read Distance/Fraction (e.g.
+				// CharacterMover.CastMover), but a caller that also needs a normal (e.g. a ground
+				// probe checking slope) would otherwise silently get (0,0,0) and misread it as "not
+				// standable." A same-point fallback from the witness points is still meaningful even
+				// under deep overlap, so populate it rather than leaving it blank.
 				GJK.ComputeWitnessPoints(simplex, out var localPointA, out var localPointB);
 				distanceOutput.PointA = localPointA;
 				distanceOutput.PointB = localPointB;
+				distanceOutput.Normal = FVector3.NormalizeSafe(localPointB - localPointA, FVector3.Up);
 				return distanceOutput;
 			}
 
@@ -191,7 +198,23 @@ public static class Distance {
 						// v = (AB x AO) x AB
 						var a = simplex.V0.W;
 						var b = simplex.V1.W;
-						var ab = b - a;
+						// box3d's own b3ComputeSimplexSearchDirection (distance.c) crosses the raw,
+						// unnormalized edge vector here -- safe for box3d's float32 (a large product
+						// just loses relative precision gracefully), not for Fixed32: two chained
+						// cross products of edges spanning tens of units (an ordinary-sized static
+						// shape, not a pathological input) compound to magnitudes that silently
+						// overflow Fixed32's ~32767 ceiling (FP's multiply operator computes the
+						// 64-bit product correctly but casts back to a 32-bit raw value unchecked),
+						// corrupting the search direction and derailing the whole GJK iteration.
+						// Direction-only usage (GJK.GetProxySupport only needs the argmax of a dot
+						// product, not searchDirection's actual magnitude), so normalizing the edge
+						// first is free: it bounds the result to the magnitude of `a` alone instead
+						// of the square of the edge length, and, as a bonus, makes the near-zero
+						// degenerate check below purely about the angle between the vectors instead
+						// of being conflated with their scale. Same fix already applied once in this
+						// codebase for the same box3d-raw-cross-product-on-large-shapes issue -- see
+						// Manifold.IsMinkowskiFace's remarks.
+						var ab = FVector3.NormalizeSafe(b - a);
 						searchDirection = FVector3.Cross(FVector3.Cross(ab, -a), ab);
 						break;
 					}
@@ -201,8 +224,11 @@ public static class Distance {
 						var a = simplex.V0.W;
 						var b = simplex.V1.W;
 						var c = simplex.V2.W;
-						var ab = b - a;
-						var ac = c - a;
+						// See the case 2 remarks just above -- same box3d-raw-edge-cross-product
+						// overflow risk, same fix (normalize the edges; only the sign/direction of
+						// n matters here, not its magnitude).
+						var ab = FVector3.NormalizeSafe(b - a);
+						var ac = FVector3.NormalizeSafe(c - a);
 						var n = FVector3.Cross(ab, ac);
 						searchDirection = FVector3.Dot(n, a) < FP.Zero ? n : -n;
 						break;
@@ -214,10 +240,13 @@ public static class Distance {
 			}
 
 			if (FVector3.LengthSqr(searchDirection) < FP.CalculationsEpsilonSqr) {
-				// The origin is probably contained by a line segment or triangle. The shapes are overlapped.
+				// The origin is probably contained by a line segment or triangle. The shapes are
+				// overlapped. See the MaxSimplexVertices branch above's remarks on why Normal is
+				// populated here too (a same-point fallback), not left at its zero default.
 				GJK.ComputeWitnessPoints(simplex, out var localPointA, out var localPointB);
 				distanceOutput.PointA = localPointA;
 				distanceOutput.PointB = localPointB;
+				distanceOutput.Normal = FVector3.NormalizeSafe(localPointB - localPointA, FVector3.Up);
 				return distanceOutput;
 			}
 
@@ -258,7 +287,15 @@ public static class Distance {
 
 		normal = FVector3.Normalize(normal);
 		if (!FVector3.IsNormalized(normal, NormalTolerance)) {
-			// Treat as overlap.
+			// Treat as overlap -- a third "no well-defined separating normal" exit (the main loop
+			// ended via no-progress/cycling/duplicate-vertex rather than one of the two explicit
+			// overlap returns above), which left PointA/PointB/Normal at their defaults too. Same
+			// fallback as those two: witness points from whatever simplex the loop landed on are
+			// still meaningful under overlap, so populate them instead of returning them blank.
+			GJK.ComputeWitnessPoints(simplex, out var localPointA, out var localPointB);
+			distanceOutput.PointA = localPointA;
+			distanceOutput.PointB = localPointB;
+			distanceOutput.Normal = FVector3.NormalizeSafe(localPointB - localPointA, FVector3.Up);
 			return distanceOutput;
 		}
 

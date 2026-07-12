@@ -30,6 +30,8 @@ public abstract partial class Core<TWorld> where TWorld : struct, ISessionType, 
 		private static readonly FVector3[] CandidateSphereProxyPoints = new FVector3[1];
 		private static readonly FVector3[] CandidateCapsuleProxyPoints = new FVector3[2];
 		private static readonly FVector3[] CandidateHullProxyPoints = new FVector3[8];
+		private static readonly FVector3[] GroundProbeProxyPoints = new FVector3[8];
+		private static readonly List<EntityGID> GroundProbeCandidates = new();
 
 		/// <summary>
 		/// Sweeps <paramref name="capsule"/> from <paramref name="moverXf"/> by
@@ -197,6 +199,162 @@ public abstract partial class Core<TWorld> where TWorld : struct, ISessionType, 
 				default:
 					return new ShapeProxy { Points = System.Array.Empty<FVector3>(), Radius = FP.Zero };
 			}
+		}
+
+		/// <summary>Result of <see cref="TraceBody"/> -- box3d's TraceResult (samples/sample_character.cpp), trimmed to the fields <see cref="UpdatePogoGrounding"/> needs.</summary>
+		private struct GroundTraceResult {
+			public bool Hit;
+			public bool StartedSolid;
+			public FP Fraction;
+			public FVector3 Normal;
+		}
+
+		/// <summary>
+		/// Sweeps a small axis-aligned box (never rotated with the mover -- box3d's own probe is
+		/// world-space-only too) from <paramref name="origin"/> by <paramref name="translation"/>,
+		/// footprint <paramref name="halfWidth"/>/<paramref name="halfDepth"/> wide,
+		/// <paramref name="halfHeight"/> tall, centered on <paramref name="origin"/>. Ported from
+		/// box3d's TraceBody (samples/sample_character.cpp) -- structurally the same candidate-sweep
+		/// loop as <see cref="CastMover"/>, just against a box proxy built fresh here instead of the
+		/// mover's own capsule, and reporting hit/normal/deep-overlap instead of only a fraction.
+		/// </summary>
+		private static GroundTraceResult TraceBody(BroadPhase broadPhase, FPos origin, FVector3 translation, FP halfWidth, FP halfDepth, FP halfHeight) {
+			for (var i = 0; i < 8; i++) {
+				var sx = (i & 1) != 0 ? halfWidth : -halfWidth;
+				var sy = (i & 2) != 0 ? halfHeight : -halfHeight;
+				var sz = (i & 4) != 0 ? halfDepth : -halfDepth;
+				GroundProbeProxyPoints[i] = new FVector3(sx, sy, sz);
+			}
+
+			var proxy = new ShapeProxy { Points = GroundProbeProxyPoints, Radius = FP.Zero };
+			var probeXf = new FWorldTransform(origin, FQuaternion.Identity);
+
+			var treeOrigin = new FVector3(origin.X.To32(), origin.Y.To32(), origin.Z.To32());
+			var localExtent = new FVector3(halfWidth, halfHeight, halfDepth);
+			var sweptMin = FVector3.MinComponents(-localExtent, -localExtent + translation);
+			var sweptMax = FVector3.MaxComponents(localExtent, localExtent + translation);
+			var queryAabb = new FAABB(treeOrigin + sweptMin, treeOrigin + sweptMax);
+
+			GroundProbeCandidates.Clear();
+			broadPhase.Query(queryAabb, GroundProbeCandidates);
+
+			var result = new GroundTraceResult();
+			var bestFraction = FP.One;
+
+			for (var i = 0; i < GroundProbeCandidates.Count; i++) {
+				if (!GroundProbeCandidates[i].TryUnpack<TWorld>(out var shapeEntity) || !TryGetShapeAndTransform(shapeEntity, out var shape, out var candidateXf)) {
+					continue;
+				}
+
+				if (shape.IsSensor) {
+					continue;
+				}
+
+				var pairInput = new ShapeCastPairInput {
+					ProxyA = MakeCandidateProxy(shape),
+					ProxyB = proxy,
+					Transform = FWorldTransform.InvMul(candidateXf, probeXf),
+					TranslationB = FQuaternion.Inverse(candidateXf.Rotation) * translation,
+					MaxFraction = bestFraction,
+					CanEncroach = true,
+				};
+
+				var output = Distance.ShapeCast(pairInput);
+				if (!output.Hit) {
+					continue;
+				}
+
+				if (output.Fraction == FP.Zero) {
+					// Deep overlap right at the sweep start -- box3d's "startedSolid": this box is
+					// too wide for the gap it's in, not a useful ground reading. Doesn't affect
+					// bestFraction/other candidates; the caller's radius-shrink retry handles it.
+					result.StartedSolid = true;
+					continue;
+				}
+
+				if (output.Fraction < bestFraction) {
+					bestFraction = output.Fraction;
+					result.Hit = true;
+					result.Fraction = output.Fraction;
+					result.Normal = candidateXf.Rotation * output.Normal;
+				}
+			}
+
+			return result;
+		}
+
+		/// <summary>Ported from box3d's IsStandableSurface (samples/sample_character.cpp): is this hit normal upward-facing enough to stand on?</summary>
+		private static bool IsStandableSurface(FVector3 normal, FP maxSlopeNormalThreshold) {
+			return normal.Y >= maxSlopeNormalThreshold;
+		}
+
+		/// <summary>
+		/// box3d's ground check, ported from box3d's more complete character sample's CategorizeGround
+		/// (samples/sample_character.cpp), not the plain single-ray version in the simpler CharacterMover
+		/// sample (samples/sample.cpp) this project otherwise ports its movement loop from: a single
+		/// ray either hits or it doesn't, so a mover standing mostly off a ledge with its ray still
+		/// grazing the corner reads as fully grounded -- observed in practice as the mover "sticking"
+		/// to edges instead of falling off them. CategorizeGround's fix is a small box sweep instead
+		/// (<see cref="TraceBody"/>), shrunk and retried if it starts solid or lands on a non-standable
+		/// slope, giving up below 70% width -- ported verbatim (same 0.1 shrink step, same 0.7 floor).
+		///
+		/// The resulting fraction still drives the same critically-damped spring-damper toward
+		/// <c>pogoRestLength</c> (see the removed single-ray version's remarks on why that's
+		/// <c>capsule.Radius</c>, not box3d's literal <c>3*radius</c>) -- CategorizeGround itself has
+		/// no spring (box3d's more complete sample instead hard-snaps position via a separate Reground
+		/// step, driving an actual dynamic rigid body through box3d's own contact solver, not the
+		/// CollideMover/SolvePlanes/CastMover kinematic sweep this project's mover uses). Porting that
+		/// whole architecture is out of scope for a ground-check fix; only CategorizeGround/TraceBody's
+		/// footprint-aware sweep is ported here, feeding the same spring this project already has.
+		/// </summary>
+		public static bool UpdatePogoGrounding(BroadPhase broadPhase, FWorldTransform moverXf, Capsule capsule, FP dt, FP hertz, FP dampingRatio, FP jumpCooldown, FP maxSlopeNormalThreshold, ref FP pogoVelocity) {
+			// See Mover.JumpCooldown's remarks: skip the trace entirely while a jump is still in its
+			// cooldown window, matching box3d's CategorizeGround gating re-grounding on m_jumpCooldown.
+			if (jumpCooldown > FP.Zero) {
+				pogoVelocity = FP.Zero;
+				return false;
+			}
+
+			var pogoRestLength = capsule.Radius;
+			var rayLength = pogoRestLength + capsule.Radius;
+			var origin = FWorldTransform.TransformPoint(moverXf, capsule.Center1);
+			var translation = new FVector3(FP.Zero, -rayLength, FP.Zero);
+
+			var halfHeight = capsule.Radius * FP.Half;
+			var radiusScale = FP.One;
+			var halfWidth = capsule.Radius * FP.Half * radiusScale;
+			var trace = TraceBody(broadPhase, origin, translation, halfWidth, halfWidth, halfHeight);
+
+			while (trace.StartedSolid || (trace.Hit && !IsStandableSurface(trace.Normal, maxSlopeNormalThreshold))) {
+				radiusScale -= FP.FromRatio(1, 10);
+				if (radiusScale < FP.FromRatio(7, 10)) {
+					pogoVelocity = FP.Zero;
+					return false;
+				}
+
+				halfWidth = capsule.Radius * FP.Half * radiusScale;
+				trace = TraceBody(broadPhase, origin, translation, halfWidth, halfWidth, halfHeight);
+			}
+
+			if (trace.StartedSolid || !trace.Hit || !IsStandableSurface(trace.Normal, maxSlopeNormalThreshold)) {
+				pogoVelocity = FP.Zero;
+				return false;
+			}
+
+			// trace.Fraction*rayLength is how far the box's CENTER travelled before its BOTTOM face
+			// (halfHeight closer to the ground than the center) touched down -- the box's own
+			// thickness lets it "reach" the ground at a smaller fraction than a zero-size probe
+			// would have needed. The spring wants the zero-size-probe distance (Center1 to ground),
+			// which is therefore this fraction's distance *plus* halfHeight, not the raw fraction
+			// alone -- getting this backwards once already settled the mover halfHeight too high.
+			var pogoCurrentLength = trace.Fraction * rayLength + halfHeight;
+
+			var omega = 2 * FP.Pi * hertz;
+			var omegaH = omega * dt;
+			pogoVelocity = (pogoVelocity - omega * omegaH * (pogoCurrentLength - pogoRestLength))
+				/ (FP.One + 2 * dampingRatio * omegaH + omegaH * omegaH);
+
+			return true;
 		}
 
 		private static bool TryGetShapeAndTransform(W.Entity shapeEntity, out Shape shape, out FWorldTransform transform) {

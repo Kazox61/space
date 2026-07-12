@@ -121,6 +121,112 @@ public struct Hull {
 		};
 	}
 
+	/// <summary>
+	/// Ray cast versus a box hull in local space (the frame <see cref="Center"/>/<see cref="Rotation"/>
+	/// live in), via the standard slab method against the box's own rotated axes -- box3d's
+	/// b3RayCastBox. A zero length ray is a point query. Initial overlap (ray origin already inside
+	/// the box) reports a hit at the ray origin with zero fraction and zero normal, matching
+	/// <see cref="Sphere.RayCast"/>/<see cref="Capsule.RayCast"/>'s convention for the same case.
+	/// </summary>
+	public static CastOutput RayCast(Hull shape, RayCastInput input) {
+		var output = new CastOutput();
+
+		var invRotation = FQuaternion.Inverse(shape.Rotation);
+		var localOrigin = invRotation * (input.Origin - shape.Center);
+
+		var d = FVector3.GetLengthAndNormalize(input.Translation, out var length);
+		if (length == FP.Zero) {
+			// Zero length ray: point containment.
+			if (Contains(shape.HalfExtents, localOrigin)) {
+				output.Point = input.Origin;
+				output.Hit = true;
+			}
+
+			return output;
+		}
+
+		var localDirection = invRotation * d;
+
+		var tMin = FP.Zero;
+		var tMax = length * input.MaxFraction;
+		var axis = -1;
+		var sign = FP.One;
+
+		for (var i = 0; i < 3; i++) {
+			var start = Component(localOrigin, i);
+			var dir = Component(localDirection, i);
+			var extent = Component(shape.HalfExtents, i);
+
+			if (FP.Abs(dir) < FP.CalculationsEpsilon) {
+				if (start < -extent || start > extent) {
+					// Parallel to this slab and outside it: no intersection possible.
+					return output;
+				}
+
+				continue;
+			}
+
+			// Approaching from +axis (dir < 0) enters through the +extent face first (outward normal
+			// +1 on this axis); approaching from -axis (dir > 0) enters through the -extent face
+			// (outward normal -1). Assign near/far directly from the sign of dir instead of a
+			// t1>t2 swap, so the entry-face sign can't get transposed from the entry distance.
+			var invDir = FP.One / dir;
+			var tToMin = (-extent - start) * invDir;
+			var tToMax = (extent - start) * invDir;
+			var nearT = dir > FP.Zero ? tToMin : tToMax;
+			var farT = dir > FP.Zero ? tToMax : tToMin;
+			var nearSign = dir > FP.Zero ? -FP.One : FP.One;
+
+			if (nearT > tMin) {
+				tMin = nearT;
+				axis = i;
+				sign = nearSign;
+			}
+
+			tMax = FP.Min(tMax, farT);
+
+			if (tMin > tMax) {
+				return output;
+			}
+		}
+
+		if (axis < 0) {
+			// The ray origin started inside every slab (tMin never advanced past zero).
+			if (Contains(shape.HalfExtents, localOrigin)) {
+				output.Point = input.Origin;
+				output.Hit = true;
+			}
+
+			return output;
+		}
+
+		var localNormal = axis switch {
+			0 => new FVector3(sign, FP.Zero, FP.Zero),
+			1 => new FVector3(FP.Zero, sign, FP.Zero),
+			_ => new FVector3(FP.Zero, FP.Zero, sign),
+		};
+
+		var localPoint = localOrigin + tMin * localDirection;
+
+		output.Fraction = tMin / length;
+		output.Normal = shape.Rotation * localNormal;
+		output.Point = shape.Center + shape.Rotation * localPoint;
+		output.Hit = true;
+		return output;
+	}
+
+	private static bool Contains(FVector3 halfExtents, FVector3 point) {
+		return FP.Abs(point.X) <= halfExtents.X && FP.Abs(point.Y) <= halfExtents.Y && FP.Abs(point.Z) <= halfExtents.Z;
+	}
+
+	private static FP Component(FVector3 v, int index) {
+		return index switch {
+			0 => v.X,
+			1 => v.Y,
+			_ => v.Z,
+		};
+	}
+
 	/// <summary>The support corner of a box with half-extents <paramref name="h"/> along a local direction: the corner maximizing dot(direction, corner).</summary>
 	public static FVector3 SupportLocal(FVector3 h, FVector3 direction) {
 		return new FVector3(

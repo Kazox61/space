@@ -181,6 +181,15 @@ public abstract partial class Core<TWorld> where TWorld : struct, ISessionType, 
 
 			ref readonly var shapeDataA = ref shapeAEntity.Read<Shape>()!; // Link<ShapeA>/<ShapeB> always resolve to shape entities.
 			ref readonly var shapeDataB = ref shapeBEntity.Read<Shape>()!;
+
+			// A sensor never participates in collision response (Shape.IsSensor's own doc comment) --
+			// it still gets a manifold and touch events out of ContactSystem (which doesn't check this
+			// flag, on purpose: sensors need overlap detection too), but the solver must not turn that
+			// manifold into an impulse. Matches box3d's sensors never entering the solid-contact graph.
+			if (shapeDataA.IsSensor || shapeDataB.IsSensor) {
+				return false;
+			}
+
 			ref readonly var bodyA = ref bodyAEntity.Read<Body>()!; // TryGetBody only resolves entities with Body.
 			ref readonly var bodyB = ref bodyBEntity.Read<Body>()!;
 

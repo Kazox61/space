@@ -74,23 +74,4 @@ public static class MoverSolver {
 
 		return v;
 	}
-
-	/// <summary>Minimum upward component (dot with +Y) a plane's normal needs to count as ground, ~cos(45 deg).</summary>
-	public static readonly FP GroundedNormalThreshold = FP.FromRatio(7, 10);
-
-	/// <summary>
-	/// Whether any plane faces sufficiently upward to stand on. Not a dedicated raycast (unlike
-	/// box3d's own pogo-stick ground check) -- derived from whatever <c>CharacterMover.CollideMover</c>
-	/// already gathered this tick, which is enough for flat ground and box tops. See
-	/// <c>Mover.Grounded</c>'s remarks for the one-tick-lag tradeoff this implies.
-	/// </summary>
-	public static bool IsGrounded(in MoverPlaneBuffer planes) {
-		for (var i = 0; i < planes.Count; i++) {
-			if (planes.GetPlane(i).Normal.Y > GroundedNormalThreshold) {
-				return true;
-			}
-		}
-
-		return false;
-	}
 }
