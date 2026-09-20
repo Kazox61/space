@@ -32,7 +32,7 @@ Run the staged-file check manually:
 dotnet husky run --group pre-commit
 ```
 
-GitHub Actions runs the same formatting check on pushes and pull requests via
+GitHub Actions runs the same formatting check on pull requests via
 `.github/workflows/editorconfig.yml`. CI checks all C# files in `Client`,
 `GameCore`, `Server`, and `Test`, with the same submodule exclusions.
 The check is named `EditorConfig / Formatting check` and can be made required
