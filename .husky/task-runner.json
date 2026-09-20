@@ -1,0 +1,26 @@
+{
+  "$schema": "https://alirezanet.github.io/Husky.Net/schema.json",
+  "tasks": [
+    {
+      "name": "editorconfig-check",
+      "group": "pre-commit",
+      "command": "dotnet",
+      "args": [
+        "format",
+        "Space.sln",
+        "--verify-no-changes",
+        "--severity",
+        "info",
+        "--exclude",
+        "static-ecs",
+        "static-rollback",
+        "static-rollback-litenetlib",
+        "FixedPoint",
+        "--include",
+        "${staged}"
+      ],
+      "include": ["**/*.cs"],
+      "exclude": ["static-*/**", "FixedPoint/**"]
+    }
+  ]
+}

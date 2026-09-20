@@ -1,0 +1,35 @@
+name: EditorConfig
+
+on:
+  pull_request:
+
+permissions:
+  contents: read
+
+jobs:
+  formatting:
+    name: Formatting check
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+        with:
+          submodules: recursive
+
+      - name: Set up .NET
+        uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: 10.0.x
+
+      - name: Restore solution
+        run: dotnet restore Space.sln
+
+      - name: Check EditorConfig formatting
+        run: >-
+          dotnet format Space.sln
+          --no-restore
+          --verify-no-changes
+          --severity info
+          --exclude static-ecs static-rollback static-rollback-litenetlib FixedPoint
+          --include Client GameCore Server Test
