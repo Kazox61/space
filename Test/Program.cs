@@ -42,6 +42,7 @@ public static class Program {
 		BoxOnCapsuleSmokeTest();
 		OverlappingSpawnStressTest();
 		RollbackRoundTripTest();
+		RollbackStateHashReplayTest();
 		KinematicBodyDrivenByVelocityPushesDynamicBodyTest();
 		MoverPushesRestingSphereStablyTest();
 		MoverBlockedByStaticWallTest();
@@ -52,6 +53,7 @@ public static class Program {
 		RayCastHitsSphereCapsuleAndBoxTest();
 		RayCastMissAndFilterTest();
 		PogoGroundingRayTest();
+		ProjectileLifecycleCountsTest();
 
 		if (_failures == 0) {
 			Console.WriteLine("ALL CHECKS PASSED");
@@ -566,6 +568,101 @@ public static class Program {
 		Check("replay from a restored snapshot reproduces the live run's position", replayedY == liveY);
 		Check("replay from a restored snapshot reproduces the live run's velocity", replayedSpeed == liveSpeed);
 		Check("replay from a restored snapshot reproduces the live run's contact count", replayedContacts == liveContacts);
+
+		Shutdown();
+	}
+
+	/// <summary>
+	/// Phase 0 state-hash check: hashes the *complete* serialized world state (FNV-1a over the full
+	/// world-snapshot bytes -- entities, components, events, BroadPhase trees/pairs) after every
+	/// tick, then rolls back to a mid-run snapshot and replays. Where RollbackRoundTripTest samples
+	/// three fields, this catches divergence in anything the serializer touches: rotation, contact
+	/// impulses, proxies, pair caches, tree structure. BroadPhase.Write serializes pairs in sorted
+	/// order precisely so this hash is independent of HashSet insertion history (see its remarks).
+	/// </summary>
+	private static void RollbackStateHashReplayTest() {
+		Console.WriteLine("--- RollbackStateHashReplayTest ---");
+		Bootstrap();
+
+		var groundBody = W.NewEntity<Default>();
+		groundBody.Set(new Body {
+			Type = BodyType.Static,
+			Transform = new FWorldTransform(FPos.Zero, FQuaternion.Identity),
+		});
+		ShapeFactory.CreateShape(groundBody, Shape.MakeBox(FVector3.Zero, new FVector3(40.ToFP(), FP.Half, 40.ToFP())));
+
+		var ballBody = W.NewEntity<Default>();
+		ballBody.Set(new Body {
+			Type = BodyType.Dynamic,
+			GravityScale = FP.One,
+			Transform = new FWorldTransform(new FPos(Fixed64.FP.Zero, Fixed64.FP.FromRatio(10, 1), Fixed64.FP.Zero), FQuaternion.Identity),
+		});
+		var ballShape = Shape.MakeSphere(FVector3.Zero, FP.One);
+		ballShape.Density = FP.One;
+		ShapeFactory.CreateShape(ballBody, ballShape);
+
+		// A tumbling crate adds rotation, multi-point manifolds, and changing contact impulses to the
+		// hashed state -- a falling sphere alone exercises too little of the snapshot.
+		var crateBody = W.NewEntity<Default>();
+		crateBody.Set(new Body {
+			Type = BodyType.Dynamic,
+			GravityScale = FP.One,
+			LinearVelocity = new FVector3(FP.FromRatio(1, 2), FP.Zero, FP.Zero),
+			AngularVelocity = new FVector3(FP.FromRatio(3, 10), FP.FromRatio(2, 10), FP.FromRatio(1, 10)),
+			Transform = new FWorldTransform(new FPos(Fixed64.FP.Zero, Fixed64.FP.FromRatio(14, 1), Fixed64.FP.Zero), FQuaternion.Identity),
+		});
+		var crateShape = Shape.MakeBox(FVector3.Zero, new FVector3(FP.One, FP.One, FP.One));
+		crateShape.Density = FP.One;
+		ShapeFactory.CreateShape(crateBody, crateShape);
+
+		var hashWriter = BinaryPackWriter.Create(new byte[GameWorldRollback.WorldSnapshotLength]);
+
+		ulong HashState() {
+			hashWriter.Position = 0;
+			W.Serializer.CreateWorldSnapshot(ref hashWriter);
+			return Fnv1a64(hashWriter.Buffer, (int)hashWriter.Position);
+		}
+
+		// Live reference run: warm up to the point where broad-phase pairs/contacts are forming, take
+		// the rollback snapshot, then keep hashing every tick through landing and settling.
+		const int warmupTicks = 55;
+		const int replayTicks = 150;
+
+		for (var tick = 0; tick < warmupTicks; tick++) {
+			W.Tick();
+			Systems.Update();
+		}
+
+		var snapshot = W.Serializer.CreateWorldSnapshot();
+		var snapshotHash = HashState();
+
+		var liveHashes = new ulong[replayTicks];
+		for (var tick = 0; tick < replayTicks; tick++) {
+			W.Tick();
+			Systems.Update();
+			liveHashes[tick] = HashState();
+		}
+
+		W.Serializer.LoadWorldSnapshot(snapshot, hardReset: true);
+		Check("restored world reproduces the snapshot tick's state hash exactly", HashState() == snapshotHash);
+
+		var replayHashes = new ulong[replayTicks];
+		for (var tick = 0; tick < replayTicks; tick++) {
+			W.Tick();
+			Systems.Update();
+			replayHashes[tick] = HashState();
+		}
+
+		var divergedAt = -1;
+		for (var tick = 0; tick < replayTicks; tick++) {
+			if (replayHashes[tick] != liveHashes[tick]) {
+				divergedAt = tick;
+				break;
+			}
+		}
+
+		var divergenceDetail = divergedAt >= 0 ? $" -- first divergence at tick {divergedAt}: live 0x{liveHashes[divergedAt].ToString("x16")} vs replay 0x{replayHashes[divergedAt].ToString("x16")}" : "";
+		Check($"replay from a restored snapshot reproduces all {replayTicks} per-tick state hashes{divergenceDetail}", divergedAt == -1);
 
 		Shutdown();
 	}
@@ -1172,7 +1269,12 @@ public static class Program {
 		Shutdown();
 	}
 
-	/// <summary>Verifies the negative cases the 5-way contract depends on: a genuine miss, a sensor being skipped, and Filter excluding a shape.</summary>
+	/// <summary>
+	/// Verifies the negative cases the 5-way contract depends on: a genuine miss, a sensor being
+	/// skipped, and Filter excluding a shape -- each backed by a positive control proving the fixture
+	/// is live (proxies exist, the shape is hittable), so the misses can't pass vacuously the way
+	/// they did before this test ever ticked ShapeProxySystem.
+	/// </summary>
 	private static void RayCastMissAndFilterTest() {
 		Console.WriteLine("--- RayCastMissAndFilterTest ---");
 		Bootstrap();
@@ -1187,18 +1289,28 @@ public static class Program {
 		sensorShape.IsSensor = true;
 		ShapeFactory.CreateShape(sensorBody, sensorShape);
 
-		var origin = new FPos(Fixed64.FP.Zero, Fixed64.FP.FromRatio(10, 1), Fixed64.FP.Zero);
-		var translation = new FVector3(FP.Zero, -FP.FromRatio(20, 1), FP.Zero);
-		Check("ray skips a sensor shape", !PhysicsQueries.CastRayClosest(broadPhase, origin, translation, Filter.Default, out _));
-
 		var filteredBody = W.NewEntity<Default>();
 		filteredBody.Set(new Body { Type = BodyType.Static, Transform = new FWorldTransform(new FPos(Fixed64.FP.FromRatio(100, 1), Fixed64.FP.Zero, Fixed64.FP.Zero), FQuaternion.Identity) });
 		var filteredShape = Shape.MakeSphere(FVector3.Zero, FP.FromRatio(2, 1));
 		filteredShape.Filter = new Filter { CategoryBits = 2, MaskBits = ulong.MaxValue, GroupIndex = 0 };
-		ShapeFactory.CreateShape(filteredBody, filteredShape);
+		var filteredShapeEntity = ShapeFactory.CreateShape(filteredBody, filteredShape);
+
+		// The original version of this test cast before ShapeProxySystem ever ran, so neither shape
+		// had a broad-phase proxy and the "sensor skipped"/"filter excluded" checks passed vacuously.
+		W.Tick();
+		Systems.Update();
+
+		var counts = PhysicsDiagnostics.Capture();
+		Check("both fixture shapes have broad-phase proxies before querying", counts.Shapes == counts.Proxies && counts.Proxies >= 2);
+
+		var origin = new FPos(Fixed64.FP.Zero, Fixed64.FP.FromRatio(10, 1), Fixed64.FP.Zero);
+		var translation = new FVector3(FP.Zero, -FP.FromRatio(20, 1), FP.Zero);
+		Check("ray skips a sensor shape", !PhysicsQueries.CastRayClosest(broadPhase, origin, translation, Filter.Default, out _));
+
+		var filteredOrigin = new FPos(Fixed64.FP.FromRatio(100, 1), Fixed64.FP.FromRatio(10, 1), Fixed64.FP.Zero);
+		Check("positive control: the category-2 sphere is hittable with an allowing query filter", PhysicsQueries.CastRayClosest(broadPhase, filteredOrigin, translation, Filter.Default, out var allowedHit) && allowedHit.Shape == filteredShapeEntity.GID);
 
 		var queryFilter = new Filter { CategoryBits = ulong.MaxValue, MaskBits = 1, GroupIndex = 0 };
-		var filteredOrigin = new FPos(Fixed64.FP.FromRatio(100, 1), Fixed64.FP.FromRatio(10, 1), Fixed64.FP.Zero);
 		Check("ray respects Filter.ShouldCollide", !PhysicsQueries.CastRayClosest(broadPhase, filteredOrigin, translation, queryFilter, out _));
 
 		Shutdown();
@@ -1426,6 +1538,148 @@ public static class Program {
 
 		WPrev.Destroy();
 		Shutdown();
+	}
+
+	/// <summary>
+	/// Phase 0 acceptance check: 10,000 projectile spawn/destruction cycles must leave every physics
+	/// count (bodies, shapes, broad-phase proxies, contacts, cached pairs) exactly at baseline. The
+	/// teardown below is the *correct* sequence the Phase 1 mandatory body-destruction operation has
+	/// to implement (release pairs, destroy contacts, destroy shapes and their proxies, then the
+	/// body) -- this proves the counters themselves and gives Phase 1 a green baseline to preserve.
+	/// DeathSystem's current bare entity.Destroy() path skips all of this and leaks (assessment
+	/// finding #1); routing it through the real API is Phase 1 work.
+	/// </summary>
+	private static void ProjectileLifecycleCountsTest() {
+		Console.WriteLine("--- ProjectileLifecycleCountsTest ---");
+		Bootstrap();
+
+		var broadPhase = W.GetResource<BroadPhase>();
+
+		var groundBody = W.NewEntity<Default>();
+		groundBody.Set(new Body {
+			Type = BodyType.Static,
+			Transform = new FWorldTransform(FPos.Zero, FQuaternion.Identity),
+		});
+		ShapeFactory.CreateShape(groundBody, Shape.MakeBox(FVector3.Zero, new FVector3(40.ToFP(), FP.Half, 40.ToFP())));
+
+		W.Tick();
+		Systems.Update();
+
+		var baseline = PhysicsDiagnostics.Capture();
+		Console.WriteLine($"  baseline: {baseline}");
+
+		const int cycles = 10_000;
+		var leakedAtCycle = -1;
+		var leakedCounts = default(PhysicsCounts);
+		for (var cycle = 0; cycle < cycles; cycle++) {
+			// Spawn production-like (ShootSystem): a small sphere on its own body, slightly overlapping
+			// the ground's surface so a broad-phase pair, contact, and touch event form on the first update.
+			var projectile = W.NewEntity<Default>();
+			projectile.Set(new Body {
+				Type = BodyType.Dynamic,
+				GravityScale = FP.One,
+				Transform = new FWorldTransform(new FPos(Fixed64.FP.Zero, Fixed64.FP.FromRatio(3, 5), Fixed64.FP.Zero), FQuaternion.Identity),
+			});
+			var shape = Shape.MakeSphere(FVector3.Zero, FP.FromRatio(1, 4));
+			shape.Density = FP.One;
+			ShapeFactory.CreateShape(projectile, shape);
+
+			W.Tick();
+			Systems.Update();
+
+			DestroyBodyCompletely(projectile, broadPhase);
+
+			W.Tick();
+			Systems.Update();
+
+			// Checked every cycle (cheap) so a transient leak can't hide between checkpoints; reported
+			// only at checkpoints or on the first divergence to keep the log readable.
+			if (PhysicsDiagnostics.Capture() != baseline) {
+				if (leakedAtCycle == -1) {
+					leakedAtCycle = cycle;
+					leakedCounts = PhysicsDiagnostics.Capture();
+				}
+			}
+
+			if (cycle % 1000 == 999) {
+				var counts = PhysicsDiagnostics.Capture();
+				Check($"physics counts stay at baseline after {cycle + 1} spawn/destroy cycles ({counts})", counts == baseline && leakedAtCycle == -1);
+			}
+		}
+
+		var finalCounts = PhysicsDiagnostics.Capture();
+		var leakDetail = leakedAtCycle >= 0 ? $" (first leak at cycle {leakedAtCycle}: {leakedCounts})" : "";
+		Check($"physics counts match baseline after every one of the {cycles} cycles{leakDetail}", leakedAtCycle == -1 && finalCounts == baseline);
+
+		Shutdown();
+	}
+
+	/// <summary>
+	/// The correct full body teardown: release broad-phase pairs and destroy contact entities
+	/// *before* the shape links go away, destroy each shape (and its proxy) via
+	/// <see cref="ShapeFactory.DestroyShape"/>, then the body itself. Test-local for Phase 0 --
+	/// Phase 1 productizes this as the mandatory body-destruction operation.
+	/// </summary>
+	private static void DestroyBodyCompletely(W.Entity body, BroadPhase broadPhase) {
+		var shapeEntities = new List<W.Entity>();
+		if (body.Has<W.Links<Shapes>>()) {
+			ref readonly var links = ref body.Read<W.Links<Shapes>>();
+			for (var i = 0; i < links.Length; i++) {
+				if (links[i].Value.TryUnpack<TestWorld>(out var shapeEntity)) {
+					shapeEntities.Add(shapeEntity);
+				}
+			}
+		}
+
+		var shapeGids = new HashSet<EntityGID>();
+		foreach (var shapeEntity in shapeEntities) {
+			shapeGids.Add(shapeEntity.GID);
+		}
+
+		var contactEntities = new List<W.Entity>();
+		foreach (var contactEntity in W.Query<All<Contact>>().Entities()) {
+			if (!contactEntity.Has<W.Link<ShapeA>>() || !contactEntity.Has<W.Link<ShapeB>>()) {
+				continue;
+			}
+
+			ref readonly var linkA = ref contactEntity.Read<W.Link<ShapeA>>();
+			ref readonly var linkB = ref contactEntity.Read<W.Link<ShapeB>>();
+			if (shapeGids.Contains(linkA.Value) || shapeGids.Contains(linkB.Value)) {
+				contactEntities.Add(contactEntity);
+			}
+		}
+
+		foreach (var contactEntity in contactEntities) {
+			ref readonly var linkA = ref contactEntity.Read<W.Link<ShapeA>>();
+			ref readonly var linkB = ref contactEntity.Read<W.Link<ShapeB>>();
+
+			broadPhase.ForgetPair(linkA.Value, linkB.Value);
+			if (contactEntity.Read<Contact>().Touching) {
+				W.SendEvent(new ContactEndTouchEvent { ShapeA = linkA.Value, ShapeB = linkB.Value });
+			}
+
+			contactEntity.Destroy();
+		}
+
+		foreach (var shapeEntity in shapeEntities) {
+			ShapeFactory.DestroyShape(shapeEntity, broadPhase);
+		}
+
+		body.Destroy();
+	}
+
+	/// <summary>FNV-1a 64 over the first <paramref name="length"/> bytes -- a stable, process-independent byte hash (unlike GetHashCode).</summary>
+	private static ulong Fnv1a64(byte[] data, int length) {
+		const ulong offset = 14695981039346656037UL;
+		const ulong prime = 1099511628211UL;
+
+		var hash = offset;
+		for (var i = 0; i < length; i++) {
+			hash ^= data[i];
+			hash *= prime;
+		}
+
+		return hash;
 	}
 
 	private static (double x, double y, double z, double speed) SampleSphere(W.Entity sphereBody) {
