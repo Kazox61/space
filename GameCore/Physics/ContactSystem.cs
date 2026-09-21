@@ -92,10 +92,11 @@ public abstract partial class Core<TWorld> where TWorld : struct, ISessionType, 
 
 			ref readonly var ownerA = ref entityA.Read<W.Link<BodyOwner>>();
 			ref readonly var ownerB = ref entityB.Read<W.Link<BodyOwner>>();
+			var needsContactEvents = shapeDataA.EnableContactEvents || shapeDataB.EnableContactEvents;
 			if (ownerA.Value == ownerB.Value
 				|| !ownerA.Value.TryUnpack<TWorld>(out var bodyA) || !bodyA.Has<Body>()
 				|| !ownerB.Value.TryUnpack<TWorld>(out var bodyB) || !bodyB.Has<Body>()
-				|| (bodyA.Read<Body>().Type != BodyType.Dynamic && bodyB.Read<Body>().Type != BodyType.Dynamic)) {
+				|| (!needsContactEvents && bodyA.Read<Body>().Type != BodyType.Dynamic && bodyB.Read<Body>().Type != BodyType.Dynamic)) {
 				return false;
 			}
 

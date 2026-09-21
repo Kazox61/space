@@ -53,6 +53,7 @@ public static class Program {
 		RayCastHitsSphereCapsuleAndBoxTest();
 		RayCastMissAndFilterTest();
 		PogoGroundingRayTest();
+		KinematicProjectileKillsDummyTest();
 		RejectedBroadPhasePairsTest();
 		BodyDestructionRollbackTest();
 		DeathSystemPhysicsLifecycleTest();
@@ -72,11 +73,13 @@ public static class Program {
 		W.Types().RegisterAll(typeof(CoreRoot).Assembly);
 		W.SetResource(new PhysicsWorld());
 		W.SetResource(new BroadPhase());
-		Systems.Add(new DeathSystem(), order: 0);
-		Systems.Add(new ShapeProxySystem(), order: 1);
-		Systems.Add(new ContactSystem(), order: 2);
-		Systems.Add(new ContactSolverSystem(), order: 3);
-		Systems.Add(new BodyTransformSyncSystem(), order: 4);
+		Systems.Add(new DamageSystem(), order: 0);
+		Systems.Add(new DeathSystem(), order: 1);
+		Systems.Add(new ShapeProxySystem(), order: 2);
+		Systems.Add(new ContactSystem(), order: 3);
+		Systems.Add(new ContactSolverSystem(), order: 4);
+		Systems.Add(new BodyTransformSyncSystem(), order: 5);
+		Systems.Add(new ProjectileHitSystem(), order: 6);
 		W.Initialize();
 		Systems.Initialize();
 
@@ -1544,6 +1547,40 @@ public static class Program {
 		Shutdown();
 	}
 
+	private static void KinematicProjectileKillsDummyTest() {
+		Console.WriteLine("--- KinematicProjectileKillsDummyTest ---");
+		Bootstrap();
+
+		var dummy = W.NewEntity<Dummy>();
+		ref var dummyBody = ref dummy.Ref<Body>();
+		dummyBody.Transform = new FWorldTransform(FPos.Zero, FQuaternion.Identity);
+		var dummyShape = Shape.MakeCapsule(
+			new FVector3(FP.Zero, -FP.Half, FP.Zero),
+			new FVector3(FP.Zero, FP.Half, FP.Zero),
+			FP.Half);
+		dummyShape.EnableContactEvents = true;
+		ShapeFactory.CreateShape(dummy, dummyShape);
+		var dummyGid = dummy.GID;
+
+		var projectile = W.NewEntity<Projectile>();
+		ref var projectileBody = ref projectile.Ref<Body>();
+		projectileBody.Transform = new FWorldTransform(FPos.Zero, FQuaternion.Identity);
+		var projectileShape = Shape.MakeSphere(FVector3.Zero, FP.FromRatio(1, 4));
+		projectileShape.EnableContactEvents = true;
+		ShapeFactory.CreateShape(projectile, projectileShape);
+		var projectileGid = projectile.GID;
+
+		W.Tick();
+		Systems.Update();
+		W.Tick();
+		Systems.Update();
+
+		Check("kinematic projectile is destroyed after touching a kinematic dummy", !projectileGid.TryUnpack<TestWorld>(out _));
+		Check("kinematic dummy dies after being hit by a projectile", !dummyGid.TryUnpack<TestWorld>(out _));
+
+		Shutdown();
+	}
+
 	private static void RejectedBroadPhasePairsTest() {
 		Console.WriteLine("--- RejectedBroadPhasePairsTest ---");
 		Bootstrap();
@@ -1595,7 +1632,7 @@ public static class Program {
 		Systems.Update();
 
 		var counts = PhysicsDiagnostics.Capture();
-		Check("same-body, filtered, static/static, and kinematic/kinematic pairs create no contacts", counts.Contacts == 0);
+		Check("same-body, filtered, and non-event static/static or kinematic/kinematic pairs create no contacts", counts.Contacts == 0);
 		Check("rejected pairs are immediately released from the broad-phase cache", counts.CachedPairs == 0);
 
 		var valid = true;

@@ -607,8 +607,10 @@ Phase 1 (lifecycle and pair management) is implemented:
   the cache immediately. Shape destruction also purges any historical cached
   pairs involving that shape.
 - Pair eligibility: contact creation now requires supported convex geometry,
-  distinct owning bodies, and at least one dynamic body, matching the Box3D
-  body-type rule for rigid contacts.
+  distinct owning bodies, and either at least one dynamic body or an explicit
+  request for contact events. This keeps non-responsive pairs out of the solver
+  while preserving gameplay contacts such as kinematic projectiles hitting
+  kinematic dummies.
 - Validation: `BroadPhase.Validate()` verifies proxy-to-shape-to-body ownership,
   proxy keys and tree membership, pair endpoints, and one-to-one cached-pair to
   contact consistency.
