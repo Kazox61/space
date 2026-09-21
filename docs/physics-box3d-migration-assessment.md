@@ -676,3 +676,40 @@ Phase 2 (safe mutation APIs) is implemented:
   immediate filter reconsideration, geometry/density mass updates, impulses, and
   one-tick force accumulation. Mutation sequences also reproduce identical counts
   and full-state hashes after rollback replay.
+
+## Phase 3 Implementation Status
+
+Phase 3 (contact persistence and events) is implemented:
+
+- Contact persistence: manifold points carry packed geometric feature IDs through
+  box face clipping, reference-face flips, edge contacts, capsule contacts, and
+  manifold reduction. New manifolds match each old point at most once and preserve
+  normal impulses only for matching features.
+- Friction persistence: contacts store the friction impulse in world space. Solver
+  preparation projects that vector into the current tangent basis, preventing a
+  changing normal from reinterpreting stale scalar components. Friction and rolling
+  warm-start state are cleared when no manifold point persists.
+- Capsule refinement: near-parallel capsule pairs clip their core segments and
+  produce two independently identified contact points, with the single-point path
+  retained for non-parallel and endpoint cases.
+- Contact semantics: `Contact.Touching` now means physical overlap (separation at
+  or below zero). Positive-separation manifolds remain available to the speculative
+  solver without producing begin-touch notifications. Non-dynamic gameplay pairs
+  enabled for events are explicitly event-only and never enter rigid response.
+- Event contracts: ordinary begin/end events require `EnableContactEvents`.
+  Sensor pairs use dedicated `SensorBeginTouchEvent` and `SensorEndTouchEvent`
+  payloads with deterministic sensor/visitor orientation, require both shapes to
+  enable sensor events, and never produce ordinary contact events or rigid response.
+- Hit events: `ContactHitEvent` reports the shape pair, world point, A-to-B normal,
+  approach speed, and solved normal impulse for impacts above
+  `PhysicsWorld.HitEventThreshold` when either shape enables hit events.
+- Runtime changes: `ShapeOperations.SetEventFlags` is the safe event-policy mutation
+  boundary. Filter changes re-evaluate existing contacts, retain still-eligible
+  contacts and their warm-start state, remove newly ineligible pairs immediately,
+  and force broad-phase discovery of newly eligible pairs. Existing contacts also
+  defensively re-check live filters each update.
+- Regression coverage: the harness verifies feature/impulse persistence, stable
+  long-running box and parallel-capsule rests, two-point capsule manifolds,
+  speculative-versus-physical touch semantics, contact-event gating, dedicated
+  sensor begin/end events and ordering, post-solve hit payloads, compatible contact
+  retention, live filter invalidation, and existing rollback state-hash replay.

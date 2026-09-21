@@ -35,6 +35,11 @@ public static class Program {
 		}
 
 		TouchEventsTest();
+		ContactPersistenceTest();
+		ParallelCapsuleManifoldTest();
+		ParallelCapsuleRestingStabilityTest();
+		SpeculativeContactAndEventFlagsTest();
+		ContactHitEventTest();
 		DropAndRestTest();
 		CapsuleOnSphereSmokeTest();
 		BoxOnSphereSmokeTest();
@@ -50,6 +55,7 @@ public static class Program {
 		RollingResistanceBringsPushedSphereToRestTest();
 		MoverFallsLandsAndJumpsTest();
 		SensorDoesNotProduceCollisionResponseTest();
+		SensorSensorDirectionalEventsTest();
 		RayCastHitsSphereCapsuleAndBoxTest();
 		RayCastMissAndFilterTest();
 		PogoGroundingRayTest();
@@ -113,7 +119,9 @@ public static class Program {
 			Type = BodyType.Static,
 			Transform = new FWorldTransform(FPos.Zero, FQuaternion.Identity),
 		});
-		ShapeFactory.CreateShape(groundBody, Shape.MakeSphere(FVector3.Zero, FP.FromRatio(5, 1)));
+		var groundShape = Shape.MakeSphere(FVector3.Zero, FP.FromRatio(5, 1));
+		groundShape.EnableContactEvents = true;
+		ShapeFactory.CreateShape(groundBody, groundShape);
 
 		var fallingBody = W.NewEntity<Default>();
 		fallingBody.Set(new Body {
@@ -121,7 +129,9 @@ public static class Program {
 			GravityScale = FP.One,
 			Transform = new FWorldTransform(new FPos(Fixed64.FP.Zero, Fixed64.FP.FromRatio(7, 1), Fixed64.FP.Zero), FQuaternion.Identity),
 		});
-		ShapeFactory.CreateShape(fallingBody, Shape.MakeSphere(FVector3.Zero, FP.FromRatio(3, 1)));
+		var fallingShape = Shape.MakeSphere(FVector3.Zero, FP.FromRatio(3, 1));
+		fallingShape.EnableContactEvents = true;
+		ShapeFactory.CreateShape(fallingBody, fallingShape);
 
 		W.Tick();
 		Systems.Update();
@@ -137,6 +147,218 @@ public static class Program {
 
 		Check("ContactEndTouchEvent fires after separation", endReceiver.ReadAll(static _ => { }) == 1);
 
+		Shutdown();
+	}
+
+	private static void ContactPersistenceTest() {
+		Console.WriteLine("--- ContactPersistenceTest ---");
+		Bootstrap();
+
+		var ground = W.NewEntity<Default>();
+		BodyOperations.CreateBody(ground, BodyType.Static, new FWorldTransform(FPos.Zero, FQuaternion.Identity));
+		ShapeFactory.CreateShape(ground, Shape.MakeBox(FVector3.Zero, new FVector3(4.ToFP(), FP.Half, 4.ToFP())));
+		var boxes = new List<W.Entity>();
+		for (var i = 0; i < 3; i++) {
+			var box = W.NewEntity<Default>();
+			BodyOperations.CreateBody(box, BodyType.Dynamic,
+				new FWorldTransform(new FPos(Fixed64.FP.Zero, Fixed64.FP.FromRatio(3 + 2 * i, 1), Fixed64.FP.Zero), FQuaternion.Identity));
+			var boxShape = Shape.MakeBox(FVector3.Zero, new FVector3(FP.One, FP.One, FP.One));
+			boxShape.Density = FP.One;
+			ShapeFactory.CreateShape(box, boxShape);
+			boxes.Add(box);
+		}
+
+		for (var i = 0; i < 360; i++) {
+			W.Tick();
+			Systems.Update();
+		}
+
+		var contactEntity = default(W.Entity);
+		foreach (var entity in W.Query<All<Contact>>().Entities()) {
+			contactEntity = entity;
+			break;
+		}
+		var oldImpulses = new Dictionary<uint, FP>();
+		if (contactEntity.Has<Contact>()) {
+			ref readonly var manifold = ref contactEntity.Read<Contact>().Manifold;
+			for (var i = 0; i < manifold.PointCount; i++) {
+				var point = manifold.GetPoint(i);
+				oldImpulses[point.FeatureId] = point.NormalImpulse;
+			}
+		}
+		W.Tick();
+		Systems.Update();
+		var persisted = false;
+		var matchedPriorImpulse = false;
+		ref readonly var updatedManifold = ref contactEntity.Read<Contact>().Manifold;
+		for (var i = 0; i < updatedManifold.PointCount; i++) {
+			var point = updatedManifold.GetPoint(i);
+			persisted |= point.Persisted;
+			matchedPriorImpulse |= point.Persisted && oldImpulses.TryGetValue(point.FeatureId, out var oldImpulse) && oldImpulse > FP.Zero;
+		}
+		Check("resting manifold points retain stable feature identities", persisted);
+		Check("persisted feature IDs carry a prior nonzero normal impulse", matchedPriorImpulse);
+		var stackStable = true;
+		for (var i = 0; i < boxes.Count; i++) {
+			var y = Fixed64.FConversions.ToDouble(boxes[i].Read<Body>().Transform.Position.Y);
+			stackStable &= Math.Abs(y - (1.5 + 2 * i)) < 0.1;
+		}
+		Check("long-running box stack remains stable without drift", stackStable);
+		Shutdown();
+	}
+
+	private static void ParallelCapsuleManifoldTest() {
+		Console.WriteLine("--- ParallelCapsuleManifoldTest ---");
+		var shapeA = Shape.MakeCapsule(new FVector3(-2.ToFP(), FP.Zero, FP.Zero), new FVector3(2.ToFP(), FP.Zero, FP.Zero), FP.One);
+		var shapeB = Shape.MakeCapsule(new FVector3(-2.ToFP(), FP.Zero, FP.Zero), new FVector3(2.ToFP(), FP.Zero, FP.Zero), FP.One);
+		var manifold = Manifold.Collide(shapeA, new FWorldTransform(FPos.Zero, FQuaternion.Identity), shapeB,
+			new FWorldTransform(new FPos(Fixed64.FP.Zero, Fixed64.FP.FromRatio(3, 2), Fixed64.FP.Zero), FQuaternion.Identity));
+		Check("near-parallel capsules produce a two-point manifold", manifold.PointCount == 2);
+		Check("parallel capsule points have distinct stable feature IDs",
+			manifold.PointCount == 2 && manifold.Point0.FeatureId != manifold.Point1.FeatureId);
+		var coincident = Manifold.Collide(shapeA, new FWorldTransform(FPos.Zero, FQuaternion.Identity), shapeB,
+			new FWorldTransform(FPos.Zero, FQuaternion.Identity));
+		Check("deeply overlapping capsule cores retain a fallback contact", coincident.PointCount == 1 && coincident.Point0.Separation < FP.Zero);
+	}
+
+	private static void ParallelCapsuleRestingStabilityTest() {
+		Console.WriteLine("--- ParallelCapsuleRestingStabilityTest ---");
+		Bootstrap();
+		var ground = W.NewEntity<Default>();
+		BodyOperations.CreateBody(ground, BodyType.Static, new FWorldTransform(FPos.Zero, FQuaternion.Identity));
+		ShapeFactory.CreateShape(ground,
+			Shape.MakeCapsule(new FVector3(-3.ToFP(), FP.Zero, FP.Zero), new FVector3(3.ToFP(), FP.Zero, FP.Zero), FP.One));
+		var bodies = new List<W.Entity>();
+		for (var i = 0; i < 3; i++) {
+			var body = W.NewEntity<Default>();
+			BodyOperations.CreateBody(body, BodyType.Dynamic,
+				new FWorldTransform(new FPos(Fixed64.FP.Zero, Fixed64.FP.FromRatio(4 + 2 * i, 1), Fixed64.FP.Zero), FQuaternion.Identity));
+			var shape = Shape.MakeCapsule(new FVector3(-2.ToFP(), FP.Zero, FP.Zero), new FVector3(2.ToFP(), FP.Zero, FP.Zero), FP.One);
+			shape.Density = FP.One;
+			ShapeFactory.CreateShape(body, shape);
+			bodies.Add(body);
+		}
+
+		for (var i = 0; i < 360; i++) {
+			W.Tick();
+			Systems.Update();
+		}
+		var stackStable = true;
+		var settled = true;
+		for (var i = 0; i < bodies.Count; i++) {
+			var finalY = Fixed64.FConversions.ToDouble(bodies[i].Read<Body>().Transform.Position.Y);
+			stackStable &= Math.Abs(finalY - (2.0 + 2 * i)) < 0.1;
+			settled &= FVector3.Length(bodies[i].Read<Body>().LinearVelocity).ToDouble() < 0.05;
+		}
+		Check("parallel capsules remain stacked at their expected resting heights", stackStable);
+		Check("parallel capsule stack settles without long-running jitter", settled);
+		Shutdown();
+	}
+
+	private static void SpeculativeContactAndEventFlagsTest() {
+		Console.WriteLine("--- SpeculativeContactAndEventFlagsTest ---");
+		Bootstrap();
+		W.GetResource<PhysicsWorld>().Gravity = FVector3.Zero;
+		var receiver = W.RegisterEventReceiver<ContactBeginTouchEvent>();
+		var endReceiver = W.RegisterEventReceiver<ContactEndTouchEvent>();
+
+		var staticBody = W.NewEntity<Default>();
+		BodyOperations.CreateBody(staticBody, BodyType.Static, new FWorldTransform(FPos.Zero, FQuaternion.Identity));
+		var staticShape = Shape.MakeSphere(FVector3.Zero, FP.One);
+		staticShape.EnableContactEvents = true;
+		var staticShapeEntity = ShapeFactory.CreateShape(staticBody, staticShape);
+		var dynamicBody = W.NewEntity<Default>();
+		BodyOperations.CreateBody(dynamicBody, BodyType.Dynamic,
+			new FWorldTransform(new FPos(Fixed64.FP.Zero, Fixed64.FP.FromRatio(201, 100), Fixed64.FP.Zero), FQuaternion.Identity));
+		var dynamicShape = Shape.MakeSphere(FVector3.Zero, FP.One);
+		dynamicShape.Density = FP.One;
+		dynamicShape.EnableContactEvents = true;
+		var dynamicShapeEntity = ShapeFactory.CreateShape(dynamicBody, dynamicShape);
+
+		W.Tick();
+		Systems.Update();
+		var speculativeOnly = false;
+		foreach (var entity in W.Query<All<Contact>>().Entities()) {
+			ref readonly var contact = ref entity.Read<Contact>();
+			speculativeOnly = contact.Manifold.PointCount > 0 && !contact.Touching && contact.Manifold.MinSeparation() > FP.Zero;
+		}
+		Check("positive-separation manifolds remain speculative rather than touching", speculativeOnly);
+		Check("speculative contacts do not emit begin-touch events", receiver.ReadAll(static _ => { }) == 0);
+
+		BodyOperations.SetTransform(dynamicBody,
+			new FWorldTransform(new FPos(Fixed64.FP.Zero, Fixed64.FP.FromRatio(199, 100), Fixed64.FP.Zero), FQuaternion.Identity));
+		W.Tick();
+		Systems.Update();
+		Check("crossing into physical overlap emits one begin-touch event", receiver.ReadAll(static _ => { }) == 1);
+		var existingContact = default(EntityGID);
+		foreach (var contact in W.Query<All<Contact>>().Entities()) {
+			if (contact.Read<Contact>().ShapeA == dynamicShapeEntity.GID || contact.Read<Contact>().ShapeB == dynamicShapeEntity.GID) {
+				existingContact = contact.GID;
+				break;
+			}
+		}
+		ShapeOperations.SetEventFlags(dynamicShapeEntity, contactEvents: true, sensorEvents: false, hitEvents: true);
+		W.Tick();
+		Systems.Update();
+		Check("changing hit-event policy retains a touching contact", existingContact.TryUnpack<TestWorld>(out _));
+		Check("changing hit-event policy does not synthesize end/begin transitions",
+			endReceiver.ReadAll(static _ => { }) == 0 && receiver.ReadAll(static _ => { }) == 0);
+		ShapeOperations.SetEventFlags(staticShapeEntity, contactEvents: false, sensorEvents: false, hitEvents: false);
+		ShapeOperations.SetEventFlags(dynamicShapeEntity, contactEvents: false, sensorEvents: false, hitEvents: true);
+		Check("disabling contact events during overlap emits one deterministic end", endReceiver.ReadAll(static _ => { }) == 1);
+		ShapeOperations.SetEventFlags(dynamicShapeEntity, contactEvents: true, sensorEvents: false, hitEvents: true);
+		Check("re-enabling contact events during overlap emits one deterministic begin", receiver.ReadAll(static _ => { }) == 1);
+
+		var unflaggedStatic = W.NewEntity<Default>();
+		BodyOperations.CreateBody(unflaggedStatic, BodyType.Static,
+			new FWorldTransform(new FPos(Fixed64.FP.FromRatio(10, 1), Fixed64.FP.Zero, Fixed64.FP.Zero), FQuaternion.Identity));
+		ShapeFactory.CreateShape(unflaggedStatic, Shape.MakeSphere(FVector3.Zero, FP.One));
+		var unflaggedDynamic = W.NewEntity<Default>();
+		BodyOperations.CreateBody(unflaggedDynamic, BodyType.Dynamic,
+			new FWorldTransform(new FPos(Fixed64.FP.FromRatio(10, 1), Fixed64.FP.Zero, Fixed64.FP.Zero), FQuaternion.Identity));
+		var unflaggedShape = Shape.MakeSphere(FVector3.Zero, FP.One);
+		unflaggedShape.Density = FP.One;
+		ShapeFactory.CreateShape(unflaggedDynamic, unflaggedShape);
+		W.Tick();
+		Systems.Update();
+		Check("ordinary contacts without event flags emit no notification", receiver.ReadAll(static _ => { }) == 0);
+		Shutdown();
+	}
+
+	private static void ContactHitEventTest() {
+		Console.WriteLine("--- ContactHitEventTest ---");
+		Bootstrap();
+		var world = W.GetResource<PhysicsWorld>();
+		world.Gravity = FVector3.Zero;
+		world.HitEventThreshold = FP.Half;
+		var receiver = W.RegisterEventReceiver<ContactHitEvent>();
+
+		var ground = W.NewEntity<Default>();
+		BodyOperations.CreateBody(ground, BodyType.Static, new FWorldTransform(FPos.Zero, FQuaternion.Identity));
+		ShapeFactory.CreateShape(ground, Shape.MakeBox(FVector3.Zero, new FVector3(4.ToFP(), FP.Half, 4.ToFP())));
+		var ball = W.NewEntity<Default>();
+		BodyOperations.CreateBody(ball, BodyType.Dynamic,
+			new FWorldTransform(new FPos(Fixed64.FP.Zero, Fixed64.FP.FromRatio(7, 5), Fixed64.FP.Zero), FQuaternion.Identity));
+		var ballShape = Shape.MakeSphere(FVector3.Zero, FP.One);
+		ballShape.Density = FP.One;
+		ballShape.EnableHitEvents = true;
+		ShapeFactory.CreateShape(ball, ballShape);
+		BodyOperations.SetLinearVelocity(ball, new FVector3(FP.Zero, -5.ToFP(), FP.Zero));
+
+		W.Tick();
+		Systems.Update();
+		var count = 0;
+		var validPayload = false;
+		foreach (var e in receiver) {
+			count++;
+			var pointY = Fixed64.FConversions.ToDouble(e.Value.Point.Y);
+			validPayload |= e.Value.ApproachSpeed > world.HitEventThreshold
+				&& e.Value.NormalImpulse > FP.Zero
+				&& FVector3.LengthSqr(e.Value.Normal) > FP.Half
+				&& pointY > 0.25 && pointY < 1.0;
+		}
+		Check("a solved high-speed impact emits one hit event", count == 1);
+		Check("hit events include solved point, normal, approach speed, and positive impulse", validPayload);
 		Shutdown();
 	}
 
@@ -1167,7 +1389,9 @@ public static class Program {
 		Console.WriteLine("--- SensorDoesNotProduceCollisionResponseTest ---");
 		Bootstrap();
 
-		var beginReceiver = W.RegisterEventReceiver<ContactBeginTouchEvent>();
+		var beginReceiver = W.RegisterEventReceiver<SensorBeginTouchEvent>();
+		var endReceiver = W.RegisterEventReceiver<SensorEndTouchEvent>();
+		var contactBeginReceiver = W.RegisterEventReceiver<ContactBeginTouchEvent>();
 
 		var groundBody = W.NewEntity<Default>();
 		groundBody.Set(new Body {
@@ -1183,7 +1407,8 @@ public static class Program {
 		});
 		var sensorShape = Shape.MakeBox(FVector3.Zero, new FVector3(FP.FromRatio(2, 1), FP.Half, FP.FromRatio(2, 1)));
 		sensorShape.IsSensor = true;
-		ShapeFactory.CreateShape(sensorBody, sensorShape);
+		sensorShape.EnableSensorEvents = true;
+		var sensorShapeEntity = ShapeFactory.CreateShape(sensorBody, sensorShape);
 
 		var sphereBody = W.NewEntity<Default>();
 		sphereBody.Set(new Body {
@@ -1193,17 +1418,24 @@ public static class Program {
 		});
 		var sphereShape = Shape.MakeSphere(FVector3.Zero, FP.One);
 		sphereShape.Density = FP.One;
-		ShapeFactory.CreateShape(sphereBody, sphereShape);
+		sphereShape.EnableSensorEvents = true;
+		var sphereShapeEntity = ShapeFactory.CreateShape(sphereBody, sphereShape);
 
 		var sawSensorTouch = false;
+		var sawSensorEnd = false;
+		var sensorOrderingCorrect = false;
 		var minY = 10.0;
 
 		for (var tick = 0; tick < 300; tick++) {
 			W.Tick();
 			Systems.Update();
 
-			if (beginReceiver.ReadAll(static _ => { }) > 0) {
+			foreach (var e in beginReceiver) {
 				sawSensorTouch = true;
+				sensorOrderingCorrect |= e.Value.SensorShape == sensorShapeEntity.GID && e.Value.VisitorShape == sphereShapeEntity.GID;
+			}
+			if (endReceiver.ReadAll(static _ => { }) > 0) {
+				sawSensorEnd = true;
 			}
 
 			var y = Fixed64.FConversions.ToDouble(sphereBody.Read<Body>().Transform.Position.Y);
@@ -1212,10 +1444,44 @@ public static class Program {
 
 		var finalY = Fixed64.FConversions.ToDouble(sphereBody.Read<Body>().Transform.Position.Y);
 
-		Check("touch events still fire for the sensor overlap", sawSensorTouch);
+		Check("dedicated sensor events fire for the sensor overlap", sawSensorTouch);
+		Check("sensor events identify the sensor and visitor deterministically", sensorOrderingCorrect);
+		Check("dedicated sensor end events fire after separation", sawSensorEnd);
+		Check("sensor overlaps do not emit ordinary contact events", contactBeginReceiver.ReadAll(static _ => { }) == 0);
 		Check("sphere falls straight through the sensor instead of resting on it (rests at ~1.5, not ~6.5)", Math.Abs(finalY - 1.5) < 0.05);
 		Check("sphere never got hung up on the sensor on the way down (dipped below its bottom face at 4.5)", minY < 4.5);
 
+		Shutdown();
+	}
+
+	private static void SensorSensorDirectionalEventsTest() {
+		Console.WriteLine("--- SensorSensorDirectionalEventsTest ---");
+		Bootstrap();
+		var receiver = W.RegisterEventReceiver<SensorBeginTouchEvent>();
+		var bodyA = W.NewEntity<Default>();
+		BodyOperations.CreateBody(bodyA, BodyType.Static, new FWorldTransform(FPos.Zero, FQuaternion.Identity));
+		var sensorA = Shape.MakeSphere(FVector3.Zero, FP.One);
+		sensorA.IsSensor = true;
+		sensorA.EnableSensorEvents = true;
+		var shapeA = ShapeFactory.CreateShape(bodyA, sensorA);
+		var bodyB = W.NewEntity<Default>();
+		BodyOperations.CreateBody(bodyB, BodyType.Static, new FWorldTransform(FPos.Zero, FQuaternion.Identity));
+		var sensorB = Shape.MakeSphere(FVector3.Zero, FP.One);
+		sensorB.IsSensor = true;
+		sensorB.EnableSensorEvents = true;
+		var shapeB = ShapeFactory.CreateShape(bodyB, sensorB);
+
+		W.Tick();
+		Systems.Update();
+		var count = 0;
+		var sawA = false;
+		var sawB = false;
+		foreach (var e in receiver) {
+			count++;
+			sawA |= e.Value.SensorShape == shapeA.GID && e.Value.VisitorShape == shapeB.GID;
+			sawB |= e.Value.SensorShape == shapeB.GID && e.Value.VisitorShape == shapeA.GID;
+		}
+		Check("sensor/sensor overlap emits one directional event for each sensor", count == 2 && sawA && sawB);
 		Shutdown();
 	}
 
@@ -1785,6 +2051,14 @@ public static class Program {
 		W.Tick();
 		Systems.Update();
 		Check("compatible live filters establish a contact", W.Query<All<Contact>>().EntitiesCount() == 1);
+		var originalContact = default(EntityGID);
+		foreach (var contact in W.Query<All<Contact>>().Entities()) {
+			originalContact = contact.GID;
+		}
+
+		ShapeOperations.SetFilter(dynamicShape, new Filter { CategoryBits = 2, MaskBits = ulong.MaxValue });
+		Check("compatible filter changes retain the existing contact and its warm-start state",
+			originalContact.TryUnpack<TestWorld>(out _) && PhysicsDiagnostics.Capture() is { Contacts: 1, CachedPairs: 1 });
 
 		ShapeOperations.SetFilter(dynamicShape, new Filter { CategoryBits = 2, MaskBits = 0 });
 		Check("filter change immediately removes ineligible contacts and pairs", PhysicsDiagnostics.Capture() is { Contacts: 0, CachedPairs: 0 });
@@ -1797,6 +2071,11 @@ public static class Program {
 		W.Tick();
 		Systems.Update();
 		Check("filter-created contact remains valid without movement", PhysicsDiagnostics.Capture() is { Contacts: 1, CachedPairs: 1 });
+
+		dynamicShape.Ref<Shape>().Filter.MaskBits = 0;
+		W.Tick();
+		Systems.Update();
+		Check("existing contacts re-evaluate live filter state deterministically", PhysicsDiagnostics.Capture() is { Contacts: 0, CachedPairs: 0 });
 		W.GetResource<BroadPhase>().Validate();
 		Shutdown();
 	}

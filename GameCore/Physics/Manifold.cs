@@ -9,10 +9,34 @@ namespace Space.GameCore;
 public struct ManifoldPoint {
 	public FVector3 Point;
 	public FP Separation;
-
-	// Normal-impulse warm-start state. Friction is manifold-level (see Contact.FrictionImpulseX/Y),
-	// not per-point — with a single point per manifold, the "centroid" friction basis is this point.
+	/// <summary>Stable geometric identity used to match this point across narrow-phase updates.</summary>
+	public uint FeatureId;
+	/// <summary>True when this point matched a point from the previous manifold.</summary>
+	public bool Persisted;
 	public FP NormalImpulse;
+}
+
+internal struct ContactFeaturePair {
+	public byte Owner1;
+	public byte Index1;
+	public byte Owner2;
+	public byte Index2;
+
+	public readonly uint Id => ((uint)Owner1 << 24) | ((uint)Index1 << 16) | ((uint)Owner2 << 8) | Index2;
+
+	public static ContactFeaturePair Make(int owner1, int index1, int owner2, int index2) => new() {
+		Owner1 = (byte)owner1,
+		Index1 = (byte)index1,
+		Owner2 = (byte)owner2,
+		Index2 = (byte)index2,
+	};
+
+	public readonly ContactFeaturePair Flip() => new() {
+		Owner1 = (byte)(1 - Owner2),
+		Index1 = Index2,
+		Owner2 = (byte)(1 - Owner1),
+		Index2 = Index1,
+	};
 }
 
 /// <summary>
@@ -89,8 +113,6 @@ public struct Manifold {
 	/// and a normal that stays stable and well-defined under deep overlap, which the contact
 	/// solver's speculative-margin/bias math depends on. Everything is computed directly in shape
 	/// A's frame, so no result needs flipping regardless of which shape (sphere/capsule) is A or B.
-	/// Deferred: box3d's near-parallel capsule/capsule two-point clipping (stability refinement,
-	/// not a correctness requirement — a single point at the deepest overlap still holds).
 	/// </summary>
 	public static Manifold Collide(in Shape a, FWorldTransform xfA, in Shape b, FWorldTransform xfB) {
 		var xfBinA = FWorldTransform.InvMul(xfA, xfB);
@@ -170,6 +192,65 @@ public struct Manifold {
 		var b1 = FTransform.TransformPoint(xfBinA, b.Center1);
 		var b2 = FTransform.TransformPoint(xfBinA, b.Center2);
 		var (closestOnA, closestOnB) = SegmentSegmentClosestPoints(a.Center1, a.Center2, b1, b2);
+		var radius = a.Radius + b.Radius;
+		var offset = closestOnB - closestOnA;
+		var distanceSqr = FVector3.LengthSqr(offset);
+		var maxDistance = radius + B3Config.SpeculativeDistance;
+		var minDistance = FP.FromRatio(1, 100) * B3Config.LinearSlop;
+		if (distanceSqr > maxDistance * maxDistance) {
+			return default;
+		}
+		if (distanceSqr < minDistance * minDistance) {
+			return FromClosestPoints(closestOnA, closestOnB, a.Radius, b.Radius);
+		}
+
+		var segmentA = a.Center2 - a.Center1;
+		var segmentB = b2 - b1;
+		var lengthA = FVector3.Length(segmentA);
+		var lengthB = FVector3.Length(segmentB);
+		if (lengthA < B3Config.MinCapsuleLength || lengthB < B3Config.MinCapsuleLength) {
+			return default;
+		}
+
+		var edgeA = segmentA / lengthA;
+		var edgeB = segmentB / lengthB;
+		var alphaTolerance = FP.FromRatio(5, 100);
+		if (FVector3.LengthSqr(FVector3.Cross(edgeA, edgeB)) < alphaTolerance * alphaTolerance) {
+			var segment = new[] {
+				new ClipVertex { Position = b1, Pair = ContactFeaturePair.Make(0, 0, 0, 0) },
+				new ClipVertex { Position = b2, Pair = ContactFeaturePair.Make(0, 1, 0, 1) },
+			};
+			var plane1 = new FPlane(-edgeA, -FVector3.Dot(edgeA, a.Center1));
+			var plane2 = new FPlane(edgeA, FVector3.Dot(edgeA, a.Center2));
+			if (ClipSegment(segment, plane1) == 2 && ClipSegment(segment, plane2) == 2) {
+				var pointA1 = PointToSegmentClosestPoint(a.Center1, a.Center2, segment[0].Position);
+				var pointA2 = PointToSegmentClosestPoint(a.Center1, a.Center2, segment[1].Position);
+				var distance1 = FVector3.Distance(pointA1, segment[0].Position);
+				var distance2 = FVector3.Distance(pointA2, segment[1].Position);
+				if (distance1 <= radius && distance2 <= radius && distance1 >= minDistance && distance2 >= minDistance) {
+					var normal1 = (segment[0].Position - pointA1) / distance1;
+					var normal2 = (segment[1].Position - pointA2) / distance2;
+					var normal = FVector3.NormalizeSafe(normal1 + normal2);
+					if (FVector3.LengthSqr(normal) >= FP.CalculationsEpsilonSqr) {
+						return new Manifold {
+							Normal = normal,
+							PointCount = 2,
+							Point0 = new ManifoldPoint {
+								Point = FP.Half * ((segment[0].Position + a.Radius * normal1 + pointA1) - b.Radius * normal),
+								Separation = distance1 - radius,
+								FeatureId = segment[0].Pair.Id,
+							},
+							Point1 = new ManifoldPoint {
+								Point = FP.Half * ((segment[1].Position + a.Radius * normal2 + pointA2) - b.Radius * normal),
+								Separation = distance2 - radius,
+								FeatureId = segment[1].Pair.Id,
+							},
+						};
+					}
+				}
+			}
+		}
+
 		return FromClosestPoints(closestOnA, closestOnB, a.Radius, b.Radius);
 	}
 
@@ -320,6 +401,7 @@ public struct Manifold {
 	private struct ClipVertex {
 		public FVector3 Position;
 		public FP Separation;
+		public ContactFeaturePair Pair;
 	}
 
 	private struct FaceQuery {
@@ -346,6 +428,7 @@ public struct Manifold {
 		// CollideBoxCapsule's normal points from the box toward the capsule. Here the box is the
 		// pair's B shape and the capsule is A, so flip to keep this file's A-to-B convention.
 		manifold.Normal = -manifold.Normal;
+		FlipManifoldFeatures(ref manifold);
 		return manifold;
 	}
 
@@ -390,7 +473,7 @@ public struct Manifold {
 			var qBox = Hull.LocalCorner(heA, edge.V1);
 
 			var edgeManifold = new Manifold();
-			if (BuildBoxCapsuleEdgeContact(pBox, qBox - pBox, localC1, localC2 - localC1, radius, ref edgeManifold)) {
+			if (BuildBoxCapsuleEdgeContact(pBox, qBox - pBox, localC1, localC2 - localC1, radius, edgeQuery.EdgeB, ref edgeManifold)) {
 				manifold = edgeManifold;
 			}
 		}
@@ -455,7 +538,7 @@ public struct Manifold {
 			var qB = localCenterB + localRotationB * Hull.LocalCorner(heB, edgeB.V1);
 
 			var edgeManifold = new Manifold();
-			if (BuildBoxEdgeContact(pA, qA - pA, pB, qB - pB, ref edgeManifold)) {
+			if (BuildBoxEdgeContact(pA, qA - pA, pB, qB - pB, edgeQuery.EdgeA, edgeQuery.EdgeB, ref edgeManifold)) {
 				manifold = edgeManifold;
 			}
 		}
@@ -485,6 +568,15 @@ public struct Manifold {
 		for (var i = 0; i < manifold.PointCount; i++) {
 			var point = manifold.GetPoint(i);
 			point.Point = centerB + rotationB * point.Point;
+			point.FeatureId = UnpackFeaturePair(point.FeatureId).Flip().Id;
+			manifold.SetPoint(i, point);
+		}
+	}
+
+	private static void FlipManifoldFeatures(ref Manifold manifold) {
+		for (var i = 0; i < manifold.PointCount; i++) {
+			var point = manifold.GetPoint(i);
+			point.FeatureId = UnpackFeaturePair(point.FeatureId).Flip().Id;
 			manifold.SetPoint(i, point);
 		}
 	}
@@ -685,7 +777,11 @@ public struct Manifold {
 
 		if (distance1 * distance2 < FP.Zero) {
 			var fraction = distance1 / (distance1 - distance2);
-			segment[count++] = new ClipVertex { Position = vertex1.Position + fraction * (vertex2.Position - vertex1.Position) };
+			var source = distance1 > FP.Zero ? vertex1 : vertex2;
+			segment[count++] = new ClipVertex {
+				Position = vertex1.Position + fraction * (vertex2.Position - vertex1.Position),
+				Pair = source.Pair,
+			};
 		}
 
 		return count;
@@ -712,7 +808,7 @@ public struct Manifold {
 	}
 
 	/// <summary>Sutherland-Hodgman clip of a convex polygon against a single plane, tracking each surviving/new vertex's separation from <paramref name="refPlane"/>. Ported from box3d's b3ClipPolygon.</summary>
-	private static int ClipPolygon(ClipVertex[] output, ClipVertex[] input, int count, FPlane clipPlane, FPlane refPlane) {
+	private static int ClipPolygon(ClipVertex[] output, ClipVertex[] input, int count, FPlane clipPlane, int edgeIndex, FPlane refPlane) {
 		var vertex1 = input[count - 1];
 		var distance1 = FPlane.Separation(clipPlane, vertex1.Position);
 		var outCount = 0;
@@ -726,11 +822,17 @@ public struct Manifold {
 			} else if (distance1 <= FP.Zero && distance2 > FP.Zero) {
 				var fraction = distance1 / (distance1 - distance2);
 				var position = vertex1.Position + fraction * (vertex2.Position - vertex1.Position);
-				output[outCount++] = new ClipVertex { Position = position, Separation = FPlane.Separation(refPlane, position) };
+				var pair = vertex2.Pair;
+				pair.Owner2 = 0;
+				pair.Index2 = (byte)edgeIndex;
+				output[outCount++] = new ClipVertex { Position = position, Separation = FPlane.Separation(refPlane, position), Pair = pair };
 			} else if (distance2 <= FP.Zero && distance1 > FP.Zero) {
 				var fraction = distance1 / (distance1 - distance2);
 				var position = vertex1.Position + fraction * (vertex2.Position - vertex1.Position);
-				output[outCount++] = new ClipVertex { Position = position, Separation = FPlane.Separation(refPlane, position) };
+				var pair = vertex1.Pair;
+				pair.Owner1 = 0;
+				pair.Index1 = (byte)edgeIndex;
+				output[outCount++] = new ClipVertex { Position = position, Separation = FPlane.Separation(refPlane, position), Pair = pair };
 				output[outCount++] = vertex2;
 			}
 
@@ -774,7 +876,13 @@ public struct Manifold {
 		var count = 4;
 		for (var i = 0; i < 4; i++) {
 			var world = centerInc + rotationInc * Hull.LocalCorner(heInc, incLoop[i]);
-			buffer1[i] = new ClipVertex { Position = world, Separation = FPlane.Separation(refPlane, world) };
+			var incomingEdge = FindBoxEdge(incLoop[(i + 3) % 4], incLoop[i]);
+			var outgoingEdge = FindBoxEdge(incLoop[i], incLoop[(i + 1) % 4]);
+			buffer1[i] = new ClipVertex {
+				Position = world,
+				Separation = FPlane.Separation(refPlane, world),
+				Pair = ContactFeaturePair.Make(1, incomingEdge, 1, outgoingEdge),
+			};
 		}
 
 		Span<int> refLoop = stackalloc int[4] { refFace.V0, refFace.V1, refFace.V2, refFace.V3 };
@@ -787,7 +895,7 @@ public struct Manifold {
 			var binormal = FVector3.Cross(tangent, refNormal);
 			var clipPlane = FPlane.FromNormalAndPoint(binormal, v1);
 
-			count = ClipPolygon(output, input, count, clipPlane, refPlane);
+			count = ClipPolygon(output, input, count, clipPlane, FindBoxEdge(refLoop[i], refLoop[(i + 1) % 4]), refPlane);
 			(input, output) = (output, input);
 
 			if (count < 3) {
@@ -801,7 +909,7 @@ public struct Manifold {
 			var clipPoint = input[i];
 			// The half-way point keeps points in the same position whether A or B ends up the reference face.
 			var point = clipPoint.Position - FP.Half * clipPoint.Separation * refNormal;
-			points[i] = new ManifoldPoint { Point = point, Separation = clipPoint.Separation };
+			points[i] = new ManifoldPoint { Point = point, Separation = clipPoint.Separation, FeatureId = clipPoint.Pair.Id };
 			minSeparation = FP.Min(minSeparation, clipPoint.Separation);
 		}
 
@@ -820,7 +928,10 @@ public struct Manifold {
 		var refOffset = FVector3.Dot(FVector3.AbsComponents(refNormal), heA);
 		var refPlane = new FPlane(refNormal, refOffset);
 
-		var segment = new[] { new ClipVertex { Position = c1 }, new ClipVertex { Position = c2 } };
+		var segment = new[] {
+			new ClipVertex { Position = c1, Pair = ContactFeaturePair.Make(0, 0, 0, 0) },
+			new ClipVertex { Position = c2, Pair = ContactFeaturePair.Make(0, 1, 0, 1) },
+		};
 		if (ClipSegmentToBoxFace(segment, heA, refFaceIndex) < 2) {
 			return false;
 		}
@@ -843,13 +954,13 @@ public struct Manifold {
 
 		manifold.Normal = refNormal;
 		manifold.PointCount = 2;
-		manifold.SetPoint(0, new ManifoldPoint { Point = point1, Separation = distance1 - radius });
-		manifold.SetPoint(1, new ManifoldPoint { Point = point2, Separation = distance2 - radius });
+		manifold.SetPoint(0, new ManifoldPoint { Point = point1, Separation = distance1 - radius, FeatureId = segment[0].Pair.Id });
+		manifold.SetPoint(1, new ManifoldPoint { Point = point2, Separation = distance2 - radius, FeatureId = segment[1].Pair.Id });
 		return true;
 	}
 
 	/// <summary>Builds a 1-point edge-edge contact between two (already-positioned) finite edges. Ported from box3d's b3BuildEdgeContact.</summary>
-	private static bool BuildBoxEdgeContact(FVector3 pA, FVector3 eA, FVector3 pB, FVector3 eB, ref Manifold manifold) {
+	private static bool BuildBoxEdgeContact(FVector3 pA, FVector3 eA, FVector3 pB, FVector3 eB, int edgeA, int edgeB, ref Manifold manifold) {
 		var normal = FVector3.Cross(eA, eB);
 		var lengthSqr = FVector3.LengthSqr(normal);
 		if (lengthSqr < FP.CalculationsEpsilonSqr) {
@@ -873,12 +984,12 @@ public struct Manifold {
 
 		manifold.Normal = normal;
 		manifold.PointCount = 1;
-		manifold.SetPoint(0, new ManifoldPoint { Point = point, Separation = separation });
+		manifold.SetPoint(0, new ManifoldPoint { Point = point, Separation = separation, FeatureId = ContactFeaturePair.Make(0, edgeA, 1, edgeB).Id });
 		return true;
 	}
 
 	/// <summary>Builds a 1-point edge-edge contact between a box edge and the capsule's axis. Ported from box3d's b3BuildHullAndCapsuleEdgeContact.</summary>
-	private static bool BuildBoxCapsuleEdgeContact(FVector3 pBox, FVector3 eBox, FVector3 pCapsule, FVector3 eCapsule, FP radius, ref Manifold manifold) {
+	private static bool BuildBoxCapsuleEdgeContact(FVector3 pBox, FVector3 eBox, FVector3 pCapsule, FVector3 eCapsule, FP radius, int edgeBox, ref Manifold manifold) {
 		var normal = FVector3.Cross(eCapsule, eBox);
 		var lengthSqr = FVector3.LengthSqr(normal);
 		if (lengthSqr < FP.CalculationsEpsilonSqr) {
@@ -901,7 +1012,7 @@ public struct Manifold {
 
 		manifold.Normal = normal;
 		manifold.PointCount = 1;
-		manifold.SetPoint(0, new ManifoldPoint { Point = point, Separation = separation });
+		manifold.SetPoint(0, new ManifoldPoint { Point = point, Separation = separation, FeatureId = ContactFeaturePair.Make(0, edgeBox, 1, 0).Id });
 		return true;
 	}
 
@@ -1031,4 +1142,21 @@ public struct Manifold {
 			manifold.PointCount += 1;
 		}
 	}
+
+	private static int FindBoxEdge(int vertexA, int vertexB) {
+		for (var i = 0; i < Hull.Edges.Length; i++) {
+			var edge = Hull.Edges[i];
+			if ((edge.V0 == vertexA && edge.V1 == vertexB) || (edge.V0 == vertexB && edge.V1 == vertexA)) {
+				return i;
+			}
+		}
+		return 0;
+	}
+
+	private static ContactFeaturePair UnpackFeaturePair(uint id) => new() {
+		Owner1 = (byte)(id >> 24),
+		Index1 = (byte)(id >> 16),
+		Owner2 = (byte)(id >> 8),
+		Index2 = (byte)id,
+	};
 }

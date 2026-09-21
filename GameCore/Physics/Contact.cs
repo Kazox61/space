@@ -19,16 +19,20 @@ public struct Contact : IComponent {
 	public EntityGID ShapeB;
 
 	public Manifold Manifold;
+	/// <summary>True only while the shapes physically overlap; speculative points do not set this.</summary>
 	public bool Touching;
+	public bool EnableContactEvents;
+	public bool EnableSensorEvents;
+	public bool IsSensorContact;
+	public bool ShapeAIsSensor;
+	public bool ShapeBIsSensor;
+	public bool IsEventOnly;
 
 	/// <summary>
-	/// Warm-start friction impulse (2D, along the manifold's tangent basis), persisted across ticks.
-	/// Manifold-level rather than per-point in box3d — solved through the manifold centroid, which
-	/// for our single-point manifolds is just the one point, so it lives here instead of on
-	/// <see cref="ManifoldPoint"/>.
+	/// World-space warm-start friction impulse. The solver projects it into the current tangent basis,
+	/// so a changing contact normal cannot reinterpret stale scalar components as a new direction.
 	/// </summary>
-	public FP FrictionImpulseX;
-	public FP FrictionImpulseY;
+	public FVector3 FrictionImpulse;
 
 	/// <summary>
 	/// Warm-start rolling-resistance impulse (a full angular-velocity-difference impulse, not

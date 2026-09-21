@@ -18,3 +18,22 @@ public struct ContactEndTouchEvent : IEvent {
 	public EntityGID ShapeA;
 	public EntityGID ShapeB;
 }
+
+public struct SensorBeginTouchEvent : IEvent {
+	public EntityGID SensorShape;
+	public EntityGID VisitorShape;
+}
+
+public struct SensorEndTouchEvent : IEvent {
+	public EntityGID SensorShape;
+	public EntityGID VisitorShape;
+}
+
+public struct ContactHitEvent : IEvent {
+	public EntityGID ShapeA;
+	public EntityGID ShapeB;
+	public Fixed.FPos Point;
+	public Fixed32.FVector3 Normal;
+	public Fixed32.FP ApproachSpeed;
+	public Fixed32.FP NormalImpulse;
+}

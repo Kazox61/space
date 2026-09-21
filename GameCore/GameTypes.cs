@@ -44,6 +44,9 @@ public static class GameTypes {
 			.Link<Shooter>()
 			.Event<ContactBeginTouchEvent>()
 			.Event<ContactEndTouchEvent>()
+			.Event<ContactHitEvent>()
+			.Event<SensorBeginTouchEvent>()
+			.Event<SensorEndTouchEvent>()
 			.Event<DamageEvent>()
 			.Event<DeadEvent>()
 			.EntityType<Dummy>()
@@ -61,7 +64,8 @@ public static class GameTypes {
 		typeof(PlayerInfo), typeof(RailSlot), typeof(Shape), typeof(Transform), typeof(ViewId),
 		typeof(IsProjectile),
 		typeof(Shapes), typeof(BodyOwner), typeof(ShapeA), typeof(ShapeB), typeof(Shooter),
-		typeof(ContactBeginTouchEvent), typeof(ContactEndTouchEvent), typeof(DamageEvent), typeof(DeadEvent),
+		typeof(ContactBeginTouchEvent), typeof(ContactEndTouchEvent), typeof(ContactHitEvent),
+		typeof(SensorBeginTouchEvent), typeof(SensorEndTouchEvent), typeof(DamageEvent), typeof(DeadEvent),
 		typeof(Dummy), typeof(Player), typeof(Projectile),
 	];
 
