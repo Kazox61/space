@@ -120,7 +120,8 @@ public abstract partial class Core<TWorld> where TWorld : struct, ISessionType, 
 
 			var bodies = new List<W.Entity>();
 			foreach (var entity in W.Query<All<Body>>().Entities()) {
-				if (entity.Read<Body>().Type != BodyType.Static) {
+				ref readonly var body = ref entity.Read<Body>();
+				if (body.Type != BodyType.Static && BodyOperations.IsEnabled(body)) {
 					bodies.Add(entity);
 				}
 			}
@@ -200,6 +201,9 @@ public abstract partial class Core<TWorld> where TWorld : struct, ISessionType, 
 
 			ref readonly var bodyA = ref bodyAEntity.Read<Body>()!; // TryGetBody only resolves entities with Body.
 			ref readonly var bodyB = ref bodyBEntity.Read<Body>()!;
+			if (!BodyOperations.IsEnabled(bodyA) || !BodyOperations.IsEnabled(bodyB)) {
+				return false;
+			}
 
 			// Manifold.Normal/points are in shape A's local frame (Distance.ShapeDistance's
 			// contract) — rotate/transform into world using bodyA's transform now, before this tick's
@@ -320,9 +324,14 @@ public abstract partial class Core<TWorld> where TWorld : struct, ISessionType, 
 				var linearDamping = FP.One / (FP.One + h * body.LinearDamping);
 				var angularDamping = FP.One / (FP.One + h * body.AngularDamping);
 
-				// No force/torque accumulator yet (no ApplyForce API), so the only linear delta is gravity.
-				body.LinearVelocity = h * gravityScale * gravity + linearDamping * body.LinearVelocity;
-				body.AngularVelocity = angularDamping * body.AngularVelocity;
+				body.LinearVelocity = h * gravityScale * gravity + body.InvMass * (h * body.Force) + linearDamping * body.LinearVelocity;
+				body.AngularVelocity = body.InvInertiaWorld * (h * body.Torque) + angularDamping * body.AngularVelocity;
+
+				// Locks before solving (box3d enforces them on every velocity write-back, e.g.
+				// b3ScatterBodies): without this, the relax pass after IntegratePositions can leave
+				// impulse-added velocity on locked axes stored in the body across ticks.
+				BodyOperations.ApplyLinearLocks(ref body.LinearVelocity, body.MotionLocks);
+				BodyOperations.ApplyAngularLocks(ref body.AngularVelocity, body.MotionLocks);
 			}
 		}
 
@@ -545,6 +554,8 @@ public abstract partial class Core<TWorld> where TWorld : struct, ISessionType, 
 
 				body.DeltaPosition = FVector3.Zero;
 				body.DeltaRotation = FQuaternion.Identity;
+				body.Force = FVector3.Zero;
+				body.Torque = FVector3.Zero;
 
 				// Rotation changed — refresh the world-frame inverse inertia for next tick's solve.
 				var rotationMatrix = FMatrix3.FromQuaternion(body.Transform.Rotation);

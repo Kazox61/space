@@ -29,7 +29,7 @@ public abstract partial class Core<TWorld> where TWorld : struct, ISessionType, 
 			var proxyKey = PackProxyKey(nodeIndex, type);
 
 			if (forcePairCreation) {
-				_movedProxies.Add(proxyKey);
+				BufferMove(proxyKey);
 			}
 
 			return proxyKey;
@@ -38,13 +38,19 @@ public abstract partial class Core<TWorld> where TWorld : struct, ISessionType, 
 		public void DestroyProxy(int proxyKey) {
 			UnpackProxyKey(proxyKey, out var nodeIndex, out var type);
 			_trees[(int)type].DestroyProxy(nodeIndex);
-			_movedProxies.Remove(proxyKey);
+			_movedProxies.RemoveAll(key => key == proxyKey);
 		}
 
 		public void MoveProxy(int proxyKey, FAABB aabb) {
 			UnpackProxyKey(proxyKey, out var nodeIndex, out var type);
 			_trees[(int)type].MoveProxy(nodeIndex, aabb);
-			_movedProxies.Add(proxyKey);
+			BufferMove(proxyKey);
+		}
+
+		private void BufferMove(int proxyKey) {
+			if (!_movedProxies.Contains(proxyKey)) {
+				_movedProxies.Add(proxyKey);
+			}
 		}
 
 		/// <summary>
@@ -192,6 +198,10 @@ public abstract partial class Core<TWorld> where TWorld : struct, ISessionType, 
 
 					if ((int)bodyEntity.Read<Body>().Type != treeIndex) {
 						throw new InvalidOperationException($"Shape {gid.Raw} is stored in the wrong body-type tree.");
+					}
+
+					if (!BodyOperations.IsEnabled(bodyEntity.Read<Body>())) {
+						throw new InvalidOperationException($"Shape {gid.Raw} has a proxy while its body is disabled.");
 					}
 				}
 			}

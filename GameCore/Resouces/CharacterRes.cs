@@ -10,6 +10,13 @@ public class CharacterRes : IResource {
 	/// <summary>Muzzle velocity for <c>Core&lt;TWorld&gt;.ShootSystem</c>'s spawned projectiles.</summary>
 	public FP ProjectileSpeed = 12.ToFP();
 
+	/// <summary>
+	/// Seconds a projectile lives before <c>Core&lt;TWorld&gt;.ProjectileDespawnSystem</c> despawns it,
+	/// misses included -- without this they accumulate forever (each carrying a physics body, shape,
+	/// and broad-phase proxy into every rollback snapshot).
+	/// </summary>
+	public FP ProjectileLifetime = 2.ToFP();
+
 	/// <summary>Pogo suspension spring frequency, matching box3d's CharacterMover::SolveMove (samples/sample.cpp) default.</summary>
 	public FP PogoHertz = 4.ToFP();
 

@@ -23,9 +23,9 @@ public abstract partial class Core<TWorld> where TWorld : struct, ISessionType, 
 				var speed = FP.Abs(body.LinearVelocity.X);
 
 				if (x < rail.Min) {
-					body.LinearVelocity.X = speed;
+					BodyOperations.SetLinearVelocity(entity, new FVector3(speed, body.LinearVelocity.Y, body.LinearVelocity.Z));
 				} else if (x > rail.Max) {
-					body.LinearVelocity.X = -speed;
+					BodyOperations.SetLinearVelocity(entity, new FVector3(-speed, body.LinearVelocity.Y, body.LinearVelocity.Z));
 				}
 			});
 		}

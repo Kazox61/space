@@ -7,11 +7,10 @@ public abstract partial class Core<TWorld> where TWorld : struct, ISessionType, 
 	/// <summary>
 	/// Mirrors every physics-driven entity's <see cref="Body.Transform"/> into its gameplay-facing
 	/// <see cref="Transform"/> component, once per tick right after <see cref="ContactSolverSystem"/>
-	/// finalizes body positions. This is the only system allowed to write <see cref="Transform"/> on
-	/// an entity that also has a <see cref="Body"/> -- everything else (gameplay logic, view
+	/// finalizes body positions. Apart from <see cref="BodyOperations"/>, this is the only code allowed
+	/// to write <see cref="Transform"/> on an entity that also has a <see cref="Body"/> -- gameplay logic and view
 	/// behaviors) treats <see cref="Transform"/> as read-only for such entities and drives movement
-	/// through <see cref="Body"/> instead (velocity for kinematic/dynamic bodies, or
-	/// <see cref="Body.Transform"/> directly for teleports/static placement).
+	/// through <see cref="BodyOperations"/> instead.
 	/// </summary>
 	public struct BodyTransformSyncSystem : ISystem {
 		public void Update() {

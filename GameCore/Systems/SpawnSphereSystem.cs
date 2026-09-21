@@ -18,10 +18,7 @@ public abstract partial class Core<TWorld> where TWorld : struct, ISessionType, 
 			var groundBody = W.NewEntity<Default>();
 			groundBody.Set(new ViewId { Value = ViewAsset.Platform });
 			groundBody.Set(groundTransform);
-			groundBody.Set(new Body {
-				Type = BodyType.Static,
-				Transform = groundWorldTransform,
-			});
+			BodyOperations.CreateBody(groundBody, BodyType.Static, groundWorldTransform);
 			ShapeFactory.CreateShape(groundBody, Shape.MakeBox(FVector3.Zero, new FVector3(40.ToFP(), FP.Half, 40.ToFP())));
 
 			var position = FVector3.Up * 50 + FVector3.Forward * 2;
@@ -32,11 +29,7 @@ public abstract partial class Core<TWorld> where TWorld : struct, ISessionType, 
 			var body = W.NewEntity<Default>();
 			body.Set(new ViewId { Value = ViewAsset.Sphere });
 			body.Set(sphereTransform);
-			body.Set(new Body {
-				Type = BodyType.Dynamic,
-				GravityScale = FP.One,
-				Transform = sphereWorldTransform,
-			});
+			BodyOperations.CreateBody(body, BodyType.Dynamic, sphereWorldTransform);
 
 			// See the console tests' remarks: box3d's default density (1000, water) overflows Fixed32's
 			// inertia math for a shape this size, corrupting rotation response. Keep it sane.
@@ -58,10 +51,7 @@ public abstract partial class Core<TWorld> where TWorld : struct, ISessionType, 
 			var boxBody = W.NewEntity<Default>();
 			boxBody.Set(new ViewId { Value = ViewAsset.Box });
 			boxBody.Set(boxTransform);
-			boxBody.Set(new Body {
-				Type = BodyType.Static,
-				Transform = boxWorldTransform,
-			});
+			BodyOperations.CreateBody(boxBody, BodyType.Static, boxWorldTransform);
 			ShapeFactory.CreateShape(boxBody, Shape.MakeBox(FVector3.Zero, new FVector3(2.ToFP(), FP.Half, 2.ToFP())));
 		}
 	}

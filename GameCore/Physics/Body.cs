@@ -19,6 +19,8 @@ public struct Body : IComponent, IComponentConfig<Body> {
 
 	public FVector3 LinearVelocity;
 	public FVector3 AngularVelocity;
+	public FVector3 Force;
+	public FVector3 Torque;
 
 	public FP Mass { get; internal set; }
 	public FP InvMass { get; internal set; }
@@ -38,6 +40,7 @@ public struct Body : IComponent, IComponentConfig<Body> {
 	public bool EnableSleep;
 	public bool IsAwake;
 	public bool IsEnabled;
+	internal bool EnableStateInitialized;
 	public bool IsBullet;
 	public bool AllowFastRotation;
 	public bool EnableContactRecycling;
@@ -66,6 +69,7 @@ public struct Body : IComponent, IComponentConfig<Body> {
 			EnableSleep = true,
 			IsAwake = true,
 			IsEnabled = true,
+			EnableStateInitialized = true,
 			EnableContactRecycling = true,
 			DeltaRotation = FQuaternion.Identity
 		}

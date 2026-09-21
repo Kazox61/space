@@ -55,6 +55,14 @@ public static class Program {
 		PogoGroundingRayTest();
 		KinematicProjectileKillsDummyTest();
 		RejectedBroadPhasePairsTest();
+		BodyTransformMutationTest();
+		StaticTransformMutationTest();
+		BodyTypeAndEnabledMutationTest();
+		ShapeFilterMutationTest();
+		ShapeGeometryDensityAndForcesTest();
+		MutationRollbackTest();
+		ProjectileDespawnTtlTest();
+		SessionInputDuplicateRetryTest();
 		BodyDestructionRollbackTest();
 		DeathSystemPhysicsLifecycleTest();
 		ProjectileLifecycleCountsTest();
@@ -74,6 +82,7 @@ public static class Program {
 		W.SetResource(new PhysicsWorld());
 		W.SetResource(new BroadPhase());
 		Systems.Add(new DamageSystem(), order: 0);
+		Systems.Add(new ProjectileDespawnSystem(), order: 0);
 		Systems.Add(new DeathSystem(), order: 1);
 		Systems.Add(new ShapeProxySystem(), order: 2);
 		Systems.Add(new ContactSystem(), order: 3);
@@ -120,8 +129,8 @@ public static class Program {
 		Check("ContactBeginTouchEvent fires when overlapping", beginReceiver.ReadAll(static _ => { }) == 1);
 		Check("ContactEndTouchEvent does not fire yet", endReceiver.ReadAll(static _ => { }) == 0);
 
-		ref var body = ref fallingBody.Mut<Body>();
-		body.Transform.Position = new FPos(Fixed64.FP.Zero, Fixed64.FP.FromRatio(500, 1), Fixed64.FP.Zero);
+		BodyOperations.SetTransform(fallingBody,
+			new FWorldTransform(new FPos(Fixed64.FP.Zero, Fixed64.FP.FromRatio(500, 1), Fixed64.FP.Zero), FQuaternion.Identity));
 
 		W.Tick();
 		Systems.Update();
@@ -1552,8 +1561,7 @@ public static class Program {
 		Bootstrap();
 
 		var dummy = W.NewEntity<Dummy>();
-		ref var dummyBody = ref dummy.Ref<Body>();
-		dummyBody.Transform = new FWorldTransform(FPos.Zero, FQuaternion.Identity);
+		BodyOperations.CreateBody(dummy, BodyType.Kinematic, new FWorldTransform(FPos.Zero, FQuaternion.Identity));
 		var dummyShape = Shape.MakeCapsule(
 			new FVector3(FP.Zero, -FP.Half, FP.Zero),
 			new FVector3(FP.Zero, FP.Half, FP.Zero),
@@ -1563,8 +1571,7 @@ public static class Program {
 		var dummyGid = dummy.GID;
 
 		var projectile = W.NewEntity<Projectile>();
-		ref var projectileBody = ref projectile.Ref<Body>();
-		projectileBody.Transform = new FWorldTransform(FPos.Zero, FQuaternion.Identity);
+		BodyOperations.CreateBody(projectile, BodyType.Kinematic, new FWorldTransform(FPos.Zero, FQuaternion.Identity));
 		var projectileShape = Shape.MakeSphere(FVector3.Zero, FP.FromRatio(1, 4));
 		projectileShape.EnableContactEvents = true;
 		ShapeFactory.CreateShape(projectile, projectileShape);
@@ -1645,6 +1652,342 @@ public static class Program {
 		Check("broad-phase validation accepts consistent rejected-pair state", valid);
 
 		Shutdown();
+	}
+
+	private static void BodyTransformMutationTest() {
+		Console.WriteLine("--- BodyTransformMutationTest ---");
+		Bootstrap();
+		W.GetResource<PhysicsWorld>().Gravity = FVector3.Zero;
+
+		var bodyEntity = W.NewEntity<Default>();
+		BodyOperations.CreateBody(bodyEntity, BodyType.Dynamic, new FWorldTransform(FPos.Zero, FQuaternion.Identity));
+		var shape = Shape.MakeSphere(new FVector3(FP.One, FP.Zero, FP.Zero), FP.One);
+		shape.Density = FP.One;
+		var shapeEntity = ShapeFactory.CreateShape(bodyEntity, shape);
+		W.Tick();
+		Systems.Update();
+
+		var destination = new FWorldTransform(new FPos(Fixed64.FP.FromRatio(20, 1), Fixed64.FP.Zero, Fixed64.FP.Zero), FQuaternion.Identity);
+		BodyOperations.SetTransform(bodyEntity, destination);
+		ref readonly var moved = ref bodyEntity.Read<Body>();
+		Check("teleport updates body origin and center of mass atomically",
+			moved.Transform.Position.X == Fixed64.FP.FromRatio(20, 1)
+			&& Math.Abs(Fixed64.FConversions.ToDouble(moved.Center.X) - 21.0) < 0.001);
+
+		W.Tick();
+		Systems.Update();
+		ref readonly var finalized = ref bodyEntity.Read<Body>();
+		Check("teleported dynamic body does not snap back during solver finalization", finalized.Transform.Position.X == Fixed64.FP.FromRatio(20, 1));
+		var hit = PhysicsQueries.CastRayClosest(
+			W.GetResource<BroadPhase>(),
+			new FPos(Fixed64.FP.FromRatio(21, 1), Fixed64.FP.FromRatio(5, 1), Fixed64.FP.Zero),
+			new FVector3(FP.Zero, -10.ToFP(), FP.Zero),
+			Filter.Default,
+			out var result);
+		Check("teleport updates the broad-phase proxy", hit && result.Shape == shapeEntity.GID);
+		W.GetResource<BroadPhase>().Validate();
+		Shutdown();
+	}
+
+	private static void StaticTransformMutationTest() {
+		Console.WriteLine("--- StaticTransformMutationTest ---");
+		Bootstrap();
+		W.GetResource<PhysicsWorld>().Gravity = FVector3.Zero;
+
+		var staticBody = W.NewEntity<Default>();
+		BodyOperations.CreateBody(staticBody, BodyType.Static, new FWorldTransform(FPos.Zero, FQuaternion.Identity));
+		var staticShapeData = Shape.MakeSphere(FVector3.Zero, FP.One);
+		staticShapeData.Filter.CategoryBits = 2;
+		var staticShape = ShapeFactory.CreateShape(staticBody, staticShapeData);
+
+		var oldDynamic = W.NewEntity<Default>();
+		BodyOperations.CreateBody(oldDynamic, BodyType.Dynamic, new FWorldTransform(FPos.Zero, FQuaternion.Identity));
+		var dynamicShape = Shape.MakeSphere(FVector3.Zero, FP.One);
+		dynamicShape.Density = FP.One;
+		dynamicShape.Filter.CategoryBits = 1;
+		ShapeFactory.CreateShape(oldDynamic, dynamicShape);
+
+		var newDynamic = W.NewEntity<Default>();
+		BodyOperations.CreateBody(newDynamic, BodyType.Dynamic, new FWorldTransform(new FPos(Fixed64.FP.FromRatio(10, 1), Fixed64.FP.Zero, Fixed64.FP.Zero), FQuaternion.Identity));
+		ShapeFactory.CreateShape(newDynamic, dynamicShape);
+
+		W.Tick();
+		Systems.Update();
+		Check("static fixture begins with a contact at its old location", W.Query<All<Contact>>().EntitiesCount() == 1);
+
+		BodyOperations.SetTransform(staticBody, new FWorldTransform(new FPos(Fixed64.FP.FromRatio(10, 1), Fixed64.FP.Zero, Fixed64.FP.Zero), FQuaternion.Identity));
+		Check("moving a static body immediately invalidates stale contacts", W.Query<All<Contact>>().EntitiesCount() == 0);
+		W.Tick();
+		Systems.Update();
+		Check("moved static body creates contacts at its new location", W.Query<All<Contact>>().EntitiesCount() == 1);
+
+		var staticOnlyFilter = new Filter { CategoryBits = ulong.MaxValue, MaskBits = 2 };
+		var oldRayHits = PhysicsQueries.CastRayClosest(W.GetResource<BroadPhase>(), new FPos(Fixed64.FP.Zero, 5.ToFP().To64(), Fixed64.FP.Zero), new FVector3(FP.Zero, -10.ToFP(), FP.Zero), staticOnlyFilter, out var oldHit);
+		var newRayHits = PhysicsQueries.CastRayClosest(W.GetResource<BroadPhase>(), new FPos(Fixed64.FP.FromRatio(10, 1), 5.ToFP().To64(), Fixed64.FP.Zero), new FVector3(FP.Zero, -10.ToFP(), FP.Zero), staticOnlyFilter, out var newHit);
+		Check("moved static body leaves its old query location", !oldRayHits || oldHit.Shape != staticShape.GID);
+		Check("moved static body enters its new query location", newRayHits && newHit.Shape == staticShape.GID);
+		W.GetResource<BroadPhase>().Validate();
+		Shutdown();
+	}
+
+	private static void BodyTypeAndEnabledMutationTest() {
+		Console.WriteLine("--- BodyTypeAndEnabledMutationTest ---");
+		Bootstrap();
+		W.GetResource<PhysicsWorld>().Gravity = FVector3.Zero;
+
+		var ground = W.NewEntity<Default>();
+		BodyOperations.CreateBody(ground, BodyType.Static, new FWorldTransform(FPos.Zero, FQuaternion.Identity));
+		ShapeFactory.CreateShape(ground, Shape.MakeSphere(FVector3.Zero, FP.One));
+		var body = W.NewEntity<Default>();
+		BodyOperations.CreateBody(body, BodyType.Static, new FWorldTransform(FPos.Zero, FQuaternion.Identity));
+		var shape = Shape.MakeSphere(FVector3.Zero, FP.One);
+		shape.Density = FP.One;
+		ShapeFactory.CreateShape(body, shape);
+		W.Tick();
+		Systems.Update();
+
+		BodyOperations.SetType(body, BodyType.Dynamic);
+		W.GetResource<BroadPhase>().Validate();
+		Check("body-type change recomputes dynamic mass", body.Read<Body>().Mass > FP.Zero && body.Read<Body>().InvMass > FP.Zero);
+		W.Tick();
+		Systems.Update();
+		Check("body-type change preserves the proxy and creates newly eligible contacts", PhysicsDiagnostics.Capture() is { Proxies: 2, Contacts: 1, CachedPairs: 1 });
+
+		BodyOperations.Disable(body);
+		Check("disabling a body removes its proxy, contacts, and pair state", PhysicsDiagnostics.Capture() is { Proxies: 1, Contacts: 0, CachedPairs: 0 });
+		W.Tick();
+		Systems.Update();
+		Check("disabled body stays out of the broad phase", PhysicsDiagnostics.Capture().Proxies == 1);
+
+		BodyOperations.Enable(body);
+		W.Tick();
+		Systems.Update();
+		Check("enabling a body restores its proxy and eligible contacts", PhysicsDiagnostics.Capture() is { Proxies: 2, Contacts: 1, CachedPairs: 1 });
+		BodyOperations.SetType(body, BodyType.Kinematic);
+		Check("changing away from dynamic clears mass and migrates the proxy", body.Read<Body>().Mass == FP.Zero && body.Read<Body>().InvMass == FP.Zero);
+		W.GetResource<BroadPhase>().Validate();
+		Shutdown();
+	}
+
+	private static void ShapeFilterMutationTest() {
+		Console.WriteLine("--- ShapeFilterMutationTest ---");
+		Bootstrap();
+		W.GetResource<PhysicsWorld>().Gravity = FVector3.Zero;
+
+		var staticBody = W.NewEntity<Default>();
+		BodyOperations.CreateBody(staticBody, BodyType.Static, new FWorldTransform(FPos.Zero, FQuaternion.Identity));
+		ShapeFactory.CreateShape(staticBody, Shape.MakeSphere(FVector3.Zero, FP.One));
+		var dynamicBody = W.NewEntity<Default>();
+		BodyOperations.CreateBody(dynamicBody, BodyType.Dynamic, new FWorldTransform(FPos.Zero, FQuaternion.Identity));
+		var dynamicShapeData = Shape.MakeSphere(FVector3.Zero, FP.One);
+		dynamicShapeData.Density = FP.One;
+		var dynamicShape = ShapeFactory.CreateShape(dynamicBody, dynamicShapeData);
+		W.Tick();
+		Systems.Update();
+		Check("compatible live filters establish a contact", W.Query<All<Contact>>().EntitiesCount() == 1);
+
+		ShapeOperations.SetFilter(dynamicShape, new Filter { CategoryBits = 2, MaskBits = 0 });
+		Check("filter change immediately removes ineligible contacts and pairs", PhysicsDiagnostics.Capture() is { Contacts: 0, CachedPairs: 0 });
+		W.Tick();
+		Systems.Update();
+		Check("incompatible filter remains contact-free without movement", W.Query<All<Contact>>().EntitiesCount() == 0);
+
+		ShapeOperations.SetFilter(dynamicShape, Filter.Default);
+		Check("eligible filter change creates a contact immediately", PhysicsDiagnostics.Capture() is { Contacts: 1, CachedPairs: 1 });
+		W.Tick();
+		Systems.Update();
+		Check("filter-created contact remains valid without movement", PhysicsDiagnostics.Capture() is { Contacts: 1, CachedPairs: 1 });
+		W.GetResource<BroadPhase>().Validate();
+		Shutdown();
+	}
+
+	private static void ShapeGeometryDensityAndForcesTest() {
+		Console.WriteLine("--- ShapeGeometryDensityAndForcesTest ---");
+		Bootstrap();
+		W.GetResource<PhysicsWorld>().Gravity = FVector3.Zero;
+
+		var body = W.NewEntity<Default>();
+		BodyOperations.CreateBody(body, BodyType.Dynamic, new FWorldTransform(FPos.Zero, FQuaternion.Identity));
+		var shapeData = Shape.MakeSphere(FVector3.Zero, FP.One);
+		shapeData.Density = FP.One;
+		var shape = ShapeFactory.CreateShape(body, shapeData);
+		W.Tick();
+		Systems.Update();
+		var originalMass = body.Read<Body>().Mass;
+
+		ShapeOperations.SetDensity(shape, 2.ToFP());
+		Check("density change updates body mass and inertia", body.Read<Body>().Mass == 2 * originalMass && body.Read<Body>().Inertia != FMatrix3.Zero);
+		ShapeOperations.SetSphere(shape, new Sphere(new FVector3(FP.One, FP.Zero, FP.Zero), FP.FromRatio(5, 4)));
+		Check("geometry change updates centroid, mass, and center of mass",
+			shape.Read<Shape>().LocalCentroid == new FVector3(FP.One, FP.Zero, FP.Zero)
+			&& body.Read<Body>().Mass > 2 * originalMass
+			&& Math.Abs(Fixed64.FConversions.ToDouble(body.Read<Body>().Center.X) - 1.0) < 0.001);
+		W.GetResource<BroadPhase>().Validate();
+
+		BodyOperations.SetTransform(body, new FWorldTransform(new FPos(Fixed64.FP.FromRatio(20, 1), Fixed64.FP.Zero, Fixed64.FP.Zero), FQuaternion.Identity));
+		BodyOperations.SetVelocity(body, FVector3.Zero, FVector3.Zero);
+		BodyOperations.ApplyLinearImpulseToCenter(body, new FVector3(body.Read<Body>().Mass, FP.Zero, FP.Zero));
+		Check("linear impulse changes velocity through inverse mass", Math.Abs(body.Read<Body>().LinearVelocity.X.ToDouble() - 1.0) < 0.01);
+		BodyOperations.ApplyAngularImpulse(body, new FVector3(FP.Zero, FP.One, FP.Zero));
+		Check("angular impulse changes angular velocity through inverse inertia", body.Read<Body>().AngularVelocity.Y != FP.Zero);
+		BodyOperations.SetAngularVelocity(body, new FVector3(FP.Zero, FP.Zero, FP.One));
+		Check("angular velocity setter updates an enabled non-static body", body.Read<Body>().AngularVelocity.Z == FP.One);
+
+		BodyOperations.SetVelocity(body, FVector3.Zero, FVector3.Zero);
+		body.Ref<Body>().IsAwake = false;
+		BodyOperations.ApplyLinearImpulse(body, new FVector3(body.Read<Body>().Mass, FP.Zero, FP.Zero), body.Read<Body>().Center + FVector3.Up);
+		Check("point impulse changes linear and angular velocity and wakes the body",
+			body.Read<Body>().LinearVelocity.X > FP.Zero
+			&& body.Read<Body>().AngularVelocity.Z != FP.Zero
+			&& body.Read<Body>().IsAwake);
+
+		BodyOperations.SetVelocity(body, FVector3.Zero, FVector3.Zero);
+		BodyOperations.ApplyForceToCenter(body, new FVector3(body.Read<Body>().Mass * 60.ToFP(), FP.Zero, FP.Zero));
+		BodyOperations.ApplyForce(body, new FVector3(FP.One, FP.Zero, FP.Zero), body.Read<Body>().Center + FVector3.Up);
+		BodyOperations.ApplyTorque(body, new FVector3(FP.Zero, FP.One, FP.Zero));
+		W.Tick();
+		Systems.Update();
+		var velocityAfterForce = body.Read<Body>().LinearVelocity.X;
+		Check("point forces and torques change angular velocity", body.Read<Body>().AngularVelocity.Y != FP.Zero && body.Read<Body>().AngularVelocity.Z != FP.Zero);
+		W.Tick();
+		Systems.Update();
+		Check("force is integrated for one full tick and then cleared", velocityAfterForce > FP.Zero && body.Read<Body>().LinearVelocity.X == velocityAfterForce);
+		W.GetResource<BroadPhase>().Validate();
+		Shutdown();
+	}
+
+	private static void MutationRollbackTest() {
+		Console.WriteLine("--- MutationRollbackTest ---");
+		Bootstrap();
+		W.GetResource<PhysicsWorld>().Gravity = FVector3.Zero;
+
+		var body = W.NewEntity<Default>();
+		BodyOperations.CreateBody(body, BodyType.Dynamic, new FWorldTransform(FPos.Zero, FQuaternion.Identity));
+		var shapeData = Shape.MakeSphere(FVector3.Zero, FP.One);
+		shapeData.Density = FP.One;
+		var shape = ShapeFactory.CreateShape(body, shapeData);
+		W.Tick();
+		Systems.Update();
+
+		var bodyGid = body.GID;
+		var shapeGid = shape.GID;
+		var snapshot = W.Serializer.CreateWorldSnapshot();
+		var hashWriter = BinaryPackWriter.Create(new byte[GameWorldRollback.WorldSnapshotLength]);
+		ulong HashState() {
+			hashWriter.Position = 0;
+			W.Serializer.CreateWorldSnapshot(ref hashWriter);
+			return Fnv1a64(hashWriter.Buffer, (int)hashWriter.Position);
+		}
+
+		static void ApplyMutations(W.Entity bodyEntity, W.Entity shapeEntity) {
+			BodyOperations.SetTransform(bodyEntity, new FWorldTransform(new FPos(Fixed64.FP.FromRatio(5, 1), Fixed64.FP.Zero, Fixed64.FP.Zero), FQuaternion.Identity));
+			BodyOperations.SetType(bodyEntity, BodyType.Kinematic);
+			BodyOperations.SetType(bodyEntity, BodyType.Dynamic);
+			ShapeOperations.SetFilter(shapeEntity, new Filter { CategoryBits = 4, MaskBits = ulong.MaxValue });
+			ShapeOperations.SetSphere(shapeEntity, new Sphere(new FVector3(FP.Half, FP.Zero, FP.Zero), FP.FromRatio(5, 4)));
+			ShapeOperations.SetDensity(shapeEntity, 2.ToFP());
+			BodyOperations.Disable(bodyEntity);
+			BodyOperations.Enable(bodyEntity);
+			BodyOperations.ApplyForceToCenter(bodyEntity, new FVector3(10.ToFP(), FP.Zero, FP.Zero));
+		}
+
+		ApplyMutations(body, shape);
+		W.Tick();
+		Systems.Update();
+		var liveHash = HashState();
+		var liveCounts = PhysicsDiagnostics.Capture();
+		W.GetResource<BroadPhase>().Validate();
+
+		W.Serializer.LoadWorldSnapshot(snapshot, hardReset: true);
+		var bodyResolved = bodyGid.TryUnpack<TestWorld>(out var replayBody);
+		var shapeResolved = shapeGid.TryUnpack<TestWorld>(out var replayShape);
+		var resolved = bodyResolved && shapeResolved;
+		Check("mutation rollback restores body and shape identities", resolved);
+		if (resolved) {
+			ApplyMutations(replayBody, replayShape);
+			W.Tick();
+			Systems.Update();
+			Check("mutation replay reproduces physics counts", PhysicsDiagnostics.Capture() == liveCounts);
+			Check("mutation replay reproduces the full state hash", HashState() == liveHash);
+			W.GetResource<BroadPhase>().Validate();
+		}
+
+		Shutdown();
+	}
+
+	/// <summary>
+	/// Missed projectiles used to live forever (nothing destroyed them except a hit). Verifies the
+	/// <see cref="Lifetime"/> countdown keeps them alive mid-flight and then routes expiry through
+	/// <see cref="DeadEvent"/> → <c>DeathSystem</c>'s complete body/shape/proxy teardown.
+	/// </summary>
+	private static void ProjectileDespawnTtlTest() {
+		Console.WriteLine("--- ProjectileDespawnTtlTest ---");
+		Bootstrap();
+
+		var baseline = PhysicsDiagnostics.Capture();
+
+		var projectile = W.NewEntity<Projectile>();
+		BodyOperations.CreateBody(projectile, BodyType.Kinematic, new FWorldTransform(FPos.Zero, FQuaternion.Identity));
+		var shape = Shape.MakeSphere(FVector3.Zero, FP.FromRatio(1, 4));
+		shape.EnableContactEvents = true;
+		ShapeFactory.CreateShape(projectile, shape);
+		projectile.Set(new Lifetime { TimeRemaining = Fixed64.FP.FromRatio(2, 1) });
+		var projectileGid = projectile.GID;
+
+		for (var i = 0; i < 60; i++) {
+			W.Tick();
+			Systems.Update();
+		}
+		Check("projectile is still alive at half its lifetime", projectileGid.TryUnpack<TestWorld>(out _) && PhysicsDiagnostics.Capture().Bodies == baseline.Bodies + 1);
+
+		for (var i = 0; i < 70; i++) {
+			W.Tick();
+			Systems.Update();
+		}
+		Check("expired projectile entity is destroyed", !projectileGid.TryUnpack<TestWorld>(out _));
+		Check("expiry returns every physics count to baseline", PhysicsDiagnostics.Capture() == baseline);
+		W.GetResource<BroadPhase>().Validate();
+
+		Shutdown();
+	}
+
+	/// <summary>
+	/// Locks down the protocol behind the "can't shoot anymore after lots of shooting" bug, against
+	/// the real session input path (<see cref="ShootSystem"/> included, no Godot): a render frame's
+	/// idle input claims tick T; a same-tick rewrite of that input is rejected as
+	/// <see cref="SetResult.Duplicate"/> and its data silently discarded -- a one-frame flick died
+	/// there. The retry at the next tick applies and the shot spawns. ClientGame's input loop
+	/// implements exactly that retry.
+	/// </summary>
+	private static void SessionInputDuplicateRetryTest() {
+		Console.WriteLine("--- SessionInputDuplicateRetryTest ---");
+		S.Create(SimulationType.ForwardOnly, GameSessionSetup.SessionConfig);
+		// Client<T>.Create normally registers these; this test drives Session directly.
+		S.Types().Signal<PlayerConnectedSignal>().Signal<PlayerDisconnectedSignal>();
+		GameSessionSetup.Register();
+		S.Initialize();
+		GameWorldSetup.CreateAndInitialize();
+
+		W.NewEntity(new Player { PlayerGuid = Guid.NewGuid(), InputChannel = 0 });
+		S.FastForwardToTick(2);
+
+		var idle = new PlayerInput();
+		var firstWrite = S.SetPredictionInput(channel: 0, idle);
+		var flick = new PlayerInput { AttackX = Fixed64.FP.One };
+		var sameTickRewrite = S.SetPredictionInput(channel: 0, flick);
+		Check("first input write of a tick applies", firstWrite == SetResult.Applied);
+		Check("a second write to the same tick is rejected as Duplicate", sameTickRewrite == SetResult.Duplicate);
+		Check("the rejected write's data is discarded -- an unretried flick is lost for good", S.GetInput<PlayerInput>(channel: 0).Data.AttackX == Fixed64.FP.Zero);
+
+		S.FastForwardToTick(S.CurrentTick + 1);
+		var retry = S.SetPredictionInput(channel: 0, flick);
+		Check("retrying the flick at the next tick applies", retry == SetResult.Applied);
+
+		S.FastForwardToTick(S.CurrentTick + 1);
+		Check("the retried flick spawns a projectile through ShootSystem", W.Query<All<IsProjectile>>().EntitiesCount() == 1);
+
+		GameWorldSetup.Destroy();
+		S.Destroy();
 	}
 
 	private static void BodyDestructionRollbackTest() {

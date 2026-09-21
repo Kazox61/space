@@ -1,5 +1,6 @@
 using Fixed64;
 using Godot;
+using Shenanicode.Rollback;
 using Shenanicode.Rollback.LiteNetLib;
 using Space.GameCore;
 using static Space.GameCore.Core<Space.Client.ClientWorld>;
@@ -13,6 +14,7 @@ public partial class ClientGame : Node3D {
 	private FVector2 _attackInput;
 	private bool _inputConsumed;
 	private EntityViewUpdater _viewUpdater;
+	private bool _pendingJump;
 
 	public override void _EnterTree() {
 		var (host, port, offline) = ParseLaunchArgs();
@@ -40,15 +42,24 @@ public partial class ClientGame : Node3D {
 		_clientTime += (float)delta;
 		CLNT.Update(_clientTime);
 		var moveInput = Input.GetVector("move_left", "move_right", "move_forward", "move_backward").Normalized();
+		var sendingAttack = !_inputConsumed;
+		var jumping = Input.IsActionJustPressed("jump") || _pendingJump;
 		var playerInput = new PlayerInput {
 			MoveX = moveInput.X.ToFP(),
 			MoveY = moveInput.Y.ToFP(),
 			AttackX = _inputConsumed ? FP.Zero : _attackInput.X,
 			AttackY = _inputConsumed ? FP.Zero : _attackInput.Y,
-			Jump = Input.IsActionJustPressed("jump")
+			Jump = jumping
 		};
-		_inputConsumed = true;
-		S.SetPredictionInput(channel: CLNT.Channel, playerInput);
+		// SetPrediction silently discards the data of a write to a tick that already has input
+		// (returns Duplicate). Edge-triggered inputs -- one-frame flicks and jumps -- must survive
+		// that rejection, so keep them pending until a fresh tick accepts them; a consumed flick
+		// was otherwise lost for good ("can't shoot anymore after a lot of shooting").
+		var accepted = S.SetPredictionInput(channel: CLNT.Channel, playerInput) != SetResult.Duplicate;
+		if (accepted || !sendingAttack) {
+			_inputConsumed = true;
+		}
+		_pendingJump = jumping && !accepted;
 	}
 
 	public void OnAttack(Vector2 attackInput) {
