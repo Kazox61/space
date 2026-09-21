@@ -195,44 +195,44 @@ public static class Distance {
 					break;
 
 				case 2: {
-						// v = (AB x AO) x AB
-						var a = simplex.V0.W;
-						var b = simplex.V1.W;
-						// box3d's own b3ComputeSimplexSearchDirection (distance.c) crosses the raw,
-						// unnormalized edge vector here -- safe for box3d's float32 (a large product
-						// just loses relative precision gracefully), not for Fixed32: two chained
-						// cross products of edges spanning tens of units (an ordinary-sized static
-						// shape, not a pathological input) compound to magnitudes that silently
-						// overflow Fixed32's ~32767 ceiling (FP's multiply operator computes the
-						// 64-bit product correctly but casts back to a 32-bit raw value unchecked),
-						// corrupting the search direction and derailing the whole GJK iteration.
-						// Direction-only usage (GJK.GetProxySupport only needs the argmax of a dot
-						// product, not searchDirection's actual magnitude), so normalizing the edge
-						// first is free: it bounds the result to the magnitude of `a` alone instead
-						// of the square of the edge length, and, as a bonus, makes the near-zero
-						// degenerate check below purely about the angle between the vectors instead
-						// of being conflated with their scale. Same fix already applied once in this
-						// codebase for the same box3d-raw-cross-product-on-large-shapes issue -- see
-						// Manifold.IsMinkowskiFace's remarks.
-						var ab = FVector3.NormalizeSafe(b - a);
-						searchDirection = FVector3.Cross(FVector3.Cross(ab, -a), ab);
-						break;
-					}
+					// v = (AB x AO) x AB
+					var a = simplex.V0.W;
+					var b = simplex.V1.W;
+					// box3d's own b3ComputeSimplexSearchDirection (distance.c) crosses the raw,
+					// unnormalized edge vector here -- safe for box3d's float32 (a large product
+					// just loses relative precision gracefully), not for Fixed32: two chained
+					// cross products of edges spanning tens of units (an ordinary-sized static
+					// shape, not a pathological input) compound to magnitudes that silently
+					// overflow Fixed32's ~32767 ceiling (FP's multiply operator computes the
+					// 64-bit product correctly but casts back to a 32-bit raw value unchecked),
+					// corrupting the search direction and derailing the whole GJK iteration.
+					// Direction-only usage (GJK.GetProxySupport only needs the argmax of a dot
+					// product, not searchDirection's actual magnitude), so normalizing the edge
+					// first is free: it bounds the result to the magnitude of `a` alone instead
+					// of the square of the edge length, and, as a bonus, makes the near-zero
+					// degenerate check below purely about the angle between the vectors instead
+					// of being conflated with their scale. Same fix already applied once in this
+					// codebase for the same box3d-raw-cross-product-on-large-shapes issue -- see
+					// Manifold.IsMinkowskiFace's remarks.
+					var ab = FVector3.NormalizeSafe(b - a);
+					searchDirection = FVector3.Cross(FVector3.Cross(ab, -a), ab);
+					break;
+				}
 
 				case 3: {
-						// v = AB x AC or v = AC x AB
-						var a = simplex.V0.W;
-						var b = simplex.V1.W;
-						var c = simplex.V2.W;
-						// See the case 2 remarks just above -- same box3d-raw-edge-cross-product
-						// overflow risk, same fix (normalize the edges; only the sign/direction of
-						// n matters here, not its magnitude).
-						var ab = FVector3.NormalizeSafe(b - a);
-						var ac = FVector3.NormalizeSafe(c - a);
-						var n = FVector3.Cross(ab, ac);
-						searchDirection = FVector3.Dot(n, a) < FP.Zero ? n : -n;
-						break;
-					}
+					// v = AB x AC or v = AC x AB
+					var a = simplex.V0.W;
+					var b = simplex.V1.W;
+					var c = simplex.V2.W;
+					// See the case 2 remarks just above -- same box3d-raw-edge-cross-product
+					// overflow risk, same fix (normalize the edges; only the sign/direction of
+					// n matters here, not its magnitude).
+					var ab = FVector3.NormalizeSafe(b - a);
+					var ac = FVector3.NormalizeSafe(c - a);
+					var n = FVector3.Cross(ab, ac);
+					searchDirection = FVector3.Dot(n, a) < FP.Zero ? n : -n;
+					break;
+				}
 
 				default:
 					searchDirection = FVector3.Zero;
@@ -360,8 +360,7 @@ public static class Distance {
 				if (iteration == 0) {
 					if (input.CanEncroach && distanceOutput.Distance > 2 * linearSlop) {
 						target = distanceOutput.Distance - linearSlop;
-					}
-					else {
+					} else {
 						// Initial overlap.
 						output.Hit = true;
 
@@ -371,8 +370,7 @@ public static class Distance {
 						output.Point = FVector3.Blend2(FP.Half, c1, FP.Half, c2);
 						return output;
 					}
-				}
-				else {
+				} else {
 					if (distanceOutput.Distance > FP.Zero && !FVector3.IsNormalized(distanceOutput.Normal, NormalTolerance)) {
 						// Numerical problem, likely extreme input.
 						return output;

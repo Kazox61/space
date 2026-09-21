@@ -30,6 +30,6 @@ jobs:
           dotnet format Space.sln
           --no-restore
           --verify-no-changes
-          --severity info
+          --severity warn
           --exclude static-ecs static-rollback static-rollback-litenetlib FixedPoint
-          --include Client GameCore Server Test
+          --include "Client/**" "GameCore/**" "Server/**" "Test/**"

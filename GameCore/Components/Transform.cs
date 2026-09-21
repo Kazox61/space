@@ -1,6 +1,6 @@
 using FFS.Libraries.StaticEcs;
-using Fixed64;
 using Fixed;
+using Fixed64;
 
 namespace Space.GameCore;
 

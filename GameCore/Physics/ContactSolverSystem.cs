@@ -1,9 +1,9 @@
 using System;
 using System.Collections.Generic;
 using FFS.Libraries.StaticEcs;
-using Shenanicode.Rollback;
-using Fixed32;
 using Fixed;
+using Fixed32;
+using Shenanicode.Rollback;
 
 namespace Space.GameCore;
 
@@ -89,10 +89,18 @@ public abstract partial class Core<TWorld> where TWorld : struct, ISessionType, 
 
 			public void SetPoint(int index, ContactConstraintPoint point) {
 				switch (index) {
-					case 0: Point0 = point; break;
-					case 1: Point1 = point; break;
-					case 2: Point2 = point; break;
-					default: Point3 = point; break;
+					case 0:
+						Point0 = point;
+						break;
+					case 1:
+						Point1 = point;
+						break;
+					case 2:
+						Point2 = point;
+						break;
+					default:
+						Point3 = point;
+						break;
 				}
 			}
 		}
@@ -329,12 +337,18 @@ public abstract partial class Core<TWorld> where TWorld : struct, ISessionType, 
 				var v = body.LinearVelocity;
 				var w = body.AngularVelocity;
 
-				if (body.MotionLocks.LinearX) v.X = FP.Zero;
-				if (body.MotionLocks.LinearY) v.Y = FP.Zero;
-				if (body.MotionLocks.LinearZ) v.Z = FP.Zero;
-				if (body.MotionLocks.AngularX) w.X = FP.Zero;
-				if (body.MotionLocks.AngularY) w.Y = FP.Zero;
-				if (body.MotionLocks.AngularZ) w.Z = FP.Zero;
+				if (body.MotionLocks.LinearX)
+					v.X = FP.Zero;
+				if (body.MotionLocks.LinearY)
+					v.Y = FP.Zero;
+				if (body.MotionLocks.LinearZ)
+					v.Z = FP.Zero;
+				if (body.MotionLocks.AngularX)
+					w.X = FP.Zero;
+				if (body.MotionLocks.AngularY)
+					w.Y = FP.Zero;
+				if (body.MotionLocks.AngularZ)
+					w.Z = FP.Zero;
 
 				if (FVector3.LengthSqr(v) > maxLinearSpeedSquared) {
 					v *= maxLinearSpeed / FVector3.Length(v);

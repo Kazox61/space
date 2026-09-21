@@ -1,7 +1,7 @@
 using System;
 using System.Diagnostics;
-using Fixed32;
 using Fixed;
+using Fixed32;
 
 namespace Space.GameCore;
 
@@ -45,10 +45,18 @@ public struct Manifold {
 
 	public void SetPoint(int index, ManifoldPoint point) {
 		switch (index) {
-			case 0: Point0 = point; break;
-			case 1: Point1 = point; break;
-			case 2: Point2 = point; break;
-			default: Point3 = point; break;
+			case 0:
+				Point0 = point;
+				break;
+			case 1:
+				Point1 = point;
+				break;
+			case 2:
+				Point2 = point;
+				break;
+			default:
+				Point3 = point;
+				break;
 		}
 	}
 
@@ -59,9 +67,12 @@ public struct Manifold {
 		}
 
 		var min = Point0.Separation;
-		if (PointCount > 1) min = FP.Min(min, Point1.Separation);
-		if (PointCount > 2) min = FP.Min(min, Point2.Separation);
-		if (PointCount > 3) min = FP.Min(min, Point3.Separation);
+		if (PointCount > 1)
+			min = FP.Min(min, Point1.Separation);
+		if (PointCount > 2)
+			min = FP.Min(min, Point2.Separation);
+		if (PointCount > 3)
+			min = FP.Min(min, Point3.Separation);
 		return min;
 	}
 
@@ -201,19 +212,16 @@ public struct Manifold {
 				localNormal = new FVector3(localCenter.X >= FP.Zero ? FP.One : -FP.One, FP.Zero, FP.Zero);
 				localPointOnBox.X = localCenter.X >= FP.Zero ? h.X : -h.X;
 				separation = -penX;
-			}
-			else if (penY <= penZ) {
+			} else if (penY <= penZ) {
 				localNormal = new FVector3(FP.Zero, localCenter.Y >= FP.Zero ? FP.One : -FP.One, FP.Zero);
 				localPointOnBox.Y = localCenter.Y >= FP.Zero ? h.Y : -h.Y;
 				separation = -penY;
-			}
-			else {
+			} else {
 				localNormal = new FVector3(FP.Zero, FP.Zero, localCenter.Z >= FP.Zero ? FP.One : -FP.One);
 				localPointOnBox.Z = localCenter.Z >= FP.Zero ? h.Z : -h.Z;
 				separation = -penZ;
 			}
-		}
-		else {
+		} else {
 			localPointOnBox = clamped;
 			var offset = localCenter - clamped;
 			var distance = FVector3.Length(offset);
@@ -417,8 +425,7 @@ public struct Manifold {
 			BuildBoxFaceContact(heB, centerAInB, invLocalRotationB, heA, faceQueryB.FaceIndex, ref localManifold);
 			TransformManifoldBToA(ref localManifold, localCenterB, localRotationB);
 			manifold = localManifold;
-		}
-		else {
+		} else {
 			BuildBoxFaceContact(heA, localCenterB, localRotationB, heB, faceQueryA.FaceIndex, ref manifold);
 		}
 
@@ -645,9 +652,9 @@ public struct Manifold {
 		var sign1 = FVector3.Dot(n, p1 - c1);
 		var sign2 = FVector3.Dot(n, p2 - c2);
 		if (FP.Abs(sign1) > FP.Abs(sign2)) {
-			if (sign1 < FP.Zero) n = -n;
-		}
-		else if (sign2 > FP.Zero) {
+			if (sign1 < FP.Zero)
+				n = -n;
+		} else if (sign2 > FP.Zero) {
 			n = -n;
 		}
 
@@ -711,13 +718,11 @@ public struct Manifold {
 
 			if (distance1 <= FP.Zero && distance2 <= FP.Zero) {
 				output[outCount++] = vertex2;
-			}
-			else if (distance1 <= FP.Zero && distance2 > FP.Zero) {
+			} else if (distance1 <= FP.Zero && distance2 > FP.Zero) {
 				var fraction = distance1 / (distance1 - distance2);
 				var position = vertex1.Position + fraction * (vertex2.Position - vertex1.Position);
 				output[outCount++] = new ClipVertex { Position = position, Separation = FPlane.Separation(refPlane, position) };
-			}
-			else if (distance2 <= FP.Zero && distance1 > FP.Zero) {
+			} else if (distance2 <= FP.Zero && distance1 > FP.Zero) {
 				var fraction = distance1 / (distance1 - distance2);
 				var position = vertex1.Position + fraction * (vertex2.Position - vertex1.Position);
 				output[outCount++] = new ClipVertex { Position = position, Separation = FPlane.Separation(refPlane, position) };

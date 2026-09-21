@@ -140,26 +140,26 @@ internal static class GJK {
 				return FVector3.Distance(simplex.V0.W, simplex.V1.W);
 
 			case 3: {
-					// Same box3d-raw-point overflow risk as BarycentricCoordsTri (Cross of two edge
-					// vectors up to shape-extent scale, then squared inside Length's Sqrt(LengthSqr(..))
-					// -- see its remarks). This metric only ever feeds a same-formula relative
-					// comparison (old vs. fresh) plus a near-zero check, not an absolute physical
-					// area anywhere else, so scaling down first changes its units but not its use.
-					var a = simplex.V0.W;
-					var b = simplex.V1.W;
-					var c = simplex.V2.W;
-					var scale = ComputeSafeScale3(a, b, c);
-					return FVector3.Length(FVector3.Cross(scale * (b - a), scale * (c - a))) / 2;
-				}
+				// Same box3d-raw-point overflow risk as BarycentricCoordsTri (Cross of two edge
+				// vectors up to shape-extent scale, then squared inside Length's Sqrt(LengthSqr(..))
+				// -- see its remarks). This metric only ever feeds a same-formula relative
+				// comparison (old vs. fresh) plus a near-zero check, not an absolute physical
+				// area anywhere else, so scaling down first changes its units but not its use.
+				var a = simplex.V0.W;
+				var b = simplex.V1.W;
+				var c = simplex.V2.W;
+				var scale = ComputeSafeScale3(a, b, c);
+				return FVector3.Length(FVector3.Cross(scale * (b - a), scale * (c - a))) / 2;
+			}
 
 			case 4: {
-					var a = simplex.V0.W;
-					var b = simplex.V1.W;
-					var c = simplex.V2.W;
-					var d = simplex.V3.W;
-					var scale = ComputeSafeScale4(a, b, c, d);
-					return ScalarTripleProduct(scale * (b - a), scale * (c - a), scale * (d - a)) / 6;
-				}
+				var a = simplex.V0.W;
+				var b = simplex.V1.W;
+				var c = simplex.V2.W;
+				var d = simplex.V3.W;
+				var scale = ComputeSafeScale4(a, b, c, d);
+				return ScalarTripleProduct(scale * (b - a), scale * (c - a), scale * (d - a)) / 6;
+			}
 
 			default:
 				return FP.Zero;
@@ -553,13 +553,13 @@ internal static class GJK {
 				break;
 
 			case 4: {
-					// Force identical points and zero distance.
-					var sum = FVector3.Blend2(simplex.V0.A, simplex.V0.WA, simplex.V1.A, simplex.V1.WA)
-						+ FVector3.Blend2(simplex.V2.A, simplex.V2.WA, simplex.V3.A, simplex.V3.WA);
-					vertexA = sum;
-					vertexB = sum;
-					break;
-				}
+				// Force identical points and zero distance.
+				var sum = FVector3.Blend2(simplex.V0.A, simplex.V0.WA, simplex.V1.A, simplex.V1.WA)
+					+ FVector3.Blend2(simplex.V2.A, simplex.V2.WA, simplex.V3.A, simplex.V3.WA);
+				vertexA = sum;
+				vertexB = sum;
+				break;
+			}
 
 			default:
 				vertexA = FVector3.Zero;

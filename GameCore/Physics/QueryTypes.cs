@@ -213,11 +213,16 @@ public struct Simplex {
 	/// </summary>
 	public static ref SimplexVertex VertexAt(ref Simplex simplex, int index) {
 		switch (index) {
-			case 0: return ref simplex.V0;
-			case 1: return ref simplex.V1;
-			case 2: return ref simplex.V2;
-			case 3: return ref simplex.V3;
-			default: throw new IndexOutOfRangeException();
+			case 0:
+				return ref simplex.V0;
+			case 1:
+				return ref simplex.V1;
+			case 2:
+				return ref simplex.V2;
+			case 3:
+				return ref simplex.V3;
+			default:
+				throw new IndexOutOfRangeException();
 		}
 	}
 

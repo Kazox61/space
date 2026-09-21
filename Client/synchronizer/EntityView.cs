@@ -1,53 +1,45 @@
+using FFS.Libraries.StaticEcs;
 using Godot;
 using Godot.Collections;
-using FFS.Libraries.StaticEcs;
 
 namespace Space;
 
 [GlobalClass]
-public partial class EntityView : Node3D
-{
-    [Export] private Array<EntityBehavior> _entityBehaviours = [];
+public partial class EntityView : Node3D {
+	[Export] private Array<EntityBehavior> _entityBehaviours = [];
 
-    public EntityGID EntityGid { get; protected set; }
+	public EntityGID EntityGid { get; protected set; }
 
-    public void AssignEntity(EntityGID entityGid)
-    {
-        EntityGid = entityGid;
+	public void AssignEntity(EntityGID entityGid) {
+		EntityGid = entityGid;
 
-        if (Engine.GetMainLoop() is not SceneTree tree)
-        {
-            GD.PrintErr("Failed to get SceneTree.");
-            return;
-        }
+		if (Engine.GetMainLoop() is not SceneTree tree) {
+			GD.PrintErr("Failed to get SceneTree.");
+			return;
+		}
 
-        tree.Root.AddChild(this);
+		tree.Root.AddChild(this);
 
-        foreach (var viewBehaviour in _entityBehaviours)
-        {
-            viewBehaviour.OnEntityAssigned(EntityGid);
-        }
-    }
+		foreach (var viewBehaviour in _entityBehaviours) {
+			viewBehaviour.OnEntityAssigned(EntityGid);
+		}
+	}
 
-    public void RemoveEntity(EntityGID entityGid)
-    {
-        foreach (var viewBehaviour in _entityBehaviours)
-        {
-            viewBehaviour.OnEntityRemoved(entityGid);
-        }
+	public void RemoveEntity(EntityGID entityGid) {
+		foreach (var viewBehaviour in _entityBehaviours) {
+			viewBehaviour.OnEntityRemoved(entityGid);
+		}
 
-        GetParent().RemoveChild(this);
+		GetParent().RemoveChild(this);
 
-        EntityGid = default;
-    }
+		EntityGid = default;
+	}
 
-    public void UpdateEntity(EntityGID entityGid)
-    {
-        foreach (var viewBehaviour in _entityBehaviours)
-        {
-            viewBehaviour.OnEntityUpdate(entityGid);
-        }
-    }
+	public void UpdateEntity(EntityGID entityGid) {
+		foreach (var viewBehaviour in _entityBehaviours) {
+			viewBehaviour.OnEntityUpdate(entityGid);
+		}
+	}
 
 #if UNITY_EDITOR
 	[ContextMenu("Find Behaviours and Components")]

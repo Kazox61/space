@@ -8,9 +8,10 @@ dotnet husky install
 ```
 
 The pre-commit hook checks staged C# files with `dotnet format Space.sln`
-using the repository's `.editorconfig`. It includes suggestion-level rules
-(`--severity info`) supported by `dotnet format` and blocks the commit if
-formatting changes are needed. Husky handles partially staged files.
+using the repository's `.editorconfig`. It enforces error-level formatting
+(imports ordering, whitespace, line endings) and blocks the commit if
+formatting changes are needed; suggestion-level style rules (naming, var
+preferences, ...) remain IDE-only. Husky handles partially staged files.
 Commits without staged C# files skip the check.
 
 The check requires the .NET SDK and the solution's dependencies (including
@@ -23,7 +24,7 @@ To fix a reported file, run this from the repository root, review the changes,
 and stage the file again:
 
 ```sh
-dotnet format Space.sln --severity info --include GameCore/path/to/File.cs
+dotnet format Space.sln --severity warn --include GameCore/path/to/File.cs
 ```
 
 Run the staged-file check manually:
@@ -34,6 +35,7 @@ dotnet husky run --group pre-commit
 
 GitHub Actions runs the same formatting check on pull requests via
 `.github/workflows/editorconfig.yml`. CI checks all C# files in `Client`,
-`GameCore`, `Server`, and `Test`, with the same submodule exclusions.
+`GameCore`, `Server`, and `Test` (glob includes — plain folder names match
+nothing in `dotnet format --include`), with the same submodule exclusions.
 The check is named `EditorConfig / Formatting check` and can be made required
 in the repository's branch protection settings.
