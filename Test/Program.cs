@@ -53,6 +53,10 @@ public static class Program {
 		RayCastHitsSphereCapsuleAndBoxTest();
 		RayCastMissAndFilterTest();
 		PogoGroundingRayTest();
+		KinematicProjectileKillsDummyTest();
+		RejectedBroadPhasePairsTest();
+		BodyDestructionRollbackTest();
+		DeathSystemPhysicsLifecycleTest();
 		ProjectileLifecycleCountsTest();
 
 		if (_failures == 0) {
@@ -69,10 +73,13 @@ public static class Program {
 		W.Types().RegisterAll(typeof(CoreRoot).Assembly);
 		W.SetResource(new PhysicsWorld());
 		W.SetResource(new BroadPhase());
-		Systems.Add(new ShapeProxySystem(), order: 0);
-		Systems.Add(new ContactSystem(), order: 1);
-		Systems.Add(new ContactSolverSystem(), order: 2);
-		Systems.Add(new BodyTransformSyncSystem(), order: 3);
+		Systems.Add(new DamageSystem(), order: 0);
+		Systems.Add(new DeathSystem(), order: 1);
+		Systems.Add(new ShapeProxySystem(), order: 2);
+		Systems.Add(new ContactSystem(), order: 3);
+		Systems.Add(new ContactSolverSystem(), order: 4);
+		Systems.Add(new BodyTransformSyncSystem(), order: 5);
+		Systems.Add(new ProjectileHitSystem(), order: 6);
 		W.Initialize();
 		Systems.Initialize();
 
@@ -1540,15 +1547,212 @@ public static class Program {
 		Shutdown();
 	}
 
-	/// <summary>
-	/// Phase 0 acceptance check: 10,000 projectile spawn/destruction cycles must leave every physics
-	/// count (bodies, shapes, broad-phase proxies, contacts, cached pairs) exactly at baseline. The
-	/// teardown below is the *correct* sequence the Phase 1 mandatory body-destruction operation has
-	/// to implement (release pairs, destroy contacts, destroy shapes and their proxies, then the
-	/// body) -- this proves the counters themselves and gives Phase 1 a green baseline to preserve.
-	/// DeathSystem's current bare entity.Destroy() path skips all of this and leaks (assessment
-	/// finding #1); routing it through the real API is Phase 1 work.
-	/// </summary>
+	private static void KinematicProjectileKillsDummyTest() {
+		Console.WriteLine("--- KinematicProjectileKillsDummyTest ---");
+		Bootstrap();
+
+		var dummy = W.NewEntity<Dummy>();
+		ref var dummyBody = ref dummy.Ref<Body>();
+		dummyBody.Transform = new FWorldTransform(FPos.Zero, FQuaternion.Identity);
+		var dummyShape = Shape.MakeCapsule(
+			new FVector3(FP.Zero, -FP.Half, FP.Zero),
+			new FVector3(FP.Zero, FP.Half, FP.Zero),
+			FP.Half);
+		dummyShape.EnableContactEvents = true;
+		ShapeFactory.CreateShape(dummy, dummyShape);
+		var dummyGid = dummy.GID;
+
+		var projectile = W.NewEntity<Projectile>();
+		ref var projectileBody = ref projectile.Ref<Body>();
+		projectileBody.Transform = new FWorldTransform(FPos.Zero, FQuaternion.Identity);
+		var projectileShape = Shape.MakeSphere(FVector3.Zero, FP.FromRatio(1, 4));
+		projectileShape.EnableContactEvents = true;
+		ShapeFactory.CreateShape(projectile, projectileShape);
+		var projectileGid = projectile.GID;
+
+		W.Tick();
+		Systems.Update();
+		W.Tick();
+		Systems.Update();
+
+		Check("kinematic projectile is destroyed after touching a kinematic dummy", !projectileGid.TryUnpack<TestWorld>(out _));
+		Check("kinematic dummy dies after being hit by a projectile", !dummyGid.TryUnpack<TestWorld>(out _));
+
+		Shutdown();
+	}
+
+	private static void RejectedBroadPhasePairsTest() {
+		Console.WriteLine("--- RejectedBroadPhasePairsTest ---");
+		Bootstrap();
+
+		var sameBody = W.NewEntity<Default>();
+		sameBody.Set(new Body {
+			Type = BodyType.Dynamic,
+			Transform = new FWorldTransform(FPos.Zero, FQuaternion.Identity),
+		});
+		var sphere = Shape.MakeSphere(FVector3.Zero, FP.One);
+		sphere.Density = FP.One;
+		ShapeFactory.CreateShape(sameBody, sphere);
+		ShapeFactory.CreateShape(sameBody, sphere);
+
+		var filteredStatic = W.NewEntity<Default>();
+		filteredStatic.Set(new Body {
+			Type = BodyType.Static,
+			Transform = new FWorldTransform(new FPos(Fixed64.FP.FromRatio(20, 1), Fixed64.FP.Zero, Fixed64.FP.Zero), FQuaternion.Identity),
+		});
+		ShapeFactory.CreateShape(filteredStatic, Shape.MakeSphere(FVector3.Zero, FP.One));
+
+		var filteredDynamic = W.NewEntity<Default>();
+		filteredDynamic.Set(new Body {
+			Type = BodyType.Dynamic,
+			Transform = new FWorldTransform(new FPos(Fixed64.FP.FromRatio(20, 1), Fixed64.FP.Zero, Fixed64.FP.Zero), FQuaternion.Identity),
+		});
+		var filteredShape = Shape.MakeSphere(FVector3.Zero, FP.One);
+		filteredShape.Density = FP.One;
+		filteredShape.Filter.MaskBits = 0;
+		ShapeFactory.CreateShape(filteredDynamic, filteredShape);
+
+		for (var i = 0; i < 2; i++) {
+			var staticBody = W.NewEntity<Default>();
+			staticBody.Set(new Body {
+				Type = BodyType.Static,
+				Transform = new FWorldTransform(new FPos(Fixed64.FP.FromRatio(40, 1), Fixed64.FP.Zero, Fixed64.FP.Zero), FQuaternion.Identity),
+			});
+			ShapeFactory.CreateShape(staticBody, Shape.MakeSphere(FVector3.Zero, FP.One));
+
+			var kinematicBody = W.NewEntity<Default>();
+			kinematicBody.Set(new Body {
+				Type = BodyType.Kinematic,
+				Transform = new FWorldTransform(new FPos(Fixed64.FP.FromRatio(60, 1), Fixed64.FP.Zero, Fixed64.FP.Zero), FQuaternion.Identity),
+			});
+			ShapeFactory.CreateShape(kinematicBody, Shape.MakeSphere(FVector3.Zero, FP.One));
+		}
+
+		W.Tick();
+		Systems.Update();
+
+		var counts = PhysicsDiagnostics.Capture();
+		Check("same-body, filtered, and non-event static/static or kinematic/kinematic pairs create no contacts", counts.Contacts == 0);
+		Check("rejected pairs are immediately released from the broad-phase cache", counts.CachedPairs == 0);
+
+		var valid = true;
+		try {
+			W.GetResource<BroadPhase>().Validate();
+		} catch (Exception e) {
+			valid = false;
+			Console.WriteLine($"  validation threw: {e}");
+		}
+		Check("broad-phase validation accepts consistent rejected-pair state", valid);
+
+		Shutdown();
+	}
+
+	private static void BodyDestructionRollbackTest() {
+		Console.WriteLine("--- BodyDestructionRollbackTest ---");
+		Bootstrap();
+
+		var ground = W.NewEntity<Default>();
+		ground.Set(new Body {
+			Type = BodyType.Static,
+			Transform = new FWorldTransform(FPos.Zero, FQuaternion.Identity),
+		});
+		ShapeFactory.CreateShape(ground, Shape.MakeSphere(FVector3.Zero, 5.ToFP()));
+
+		var body = W.NewEntity<Default>();
+		body.Set(new Body {
+			Type = BodyType.Dynamic,
+			Transform = new FWorldTransform(FPos.Zero, FQuaternion.Identity),
+		});
+		var shape = Shape.MakeSphere(new FVector3(FP.Half, FP.Zero, FP.Zero), FP.One);
+		shape.Density = FP.One;
+		ShapeFactory.CreateShape(body, shape);
+		shape.SphereShape.Center.X = -FP.Half;
+		ShapeFactory.CreateShape(body, shape);
+		var bodyGid = body.GID;
+
+		W.Tick();
+		Systems.Update();
+		var before = PhysicsDiagnostics.Capture();
+		Check("multi-shape body creates one contact per overlapping shape", before.Contacts == 2 && before.CachedPairs == 2);
+
+		var snapshot = W.Serializer.CreateWorldSnapshot();
+		var hashWriter = BinaryPackWriter.Create(new byte[GameWorldRollback.WorldSnapshotLength]);
+		ulong HashState() {
+			hashWriter.Position = 0;
+			W.Serializer.CreateWorldSnapshot(ref hashWriter);
+			return Fnv1a64(hashWriter.Buffer, (int)hashWriter.Position);
+		}
+
+		var liveBodyResolved = bodyGid.TryUnpack<TestWorld>(out var liveBody);
+		Check("body resolves before live destruction", liveBodyResolved);
+		if (!liveBodyResolved) {
+			Shutdown();
+			return;
+		}
+		PhysicsBodyLifecycle.DestroyBody(liveBody);
+		W.Tick();
+		Systems.Update();
+		var liveCounts = PhysicsDiagnostics.Capture();
+		var liveHash = HashState();
+		W.GetResource<BroadPhase>().Validate();
+
+		W.Serializer.LoadWorldSnapshot(snapshot, hardReset: true);
+		var replayBodyResolved = bodyGid.TryUnpack<TestWorld>(out var replayBody);
+		Check("body GID resolves after rollback restore", replayBodyResolved);
+		if (!replayBodyResolved) {
+			Shutdown();
+			return;
+		}
+		PhysicsBodyLifecycle.DestroyBody(replayBody);
+		W.Tick();
+		Systems.Update();
+		var replayCounts = PhysicsDiagnostics.Capture();
+		var replayHash = HashState();
+		W.GetResource<BroadPhase>().Validate();
+
+		Check("body destruction removes every owned shape, proxy, contact, and pair", liveCounts == new PhysicsCounts(1, 1, 1, 0, 0, 0));
+		Check("rollback across body destruction reproduces physics counts", replayCounts == liveCounts);
+		Check("rollback across body destruction reproduces the full state hash", replayHash == liveHash);
+
+		Shutdown();
+	}
+
+	private static void DeathSystemPhysicsLifecycleTest() {
+		Console.WriteLine("--- DeathSystemPhysicsLifecycleTest ---");
+		Bootstrap();
+
+		var ground = W.NewEntity<Default>();
+		ground.Set(new Body {
+			Type = BodyType.Static,
+			Transform = new FWorldTransform(FPos.Zero, FQuaternion.Identity),
+		});
+		ShapeFactory.CreateShape(ground, Shape.MakeSphere(FVector3.Zero, 5.ToFP()));
+		W.Tick();
+		Systems.Update();
+		var baseline = PhysicsDiagnostics.Capture();
+
+		var projectile = W.NewEntity<Default>();
+		projectile.Set(new Body {
+			Type = BodyType.Dynamic,
+			Transform = new FWorldTransform(FPos.Zero, FQuaternion.Identity),
+		});
+		var shape = Shape.MakeSphere(FVector3.Zero, FP.One);
+		shape.Density = FP.One;
+		ShapeFactory.CreateShape(projectile, shape);
+		var projectileGid = projectile.GID;
+		W.Tick();
+		Systems.Update();
+
+		W.SendEvent(new DeadEvent { Gid = projectileGid });
+		Systems.Update();
+		var counts = PhysicsDiagnostics.Capture();
+		Check("DeathSystem routes physics entities through complete body teardown", counts == baseline);
+		W.GetResource<BroadPhase>().Validate();
+
+		Shutdown();
+	}
+
+	/// <summary>Phase 1 lifecycle acceptance check over 10,000 production body teardowns.</summary>
 	private static void ProjectileLifecycleCountsTest() {
 		Console.WriteLine("--- ProjectileLifecycleCountsTest ---");
 		Bootstrap();
@@ -1583,11 +1787,17 @@ public static class Program {
 			var shape = Shape.MakeSphere(FVector3.Zero, FP.FromRatio(1, 4));
 			shape.Density = FP.One;
 			ShapeFactory.CreateShape(projectile, shape);
+			var projectileGid = projectile.GID;
 
 			W.Tick();
 			Systems.Update();
 
-			DestroyBodyCompletely(projectile, broadPhase);
+			if (!projectileGid.TryUnpack<TestWorld>(out var liveProjectile)) {
+				leakedAtCycle = cycle;
+				leakedCounts = PhysicsDiagnostics.Capture();
+				break;
+			}
+			PhysicsBodyLifecycle.DestroyBody(liveProjectile);
 
 			W.Tick();
 			Systems.Update();
@@ -1610,62 +1820,9 @@ public static class Program {
 		var finalCounts = PhysicsDiagnostics.Capture();
 		var leakDetail = leakedAtCycle >= 0 ? $" (first leak at cycle {leakedAtCycle}: {leakedCounts})" : "";
 		Check($"physics counts match baseline after every one of the {cycles} cycles{leakDetail}", leakedAtCycle == -1 && finalCounts == baseline);
+		broadPhase.Validate();
 
 		Shutdown();
-	}
-
-	/// <summary>
-	/// The correct full body teardown: release broad-phase pairs and destroy contact entities
-	/// *before* the shape links go away, destroy each shape (and its proxy) via
-	/// <see cref="ShapeFactory.DestroyShape"/>, then the body itself. Test-local for Phase 0 --
-	/// Phase 1 productizes this as the mandatory body-destruction operation.
-	/// </summary>
-	private static void DestroyBodyCompletely(W.Entity body, BroadPhase broadPhase) {
-		var shapeEntities = new List<W.Entity>();
-		if (body.Has<W.Links<Shapes>>()) {
-			ref readonly var links = ref body.Read<W.Links<Shapes>>();
-			for (var i = 0; i < links.Length; i++) {
-				if (links[i].Value.TryUnpack<TestWorld>(out var shapeEntity)) {
-					shapeEntities.Add(shapeEntity);
-				}
-			}
-		}
-
-		var shapeGids = new HashSet<EntityGID>();
-		foreach (var shapeEntity in shapeEntities) {
-			shapeGids.Add(shapeEntity.GID);
-		}
-
-		var contactEntities = new List<W.Entity>();
-		foreach (var contactEntity in W.Query<All<Contact>>().Entities()) {
-			if (!contactEntity.Has<W.Link<ShapeA>>() || !contactEntity.Has<W.Link<ShapeB>>()) {
-				continue;
-			}
-
-			ref readonly var linkA = ref contactEntity.Read<W.Link<ShapeA>>();
-			ref readonly var linkB = ref contactEntity.Read<W.Link<ShapeB>>();
-			if (shapeGids.Contains(linkA.Value) || shapeGids.Contains(linkB.Value)) {
-				contactEntities.Add(contactEntity);
-			}
-		}
-
-		foreach (var contactEntity in contactEntities) {
-			ref readonly var linkA = ref contactEntity.Read<W.Link<ShapeA>>();
-			ref readonly var linkB = ref contactEntity.Read<W.Link<ShapeB>>();
-
-			broadPhase.ForgetPair(linkA.Value, linkB.Value);
-			if (contactEntity.Read<Contact>().Touching) {
-				W.SendEvent(new ContactEndTouchEvent { ShapeA = linkA.Value, ShapeB = linkB.Value });
-			}
-
-			contactEntity.Destroy();
-		}
-
-		foreach (var shapeEntity in shapeEntities) {
-			ShapeFactory.DestroyShape(shapeEntity, broadPhase);
-		}
-
-		body.Destroy();
 	}
 
 	/// <summary>FNV-1a 64 over the first <paramref name="length"/> bytes -- a stable, process-independent byte hash (unlike GetHashCode).</summary>

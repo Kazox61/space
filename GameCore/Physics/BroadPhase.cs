@@ -50,12 +50,12 @@ public abstract partial class Core<TWorld> where TWorld : struct, ISessionType, 
 		/// <summary>
 		/// For every proxy that moved (or was created with <c>forcePairCreation</c>) since the last
 		/// call, queries the other trees for newly-overlapping proxies and invokes
-		/// <paramref name="onNewPair"/> once per genuinely new pair. Mirrors box3d's
+		/// <paramref name="tryAcceptPair"/> once per genuinely new pair. Mirrors box3d's
 		/// b3UpdateBroadPhasePairs. Only does coarse AABB + per-node category-bit filtering — full
 		/// <see cref="Filter.ShouldCollide"/> (which also needs mask bits and group index from both
 		/// shapes) is the caller's job once it has entity access to both shapes.
 		/// </summary>
-		public void UpdatePairs(Action<EntityGID, EntityGID> onNewPair) {
+		public void UpdatePairs(Func<EntityGID, EntityGID, bool> tryAcceptPair) {
 			foreach (var proxyKey in _movedProxies) {
 				UnpackProxyKey(proxyKey, out var nodeIndex, out var type);
 				var moverNode = _trees[(int)type].Nodes[nodeIndex];
@@ -77,8 +77,8 @@ public abstract partial class Core<TWorld> where TWorld : struct, ISessionType, 
 							? (capturedMoverGid.Raw, otherGid.Raw)
 							: (otherGid.Raw, capturedMoverGid.Raw);
 
-						if (_pairSet.Add(pairKey)) {
-							onNewPair(capturedMoverGid, otherGid);
+						if (_pairSet.Add(pairKey) && !tryAcceptPair(capturedMoverGid, otherGid)) {
+							_pairSet.Remove(pairKey);
 						}
 
 						return true;
@@ -150,8 +150,83 @@ public abstract partial class Core<TWorld> where TWorld : struct, ISessionType, 
 
 		/// <summary>Removes a pair from the dedup set so it can be re-created later (call when a contact is destroyed).</summary>
 		public void ForgetPair(EntityGID a, EntityGID b) {
-			var pairKey = a.Raw < b.Raw ? (a.Raw, b.Raw) : (b.Raw, a.Raw);
+			var pairKey = PairKey(a, b);
 			_pairSet.Remove(pairKey);
+		}
+
+		/// <summary>Removes every cached pair involving a shape, including rejected or historically stale pairs.</summary>
+		public void ForgetPairsForShape(EntityGID shape) {
+			_pairSet.RemoveWhere(pair => pair.Item1 == shape.Raw || pair.Item2 == shape.Raw);
+		}
+
+		/// <summary>Throws when a proxy, cached pair, or contact no longer resolves to consistent live ECS state.</summary>
+		public void Validate() {
+			var proxyCount = 0;
+			for (var treeIndex = 0; treeIndex < TypeCount; treeIndex++) {
+				var tree = _trees[treeIndex];
+				for (var nodeIndex = 0; nodeIndex < tree.NodesCapacity; nodeIndex++) {
+					ref readonly var node = ref tree.Nodes[nodeIndex];
+					if ((node.Flags & (DynamicTree.AllocatedNode | DynamicTree.LeafNode)) != (DynamicTree.AllocatedNode | DynamicTree.LeafNode)) {
+						continue;
+					}
+
+					proxyCount++;
+					var gid = new EntityGID(node.UserData);
+					if (!gid.TryUnpack<TWorld>(out var shapeEntity) || !shapeEntity.Has<Shape>()) {
+						throw new InvalidOperationException($"Broad-phase proxy {treeIndex}:{nodeIndex} does not resolve to a live shape.");
+					}
+
+					ref readonly var shape = ref shapeEntity.Read<Shape>();
+					if (shape.ProxyKey != PackProxyKey(nodeIndex, (BodyType)treeIndex)) {
+						throw new InvalidOperationException($"Shape {gid.Raw} does not point back to broad-phase proxy {treeIndex}:{nodeIndex}.");
+					}
+
+					if (!shapeEntity.Has<W.Link<BodyOwner>>()) {
+						throw new InvalidOperationException($"Shape {gid.Raw} has a proxy but no body owner.");
+					}
+
+					ref readonly var owner = ref shapeEntity.Read<W.Link<BodyOwner>>();
+					if (!owner.Value.TryUnpack<TWorld>(out var bodyEntity) || !bodyEntity.Has<Body>()) {
+						throw new InvalidOperationException($"Shape {gid.Raw} has a proxy but no live body.");
+					}
+
+					if ((int)bodyEntity.Read<Body>().Type != treeIndex) {
+						throw new InvalidOperationException($"Shape {gid.Raw} is stored in the wrong body-type tree.");
+					}
+				}
+			}
+
+			if (proxyCount != ProxyCount) {
+				throw new InvalidOperationException($"Broad-phase proxy count is {ProxyCount}, but {proxyCount} live leaves were found.");
+			}
+
+			var contactPairs = new HashSet<(ulong, ulong)>();
+			foreach (var contactEntity in W.Query<All<Contact>>().Entities()) {
+				ref readonly var contact = ref contactEntity.Read<Contact>();
+				if (!contactEntity.Has<W.Link<ShapeA>>() || contactEntity.Read<W.Link<ShapeA>>().Value != contact.ShapeA
+					|| !contactEntity.Has<W.Link<ShapeB>>() || contactEntity.Read<W.Link<ShapeB>>().Value != contact.ShapeB) {
+					throw new InvalidOperationException("Contact links do not match its stored broad-phase pair.");
+				}
+
+				var pair = PairKey(contact.ShapeA, contact.ShapeB);
+				if (!_pairSet.Contains(pair)) {
+					throw new InvalidOperationException($"Contact pair ({pair.Item1}, {pair.Item2}) is not cached by the broad phase.");
+				}
+
+				if (!contactPairs.Add(pair)) {
+					throw new InvalidOperationException($"Contact pair ({pair.Item1}, {pair.Item2}) has duplicate contact entities.");
+				}
+			}
+
+			foreach (var pair in _pairSet) {
+				if (!TryValidatePairEndpoint(pair.Item1) || !TryValidatePairEndpoint(pair.Item2)) {
+					throw new InvalidOperationException($"Cached pair ({pair.Item1}, {pair.Item2}) has a stale shape or proxy.");
+				}
+
+				if (!contactPairs.Contains(pair)) {
+					throw new InvalidOperationException($"Cached pair ({pair.Item1}, {pair.Item2}) has no contact entity.");
+				}
+			}
 		}
 
 		/// <summary>Total proxies across all three body-type trees (Phase 0 diagnostics counter).</summary>
@@ -175,6 +250,34 @@ public abstract partial class Core<TWorld> where TWorld : struct, ISessionType, 
 		public int MovedProxyCount => _movedProxies.Count;
 
 		private static int PackProxyKey(int nodeIndex, BodyType type) => (nodeIndex << TypeBits) | (int)type;
+
+		private static (ulong, ulong) PairKey(EntityGID a, EntityGID b) => a.Raw < b.Raw ? (a.Raw, b.Raw) : (b.Raw, a.Raw);
+
+		private bool TryValidatePairEndpoint(ulong raw) {
+			var gid = new EntityGID(raw);
+			if (!gid.TryUnpack<TWorld>(out var entity) || !entity.Has<Shape>()) {
+				return false;
+			}
+
+			var proxyKey = entity.Read<Shape>().ProxyKey;
+			if (proxyKey == Shape.NullProxyKey) {
+				return false;
+			}
+
+			UnpackProxyKey(proxyKey, out var nodeIndex, out var type);
+			if ((int)type >= TypeCount) {
+				return false;
+			}
+
+			var tree = _trees[(int)type];
+			if (nodeIndex < 0 || nodeIndex >= tree.NodesCapacity) {
+				return false;
+			}
+
+			ref readonly var node = ref tree.Nodes[nodeIndex];
+			return (node.Flags & (DynamicTree.AllocatedNode | DynamicTree.LeafNode)) == (DynamicTree.AllocatedNode | DynamicTree.LeafNode)
+				&& node.UserData == raw;
+		}
 
 		private static void UnpackProxyKey(int proxyKey, out int nodeIndex, out BodyType type) {
 			nodeIndex = proxyKey >> TypeBits;

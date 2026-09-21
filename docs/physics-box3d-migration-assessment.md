@@ -570,11 +570,10 @@ Phase 0 (safety baseline) is implemented:
   restored world re-inserts pairs in a different order than a live one).
 - Lifecycle baseline: `ProjectileLifecycleCountsTest` runs 10,000
   spawn/destroy cycles and requires every physics count to stay at baseline.
-  It tears down through the correct sequence (release pairs, destroy
-  contacts, destroy shapes via `ShapeFactory.DestroyShape`, then the body) —
-  the sequence Phase 1 must productize and route `DeathSystem` through. The
-  naive bare `entity.Destroy()` path still leaks (finding 1) and is unchanged
-  until Phase 1.
+  Phase 1 now provides the correct sequence (release pairs, destroy contacts,
+  destroy shapes via `ShapeFactory.DestroyShape`, then the body) through
+  `PhysicsBodyLifecycle.DestroyBody`, and routes physics-body destruction from
+  `DeathSystem` through that operation.
 - Ray tests: `RayCastMissAndFilterTest` previously cast before proxies
   existed, so its sensor and filter checks passed vacuously. It now ticks
   `ShapeProxySystem` first and asserts positive controls (proxy presence,
@@ -588,3 +587,59 @@ Flagged for Phase 1 investigation: production `GameUpdateRoot.Update` calls
 `Systems.Update()` without advancing the world tick (`W.Tick()`), while every
 harness test does both; event-ring and tracking semantics across production
 sessions should be verified against the harness behavior.
+
+## Phase 1 Implementation Status
+
+Phase 1 (lifecycle and pair management) is implemented:
+
+- Body lifecycle: `PhysicsBodyLifecycle.DestroyBody` is the mandatory teardown
+  boundary. It snapshots owned shapes, destroys every associated contact,
+  destroys shapes through `ShapeFactory.DestroyShape`, and destroys the body
+  last. `DeathSystem` now uses this operation for every entity carrying a
+  `Body`.
+- Contact lifecycle: `ContactLifecycle.DestroyContact` is shared by explicit
+  body teardown and every `ContactSystem` destruction path. Contacts retain
+  their shape GIDs independently of ECS links, so pair release and end-touch
+  events remain possible when a relation target no longer resolves.
+- Pair lifecycle: broad-phase pair acceptance is transactional. Pairs rejected
+  because of stale entities, missing owners, collision filters, unsupported
+  geometry, same-body ownership, or non-responsive body types are removed from
+  the cache immediately. Shape destruction also purges any historical cached
+  pairs involving that shape.
+- Pair eligibility: contact creation now requires supported convex geometry,
+  distinct owning bodies, and either at least one dynamic body or an explicit
+  request for contact events. This keeps non-responsive pairs out of the solver
+  while preserving gameplay contacts such as kinematic projectiles hitting
+  kinematic dummies.
+- Validation: `BroadPhase.Validate()` verifies proxy-to-shape-to-body ownership,
+  proxy keys and tree membership, pair endpoints, and one-to-one cached-pair to
+  contact consistency.
+- Regression coverage: the harness now covers rejected pair cleanup,
+  multi-shape body teardown, `DeathSystem` routing, rollback across destruction,
+  full-state hash reproduction, and the 10,000-cycle lifecycle count check using
+  the production API.
+
+The `GameUpdateRoot.Update` tick-advancement question remains open. Phase 1 does
+not use tracking filters, and the production `DeathSystem` path is covered with
+the current event receiver behavior, but session-level tick ownership should be
+resolved separately before adding tick-sensitive tracking logic.
+
+### Kinematic Gameplay Contact Exception
+
+Box3D normally rejects ordinary contact pairs unless at least one body is
+dynamic. The current game cannot apply that rule literally: both `Projectile`
+and `Dummy` use kinematic bodies, while `ProjectileHitSystem` depends on a
+`ContactBeginTouchEvent` to damage the dummy and destroy the projectile.
+
+For compatibility, GameCore creates contacts between non-dynamic bodies when
+either shape sets `EnableContactEvents`. Non-event static/static and
+kinematic/kinematic pairs remain rejected. `KinematicProjectileKillsDummyTest`
+protects this gameplay requirement.
+
+This exception must remain until its replacement is implemented end to end:
+
+- Phase 3 should formalize event-only contacts and honor contact event flags,
+  ensuring these pairs generate events without rigid response.
+- Phase 4 should give projectiles deterministic CCD or shape-cast hit detection.
+  If projectile hits are migrated away from ordinary contacts, the Box3D
+  dynamic-body restriction may then be restored without breaking gameplay.
