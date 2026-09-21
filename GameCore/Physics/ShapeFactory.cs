@@ -35,8 +35,9 @@ public abstract partial class Core<TWorld> where TWorld : struct, ISessionType, 
 		/// system pass can't work here the way the old grid broadphase's did. Callers that need to
 		/// react to shape removal first (contacts, mass updates) should do so before calling this.
 		/// </summary>
-		public static void DestroyShape(W.Entity shapeEntity, BroadPhase broadPhase) {
+		internal static void DestroyShape(W.Entity shapeEntity, BroadPhase broadPhase) {
 			ref var shape = ref shapeEntity.Ref<Shape>()!; // shapeEntity is always created by CreateShape, which sets Shape.
+			broadPhase.ForgetPairsForShape(shapeEntity.GID);
 			ShapeBroadPhaseOps.DestroyProxy(ref shape, broadPhase);
 
 			var updateBodyMass = shape.UpdateBodyMass;

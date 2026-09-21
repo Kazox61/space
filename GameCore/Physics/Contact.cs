@@ -1,5 +1,6 @@
 using FFS.Libraries.StaticEcs;
 using Fixed32;
+using Shenanicode.Rollback;
 
 namespace Space.GameCore;
 
@@ -10,6 +11,13 @@ namespace Space.GameCore;
 /// <c>Core&lt;TWorld&gt;</c>) — see <see cref="Shape"/>'s remarks.
 /// </summary>
 public struct Contact : IComponent {
+	/// <summary>
+	/// Stable pair identity retained independently of the ECS links so teardown can always release
+	/// the broad-phase pair, even when a relation target no longer resolves.
+	/// </summary>
+	public EntityGID ShapeA;
+	public EntityGID ShapeB;
+
 	public Manifold Manifold;
 	public bool Touching;
 

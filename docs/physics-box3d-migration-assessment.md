@@ -588,3 +588,37 @@ Flagged for Phase 1 investigation: production `GameUpdateRoot.Update` calls
 `Systems.Update()` without advancing the world tick (`W.Tick()`), while every
 harness test does both; event-ring and tracking semantics across production
 sessions should be verified against the harness behavior.
+
+## Phase 1 Implementation Status
+
+Phase 1 (lifecycle and pair management) is implemented:
+
+- Body lifecycle: `PhysicsBodyLifecycle.DestroyBody` is the mandatory teardown
+  boundary. It snapshots owned shapes, destroys every associated contact,
+  destroys shapes through `ShapeFactory.DestroyShape`, and destroys the body
+  last. `DeathSystem` now uses this operation for every entity carrying a
+  `Body`.
+- Contact lifecycle: `ContactLifecycle.DestroyContact` is shared by explicit
+  body teardown and every `ContactSystem` destruction path. Contacts retain
+  their shape GIDs independently of ECS links, so pair release and end-touch
+  events remain possible when a relation target no longer resolves.
+- Pair lifecycle: broad-phase pair acceptance is transactional. Pairs rejected
+  because of stale entities, missing owners, collision filters, unsupported
+  geometry, same-body ownership, or non-responsive body types are removed from
+  the cache immediately. Shape destruction also purges any historical cached
+  pairs involving that shape.
+- Pair eligibility: contact creation now requires supported convex geometry,
+  distinct owning bodies, and at least one dynamic body, matching the Box3D
+  body-type rule for rigid contacts.
+- Validation: `BroadPhase.Validate()` verifies proxy-to-shape-to-body ownership,
+  proxy keys and tree membership, pair endpoints, and one-to-one cached-pair to
+  contact consistency.
+- Regression coverage: the harness now covers rejected pair cleanup,
+  multi-shape body teardown, `DeathSystem` routing, rollback across destruction,
+  full-state hash reproduction, and the 10,000-cycle lifecycle count check using
+  the production API.
+
+The `GameUpdateRoot.Update` tick-advancement question remains open. Phase 1 does
+not use tracking filters, and the production `DeathSystem` path is covered with
+the current event receiver behavior, but session-level tick ownership should be
+resolved separately before adding tick-sensitive tracking logic.

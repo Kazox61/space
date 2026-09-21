@@ -34,6 +34,11 @@ public struct Manifold {
 	public ManifoldPoint Point2;
 	public ManifoldPoint Point3;
 
+	public static bool Supports(ShapeType a, ShapeType b) {
+		return a is ShapeType.Sphere or ShapeType.Capsule or ShapeType.Hull
+			&& b is ShapeType.Sphere or ShapeType.Capsule or ShapeType.Hull;
+	}
+
 	public ManifoldPoint GetPoint(int index) {
 		return index switch {
 			0 => Point0,

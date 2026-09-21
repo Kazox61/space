@@ -20,7 +20,8 @@ public abstract partial class Core<TWorld> where TWorld : struct, ISessionType, 
 			// match anything -- but a Contact entity missing a link has been observed in practice
 			// across a client/server rollback boundary. Destroy rather than let the main loop below
 			// crash reading a link that isn't there.
-			W.Query<All<Contact>, Or<None<W.Link<ShapeA>>, None<W.Link<ShapeB>>>>().BatchDestroy();
+			W.Query<All<Contact>, Or<None<W.Link<ShapeA>>, None<W.Link<ShapeB>>>>().For(ref broadPhase,
+				static (ref BroadPhase bp, W.Entity contactEntity) => ContactLifecycle.DestroyContact(contactEntity, bp));
 
 #pragma warning disable FFSECS0050 // Link<ShapeA> and Link<ShapeB> are distinct relation types; the analyzer's duplicate check compares by open-generic definition and can't tell them apart.
 			W.Query<All<W.Link<ShapeA>, W.Link<ShapeB>>>().For(static (W.Entity contactEntity, ref Contact contact) => {
@@ -29,7 +30,7 @@ public abstract partial class Core<TWorld> where TWorld : struct, ISessionType, 
 				ref readonly var shapeBLink = ref contactEntity.Read<W.Link<ShapeB>>();
 
 				if (!shapeALink.Value.TryUnpack<TWorld>(out var entityA) || !shapeBLink.Value.TryUnpack<TWorld>(out var entityB)) {
-					contactEntity.Destroy();
+					ContactLifecycle.DestroyContact(contactEntity, W.GetResource<BroadPhase>());
 					return;
 				}
 
@@ -37,12 +38,7 @@ public abstract partial class Core<TWorld> where TWorld : struct, ISessionType, 
 				ref readonly var shapeDataB = ref entityB.Read<Shape>()!;
 
 				if (!FAABB.Overlaps(shapeDataA.FatAabb, shapeDataB.FatAabb)) {
-					if (contact.Touching) {
-						W.SendEvent(new ContactEndTouchEvent { ShapeA = entityA.GID, ShapeB = entityB.GID });
-					}
-
-					W.GetResource<BroadPhase>().ForgetPair(entityA.GID, entityB.GID);
-					contactEntity.Destroy();
+					ContactLifecycle.DestroyContact(contactEntity, W.GetResource<BroadPhase>());
 					return;
 				}
 
@@ -77,19 +73,38 @@ public abstract partial class Core<TWorld> where TWorld : struct, ISessionType, 
 			return false;
 		}
 
-		private static void TryCreateContact(EntityGID a, EntityGID b) {
+		private static bool TryCreateContact(EntityGID a, EntityGID b) {
 			if (!a.TryUnpack<TWorld>(out var entityA) || !b.TryUnpack<TWorld>(out var entityB)) {
-				return;
+				return false;
+			}
+			if (!entityA.Has<Shape>() || !entityB.Has<Shape>()
+				|| !entityA.Has<W.Link<BodyOwner>>() || !entityB.Has<W.Link<BodyOwner>>()) {
+				return false;
 			}
 
-			ref readonly var shapeDataA = ref entityA.Read<Shape>()!; // Broad-phase pairs are always shape entities.
+			ref readonly var shapeDataA = ref entityA.Read<Shape>();
 			ref readonly var shapeDataB = ref entityB.Read<Shape>()!;
 
-			if (!Filter.ShouldCollide(shapeDataA.Filter, shapeDataB.Filter)) {
-				return;
+			if (!Manifold.Supports(shapeDataA.Type, shapeDataB.Type)
+				|| !Filter.ShouldCollide(shapeDataA.Filter, shapeDataB.Filter)) {
+				return false;
 			}
 
-			W.NewEntity<Default>().Set(new W.Link<ShapeA>(entityA), new W.Link<ShapeB>(entityB), new Contact());
+			ref readonly var ownerA = ref entityA.Read<W.Link<BodyOwner>>();
+			ref readonly var ownerB = ref entityB.Read<W.Link<BodyOwner>>();
+			if (ownerA.Value == ownerB.Value
+				|| !ownerA.Value.TryUnpack<TWorld>(out var bodyA) || !bodyA.Has<Body>()
+				|| !ownerB.Value.TryUnpack<TWorld>(out var bodyB) || !bodyB.Has<Body>()
+				|| (bodyA.Read<Body>().Type != BodyType.Dynamic && bodyB.Read<Body>().Type != BodyType.Dynamic)) {
+				return false;
+			}
+
+			W.NewEntity<Default>().Set(
+				new W.Link<ShapeA>(entityA),
+				new W.Link<ShapeB>(entityB),
+				new Contact { ShapeA = a, ShapeB = b }
+			);
+			return true;
 		}
 	}
 }
