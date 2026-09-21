@@ -24,7 +24,7 @@ public abstract partial class Core<TWorld> where TWorld : struct, ISessionType, 
 				}
 
 				var direction = new Fixed64.FVector3(aim.X, Fixed64.FP.Zero, aim.Y);
-				var speed = Systems.GetResource<CharacterRes>().ProjectileSpeed;
+				var res = Systems.GetResource<CharacterRes>();
 
 				// Spawn a bit ahead of the player's own center so the muzzle isn't buried in their capsule.
 				var spawnPosition = transform.Position + direction * Fixed64.FP.FromRatio(3, 4);
@@ -36,9 +36,10 @@ public abstract partial class Core<TWorld> where TWorld : struct, ISessionType, 
 				var projectile = W.NewEntity<Projectile>();
 				projectile.Set(projectileTransform);
 				projectile.Set(new W.Link<Shooter>(playerEntity));
+				projectile.Set(new Lifetime { TimeRemaining = res.ProjectileLifetime });
 
 				BodyOperations.CreateBody(projectile, BodyType.Kinematic, worldTransform);
-				BodyOperations.SetLinearVelocity(projectile, (direction * speed).To32());
+				BodyOperations.SetLinearVelocity(projectile, (direction * res.ProjectileSpeed).To32());
 
 				var shape = Shape.MakeSphere(FVector3.Zero, FP.FromRatio(1, 4));
 				shape.EnableContactEvents = true;

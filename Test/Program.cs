@@ -61,6 +61,8 @@ public static class Program {
 		ShapeFilterMutationTest();
 		ShapeGeometryDensityAndForcesTest();
 		MutationRollbackTest();
+		ProjectileDespawnTtlTest();
+		SessionInputDuplicateRetryTest();
 		BodyDestructionRollbackTest();
 		DeathSystemPhysicsLifecycleTest();
 		ProjectileLifecycleCountsTest();
@@ -80,6 +82,7 @@ public static class Program {
 		W.SetResource(new PhysicsWorld());
 		W.SetResource(new BroadPhase());
 		Systems.Add(new DamageSystem(), order: 0);
+		Systems.Add(new ProjectileDespawnSystem(), order: 0);
 		Systems.Add(new DeathSystem(), order: 1);
 		Systems.Add(new ShapeProxySystem(), order: 2);
 		Systems.Add(new ContactSystem(), order: 3);
@@ -1910,6 +1913,81 @@ public static class Program {
 		}
 
 		Shutdown();
+	}
+
+	/// <summary>
+	/// Missed projectiles used to live forever (nothing destroyed them except a hit). Verifies the
+	/// <see cref="Lifetime"/> countdown keeps them alive mid-flight and then routes expiry through
+	/// <see cref="DeadEvent"/> → <c>DeathSystem</c>'s complete body/shape/proxy teardown.
+	/// </summary>
+	private static void ProjectileDespawnTtlTest() {
+		Console.WriteLine("--- ProjectileDespawnTtlTest ---");
+		Bootstrap();
+
+		var baseline = PhysicsDiagnostics.Capture();
+
+		var projectile = W.NewEntity<Projectile>();
+		BodyOperations.CreateBody(projectile, BodyType.Kinematic, new FWorldTransform(FPos.Zero, FQuaternion.Identity));
+		var shape = Shape.MakeSphere(FVector3.Zero, FP.FromRatio(1, 4));
+		shape.EnableContactEvents = true;
+		ShapeFactory.CreateShape(projectile, shape);
+		projectile.Set(new Lifetime { TimeRemaining = Fixed64.FP.FromRatio(2, 1) });
+		var projectileGid = projectile.GID;
+
+		for (var i = 0; i < 60; i++) {
+			W.Tick();
+			Systems.Update();
+		}
+		Check("projectile is still alive at half its lifetime", projectileGid.TryUnpack<TestWorld>(out _) && PhysicsDiagnostics.Capture().Bodies == baseline.Bodies + 1);
+
+		for (var i = 0; i < 70; i++) {
+			W.Tick();
+			Systems.Update();
+		}
+		Check("expired projectile entity is destroyed", !projectileGid.TryUnpack<TestWorld>(out _));
+		Check("expiry returns every physics count to baseline", PhysicsDiagnostics.Capture() == baseline);
+		W.GetResource<BroadPhase>().Validate();
+
+		Shutdown();
+	}
+
+	/// <summary>
+	/// Locks down the protocol behind the "can't shoot anymore after lots of shooting" bug, against
+	/// the real session input path (<see cref="ShootSystem"/> included, no Godot): a render frame's
+	/// idle input claims tick T; a same-tick rewrite of that input is rejected as
+	/// <see cref="SetResult.Duplicate"/> and its data silently discarded -- a one-frame flick died
+	/// there. The retry at the next tick applies and the shot spawns. ClientGame's input loop
+	/// implements exactly that retry.
+	/// </summary>
+	private static void SessionInputDuplicateRetryTest() {
+		Console.WriteLine("--- SessionInputDuplicateRetryTest ---");
+		S.Create(SimulationType.ForwardOnly, GameSessionSetup.SessionConfig);
+		// Client<T>.Create normally registers these; this test drives Session directly.
+		S.Types().Signal<PlayerConnectedSignal>().Signal<PlayerDisconnectedSignal>();
+		GameSessionSetup.Register();
+		S.Initialize();
+		GameWorldSetup.CreateAndInitialize();
+
+		W.NewEntity(new Player { PlayerGuid = Guid.NewGuid(), InputChannel = 0 });
+		S.FastForwardToTick(2);
+
+		var idle = new PlayerInput();
+		var firstWrite = S.SetPredictionInput(channel: 0, idle);
+		var flick = new PlayerInput { AttackX = Fixed64.FP.One };
+		var sameTickRewrite = S.SetPredictionInput(channel: 0, flick);
+		Check("first input write of a tick applies", firstWrite == SetResult.Applied);
+		Check("a second write to the same tick is rejected as Duplicate", sameTickRewrite == SetResult.Duplicate);
+		Check("the rejected write's data is discarded -- an unretried flick is lost for good", S.GetInput<PlayerInput>(channel: 0).Data.AttackX == Fixed64.FP.Zero);
+
+		S.FastForwardToTick(S.CurrentTick + 1);
+		var retry = S.SetPredictionInput(channel: 0, flick);
+		Check("retrying the flick at the next tick applies", retry == SetResult.Applied);
+
+		S.FastForwardToTick(S.CurrentTick + 1);
+		Check("the retried flick spawns a projectile through ShootSystem", W.Query<All<IsProjectile>>().EntitiesCount() == 1);
+
+		GameWorldSetup.Destroy();
+		S.Destroy();
 	}
 
 	private static void BodyDestructionRollbackTest() {
