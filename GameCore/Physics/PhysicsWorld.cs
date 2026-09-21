@@ -12,6 +12,7 @@ public abstract partial class Core<TWorld> where TWorld : struct, ISessionType, 
 		public FP ContactDampingRatio = FP.FromRatio(10, 1);
 		public FP ContactSpeed = 3 * B3Config.GetLengthUnitsPerMeter();
 		public FP RestitutionThreshold = B3Config.GetLengthUnitsPerMeter();
+		public FP HitEventThreshold = B3Config.GetLengthUnitsPerMeter();
 		public FP MaximumLinearSpeed = 400 * B3Config.GetLengthUnitsPerMeter();
 		public bool EnableWarmStarting = true;
 

@@ -1,3 +1,4 @@
+using System;
 using FFS.Libraries.StaticEcs;
 using Fixed32;
 using Shenanicode.Rollback;
@@ -37,7 +38,8 @@ public abstract partial class Core<TWorld> where TWorld : struct, ISessionType, 
 				ref readonly var shapeDataA = ref entityA.Read<Shape>()!; // Link<ShapeA>/<ShapeB> always resolve to shape entities.
 				ref readonly var shapeDataB = ref entityB.Read<Shape>()!;
 
-				if (!FAABB.Overlaps(shapeDataA.FatAabb, shapeDataB.FatAabb)) {
+				if (!FAABB.Overlaps(shapeDataA.FatAabb, shapeDataB.FatAabb)
+					|| !Filter.ShouldCollide(shapeDataA.Filter, shapeDataB.Filter)) {
 					ContactLifecycle.DestroyContact(contactEntity, W.GetResource<BroadPhase>());
 					return;
 				}
@@ -46,18 +48,76 @@ public abstract partial class Core<TWorld> where TWorld : struct, ISessionType, 
 					return;
 				}
 
+				var oldManifold = contact.Manifold;
 				var manifold = Manifold.Collide(shapeDataA, xfA, shapeDataB, xfB);
+				MatchManifoldPoints(oldManifold, ref manifold);
 				var wasTouching = contact.Touching;
-				var isTouching = manifold.PointCount > 0 && manifold.MinSeparation() <= B3Config.SpeculativeDistance;
+				var isTouching = manifold.PointCount > 0 && manifold.MinSeparation() <= FP.Zero;
 				contact.Manifold = manifold;
 				contact.Touching = isTouching;
+				contact.EnableContactEvents = !contact.IsSensorContact && (shapeDataA.EnableContactEvents || shapeDataB.EnableContactEvents);
+				contact.EnableSensorEvents = contact.IsSensorContact && shapeDataA.EnableSensorEvents && shapeDataB.EnableSensorEvents;
 
 				if (isTouching && !wasTouching) {
-					W.SendEvent(new ContactBeginTouchEvent { ShapeA = entityA.GID, ShapeB = entityB.GID });
+					SendBeginEvent(contact, entityA.GID, entityB.GID);
 				} else if (!isTouching && wasTouching) {
-					W.SendEvent(new ContactEndTouchEvent { ShapeA = entityA.GID, ShapeB = entityB.GID });
+					SendEndEvent(contact, entityA.GID, entityB.GID);
 				}
 			});
+		}
+
+		private static void MatchManifoldPoints(in Manifold oldManifold, ref Manifold manifold) {
+			Span<bool> claimed = stackalloc bool[Manifold.MaxPoints];
+			claimed.Clear();
+			for (var i = 0; i < manifold.PointCount; i++) {
+				var point = manifold.GetPoint(i);
+				point.NormalImpulse = FP.Zero;
+				point.Persisted = false;
+				for (var j = 0; j < oldManifold.PointCount; j++) {
+					if (claimed[j]) {
+						continue;
+					}
+					var oldPoint = oldManifold.GetPoint(j);
+					if (!oldPoint.HasFeatureId || !point.HasFeatureId || oldPoint.FeatureId != point.FeatureId) {
+						continue;
+					}
+					point.NormalImpulse = oldPoint.NormalImpulse;
+					point.Persisted = true;
+					claimed[j] = true;
+					break;
+				}
+				manifold.SetPoint(i, point);
+			}
+		}
+
+		internal static void SendBeginEvent(in Contact contact, EntityGID shapeA, EntityGID shapeB) {
+			if (contact.IsSensorContact) {
+				if (contact.EnableSensorEvents) {
+					if (contact.ShapeAIsSensor) {
+						W.SendEvent(new SensorBeginTouchEvent { SensorShape = shapeA, VisitorShape = shapeB });
+					}
+					if (contact.ShapeBIsSensor) {
+						W.SendEvent(new SensorBeginTouchEvent { SensorShape = shapeB, VisitorShape = shapeA });
+					}
+				}
+			} else if (contact.EnableContactEvents) {
+				W.SendEvent(new ContactBeginTouchEvent { ShapeA = shapeA, ShapeB = shapeB });
+			}
+		}
+
+		internal static void SendEndEvent(in Contact contact, EntityGID shapeA, EntityGID shapeB) {
+			if (contact.IsSensorContact) {
+				if (contact.EnableSensorEvents) {
+					if (contact.ShapeAIsSensor) {
+						W.SendEvent(new SensorEndTouchEvent { SensorShape = shapeA, VisitorShape = shapeB });
+					}
+					if (contact.ShapeBIsSensor) {
+						W.SendEvent(new SensorEndTouchEvent { SensorShape = shapeB, VisitorShape = shapeA });
+					}
+				}
+			} else if (contact.EnableContactEvents) {
+				W.SendEvent(new ContactEndTouchEvent { ShapeA = shapeA, ShapeB = shapeB });
+			}
 		}
 
 		private static bool TryGetBodyTransform(W.Entity shapeEntity, out Fixed.FWorldTransform transform) {
@@ -94,19 +154,31 @@ public abstract partial class Core<TWorld> where TWorld : struct, ISessionType, 
 			ref readonly var ownerB = ref entityB.Read<W.Link<BodyOwner>>();
 			// Box3D rejects pairs with no dynamic body. Keep event-enabled pairs because the game
 			// intentionally uses kinematic projectiles against kinematic dummies for hit detection.
-			var needsContactEvents = shapeDataA.EnableContactEvents || shapeDataB.EnableContactEvents;
+			var isSensorContact = shapeDataA.IsSensor || shapeDataB.IsSensor;
+			var needsContactEvents = !isSensorContact && (shapeDataA.EnableContactEvents || shapeDataB.EnableContactEvents);
+			var needsSensorEvents = isSensorContact && shapeDataA.EnableSensorEvents && shapeDataB.EnableSensorEvents;
 			if (ownerA.Value == ownerB.Value
 				|| !ownerA.Value.TryUnpack<TWorld>(out var bodyA) || !bodyA.Has<Body>()
 				|| !ownerB.Value.TryUnpack<TWorld>(out var bodyB) || !bodyB.Has<Body>()
 				|| !BodyOperations.IsEnabled(bodyA.Read<Body>()) || !BodyOperations.IsEnabled(bodyB.Read<Body>())
-				|| (!needsContactEvents && bodyA.Read<Body>().Type != BodyType.Dynamic && bodyB.Read<Body>().Type != BodyType.Dynamic)) {
+				|| (!needsContactEvents && !needsSensorEvents && bodyA.Read<Body>().Type != BodyType.Dynamic && bodyB.Read<Body>().Type != BodyType.Dynamic)) {
 				return false;
 			}
+			var isEventOnly = bodyA.Read<Body>().Type != BodyType.Dynamic && bodyB.Read<Body>().Type != BodyType.Dynamic;
 
 			W.NewEntity<Default>().Set(
 				new W.Link<ShapeA>(entityA),
 				new W.Link<ShapeB>(entityB),
-				new Contact { ShapeA = a, ShapeB = b }
+				new Contact {
+					ShapeA = a,
+					ShapeB = b,
+					EnableContactEvents = needsContactEvents,
+					EnableSensorEvents = needsSensorEvents,
+					IsSensorContact = isSensorContact,
+					ShapeAIsSensor = shapeDataA.IsSensor,
+					ShapeBIsSensor = shapeDataB.IsSensor,
+					IsEventOnly = isEventOnly,
+				}
 			);
 			return true;
 		}

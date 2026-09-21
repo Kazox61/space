@@ -41,6 +41,9 @@ public abstract partial class Core<TWorld> where TWorld : struct, ISessionType, 
 			public FVector3 Normal;
 			public FVector3 Tangent1;
 			public FVector3 Tangent2;
+			public EntityGID ShapeA;
+			public EntityGID ShapeB;
+			public bool EnableHitEvents;
 
 			public int PointCount;
 			public ContactConstraintPoint Point0;
@@ -158,8 +161,8 @@ public abstract partial class Core<TWorld> where TWorld : struct, ISessionType, 
 			}
 
 			ApplyRestitution(constraints, world.RestitutionThreshold);
+			StoreImpulses(constraints, world.HitEventThreshold);
 			FinalizeBodies(bodies);
-			StoreImpulses(constraints);
 		}
 
 		private static bool TryPrepare(W.Entity contactEntity, bool enableWarmStarting, Softness contactSoftness, Softness staticSoftness, out ContactConstraint constraint) {
@@ -195,7 +198,7 @@ public abstract partial class Core<TWorld> where TWorld : struct, ISessionType, 
 			// it still gets a manifold and touch events out of ContactSystem (which doesn't check this
 			// flag, on purpose: sensors need overlap detection too), but the solver must not turn that
 			// manifold into an impulse. Matches box3d's sensors never entering the solid-contact graph.
-			if (shapeDataA.IsSensor || shapeDataB.IsSensor) {
+			if (contact.IsSensorContact || contact.IsEventOnly || shapeDataA.IsSensor || shapeDataB.IsSensor) {
 				return false;
 			}
 
@@ -219,6 +222,9 @@ public abstract partial class Core<TWorld> where TWorld : struct, ISessionType, 
 			constraint.BodyA = bodyAEntity;
 			constraint.BodyB = bodyBEntity;
 			constraint.Normal = worldNormal;
+			constraint.ShapeA = shapeAEntity.GID;
+			constraint.ShapeB = shapeBEntity.GID;
+			constraint.EnableHitEvents = shapeDataA.EnableHitEvents || shapeDataB.EnableHitEvents;
 			constraint.PointCount = manifold.PointCount;
 
 			// Friction is solved once per manifold, through the average anchor of every point (matches
@@ -291,8 +297,13 @@ public abstract partial class Core<TWorld> where TWorld : struct, ISessionType, 
 
 			constraint.Friction = FP.Sqrt(shapeDataA.Material.Friction * shapeDataB.Material.Friction);
 			constraint.Restitution = FP.Max(shapeDataA.Material.Restitution, shapeDataB.Material.Restitution);
-			constraint.FrictionImpulseX = enableWarmStarting ? contact.FrictionImpulseX : FP.Zero;
-			constraint.FrictionImpulseY = enableWarmStarting ? contact.FrictionImpulseY : FP.Zero;
+			var hasPersistedPoint = false;
+			for (var i = 0; i < manifold.PointCount; i++) {
+				hasPersistedPoint |= manifold.GetPoint(i).Persisted;
+			}
+			var frictionImpulse = enableWarmStarting && hasPersistedPoint ? contact.FrictionImpulse : FVector3.Zero;
+			constraint.FrictionImpulseX = FVector3.Dot(frictionImpulse, tangent1);
+			constraint.FrictionImpulseY = FVector3.Dot(frictionImpulse, tangent2);
 
 			// Rolling resistance combining, matching box3d's b3UpdateConvexContact: the stronger of
 			// the two materials' coefficients, scaled by whichever shape's own rolling radius is
@@ -300,7 +311,7 @@ public abstract partial class Core<TWorld> where TWorld : struct, ISessionType, 
 			constraint.RollingResistance = FP.Max(shapeDataA.Material.RollingResistance, shapeDataB.Material.RollingResistance)
 				* FP.Max(shapeDataA.RollingRadius(), shapeDataB.RollingRadius());
 			constraint.RollingMass = FMatrix3.Invert(invIA + invIB);
-			constraint.RollingImpulse = enableWarmStarting ? contact.RollingImpulse : FVector3.Zero;
+			constraint.RollingImpulse = enableWarmStarting && hasPersistedPoint ? contact.RollingImpulse : FVector3.Zero;
 			constraint.Softness = bodyA.Type == BodyType.Static || bodyB.Type == BodyType.Static ? staticSoftness : contactSoftness;
 
 			return true;
@@ -563,7 +574,7 @@ public abstract partial class Core<TWorld> where TWorld : struct, ISessionType, 
 			}
 		}
 
-		private static void StoreImpulses(List<ContactConstraint> constraints) {
+		private static void StoreImpulses(List<ContactConstraint> constraints, FP hitEventThreshold) {
 			foreach (var c in constraints) {
 				ref var contact = ref c.ContactEntity.Ref<Contact>()!; // TryPrepare only stores entities with Contact.
 				for (var k = 0; k < c.PointCount; k++) {
@@ -572,9 +583,42 @@ public abstract partial class Core<TWorld> where TWorld : struct, ISessionType, 
 					contact.Manifold.SetPoint(k, manifoldPoint);
 				}
 
-				contact.FrictionImpulseX = c.FrictionImpulseX;
-				contact.FrictionImpulseY = c.FrictionImpulseY;
+				contact.FrictionImpulse = c.FrictionImpulseX * c.Tangent1 + c.FrictionImpulseY * c.Tangent2;
 				contact.RollingImpulse = c.RollingImpulse;
+
+				if (!c.EnableHitEvents) {
+					continue;
+				}
+				var bestIndex = -1;
+				var bestSpeed = hitEventThreshold;
+				for (var k = 0; k < c.PointCount; k++) {
+					var point = c.GetPoint(k);
+					var approachSpeed = -point.RelativeVelocity;
+					if (approachSpeed > bestSpeed && point.TotalNormalImpulse > FP.Zero) {
+						bestSpeed = approachSpeed;
+						bestIndex = k;
+					}
+				}
+				if (bestIndex >= 0) {
+					if (!c.BodyA.Has<Body>() || !c.BodyB.Has<Body>()) {
+						continue;
+					}
+					var point = c.GetPoint(bestIndex);
+#pragma warning disable FFSECS0042 // Constraint bodies are admitted by TryPrepare only after resolving entities with Body; Has guards stale entities above.
+					ref var bodyA = ref c.BodyA.Ref<Body>();
+					ref var bodyB = ref c.BodyB.Ref<Body>();
+#pragma warning restore FFSECS0042
+					var pointA = bodyA.Center + bodyA.DeltaPosition + bodyA.DeltaRotation * point.RA;
+					var pointB = bodyB.Center + bodyB.DeltaPosition + bodyB.DeltaRotation * point.RB;
+					W.SendEvent(new ContactHitEvent {
+						ShapeA = c.ShapeA,
+						ShapeB = c.ShapeB,
+						Point = FPos.Lerp(pointA, pointB, FP.Half),
+						Normal = c.Normal,
+						ApproachSpeed = bestSpeed,
+						NormalImpulse = point.NormalImpulse,
+					});
+				}
 			}
 		}
 

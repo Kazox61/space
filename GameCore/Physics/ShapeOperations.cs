@@ -17,11 +17,38 @@ public abstract partial class Core<TWorld> where TWorld : struct, ISessionType, 
 				return;
 			}
 			var broadPhase = W.GetResource<BroadPhase>();
-			InvalidateShape(shapeEntity, broadPhase);
+			var categoryChanged = currentShape.Filter.CategoryBits != filter.CategoryBits;
 			ref var shape = ref RequireShape(shapeEntity);
 			shape.Filter = filter;
+			ContactLifecycle.ReevaluateContactsForShape(shapeEntity, broadPhase);
 			Wake(bodyEntity);
-			RecreateProxyIfEnabled(shapeEntity, bodyEntity, ref shape, broadPhase);
+			if (categoryChanged) {
+				ShapeBroadPhaseOps.DestroyProxy(ref shape, broadPhase);
+				RecreateProxyIfEnabled(shapeEntity, bodyEntity, ref shape, broadPhase);
+			} else if (shape.ProxyKey != Shape.NullProxyKey) {
+				broadPhase.MoveProxy(shape.ProxyKey, shape.FatAabb);
+			}
+			broadPhase.UpdatePairs(ContactSystem.TryCreateContact);
+		}
+
+		public static void SetEventFlags(W.Entity shapeEntity, bool contactEvents, bool sensorEvents, bool hitEvents) {
+			var bodyEntity = RequireOwner(shapeEntity);
+			ref readonly var currentShape = ref RequireShape(shapeEntity);
+			if (currentShape.EnableContactEvents == contactEvents
+				&& currentShape.EnableSensorEvents == sensorEvents
+				&& currentShape.EnableHitEvents == hitEvents) {
+				return;
+			}
+			var broadPhase = W.GetResource<BroadPhase>();
+			ref var shape = ref RequireShape(shapeEntity);
+			shape.EnableContactEvents = contactEvents;
+			shape.EnableSensorEvents = sensorEvents;
+			shape.EnableHitEvents = hitEvents;
+			ContactLifecycle.ReevaluateEventFlagsForShape(shapeEntity, broadPhase);
+			Wake(bodyEntity);
+			if (shape.ProxyKey != Shape.NullProxyKey) {
+				broadPhase.MoveProxy(shape.ProxyKey, shape.FatAabb);
+			}
 			broadPhase.UpdatePairs(ContactSystem.TryCreateContact);
 		}
 
