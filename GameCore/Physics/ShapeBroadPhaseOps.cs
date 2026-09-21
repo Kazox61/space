@@ -27,6 +27,11 @@ public abstract partial class Core<TWorld> where TWorld : struct, ISessionType, 
 			}
 		}
 
+		public static void ResetProxy(ref Shape shape, W.Entity self, BroadPhase broadPhase, BodyType proxyType, FWorldTransform bodyTransform, bool forcePairCreation = true) {
+			DestroyProxy(ref shape, broadPhase);
+			CreateProxy(ref shape, self, broadPhase, proxyType, bodyTransform, forcePairCreation);
+		}
+
 		/// <summary>
 		/// Recompute this shape's AABB from the body's current world transform and, if it grew outside
 		/// the existing fat AABB, re-fatten it and move the broad-phase proxy.

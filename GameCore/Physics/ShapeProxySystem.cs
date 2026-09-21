@@ -33,6 +33,12 @@ public abstract partial class Core<TWorld> where TWorld : struct, ISessionType, 
 					}
 
 					ref readonly var body = ref bodyEntity.Read<Body>()!; // BodyOwner always links to an entity with Body.
+					if (!BodyOperations.IsEnabled(body)) {
+						if (shape.ProxyKey != Shape.NullProxyKey) {
+							ShapeBroadPhaseOps.DestroyProxy(ref shape, bp);
+						}
+						return;
+					}
 
 					if (shape.ProxyKey == Shape.NullProxyKey) {
 						var forcePairCreation = body.Type != BodyType.Static || shape.InvokeContactCreation;

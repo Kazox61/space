@@ -643,3 +643,36 @@ This exception must remain until its replacement is implemented end to end:
 - Phase 4 should give projectiles deterministic CCD or shape-cast hit detection.
   If projectile hits are migrated away from ordinary contacts, the Box3D
   dynamic-body restriction may then be restored without breaking gameplay.
+
+## Phase 2 Implementation Status
+
+Phase 2 (safe mutation APIs) is implemented:
+
+- Body operations: `BodyOperations` is the public boundary for body creation and
+  destruction, transform changes, body-type changes, enable/disable state,
+  velocity, impulses, forces, and torques. Transform changes synchronize origin,
+  center of mass, inertia, solver deltas, gameplay transforms, contacts, and
+  proxies. Body-type changes rebuild mass properties and migrate every proxy to
+  the correct broad-phase tree.
+- Shape operations: `ShapeOperations` updates collision filters, density, and
+  sphere/capsule/hull geometry. Filter and geometry changes invalidate contacts
+  and pair state, rebuild tree metadata and AABBs, and queue pair creation.
+  Density and geometry changes recompute body mass, center, and inertia.
+- Enable state: disabled bodies have no proxies or contacts and are excluded from
+  solving; enabling recreates proxies and eligible contacts. An internal
+  initialization marker keeps bodies created by older object-initializer call
+  sites active until those call sites are migrated to `BodyOperations`.
+- Forces: `Body` now carries rollback-serialized force and torque accumulators.
+  The solver integrates them across every substep and clears them after the full
+  tick. Public point/center force and impulse operations update linear and angular
+  velocity and wake state as appropriate.
+- Production routing: projectile, dummy, demo-body creation, and dummy patrol
+  velocity changes now use the safe body API. Teleport regression coverage also
+  uses the safe transform operation.
+- Broad phase: moved-proxy buffering is deduplicated and proxy destruction removes
+  every queued occurrence, preventing stale node keys during proxy rebuilds.
+- Regression coverage: the harness verifies dynamic teleport stability, static
+  query/contact updates, body-type tree migration, disable/enable behavior,
+  immediate filter reconsideration, geometry/density mass updates, impulses, and
+  one-tick force accumulation. Mutation sequences also reproduce identical counts
+  and full-state hashes after rollback replay.

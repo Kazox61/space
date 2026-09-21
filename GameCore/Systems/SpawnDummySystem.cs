@@ -47,9 +47,8 @@ public abstract partial class Core<TWorld> where TWorld : struct, ISessionType, 
 			dummy.Set(new PatrolRail { Min = res.RailMin, Max = res.RailMax });
 			dummy.Set(new RailSlot { Index = index });
 
-			ref var body = ref dummy.Ref<Body>()!; // Dummy.OnCreate always sets Body.
-			body.Transform = worldTransform;
-			body.LinearVelocity = new FVector3((direction * res.Speed).To32(), FP.Zero, FP.Zero);
+			BodyOperations.CreateBody(dummy, BodyType.Kinematic, worldTransform);
+			BodyOperations.SetLinearVelocity(dummy, new FVector3((direction * res.Speed).To32(), FP.Zero, FP.Zero));
 
 			var shape = Shape.MakeCapsule(
 				new FVector3(FP.Zero, -FP.Half, FP.Zero),

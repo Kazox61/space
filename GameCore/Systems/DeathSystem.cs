@@ -15,7 +15,7 @@ public abstract partial class Core<TWorld> where TWorld : struct, ISessionType, 
 			foreach (var e in deadCleaner.LastOnly()) {
 				if (e.Value.Gid.TryUnpack<TWorld>(out var entity)) {
 					if (entity.Has<Body>()) {
-						PhysicsBodyLifecycle.DestroyBody(entity);
+						BodyOperations.DestroyBody(entity);
 					} else {
 						entity.Destroy();
 					}

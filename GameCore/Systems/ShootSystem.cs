@@ -37,9 +37,8 @@ public abstract partial class Core<TWorld> where TWorld : struct, ISessionType, 
 				projectile.Set(projectileTransform);
 				projectile.Set(new W.Link<Shooter>(playerEntity));
 
-				ref var body = ref projectile.Ref<Body>()!; // Projectile.OnCreate always sets Body.
-				body.Transform = worldTransform;
-				body.LinearVelocity = (direction * speed).To32();
+				BodyOperations.CreateBody(projectile, BodyType.Kinematic, worldTransform);
+				BodyOperations.SetLinearVelocity(projectile, (direction * speed).To32());
 
 				var shape = Shape.MakeSphere(FVector3.Zero, FP.FromRatio(1, 4));
 				shape.EnableContactEvents = true;

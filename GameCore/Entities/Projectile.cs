@@ -6,7 +6,7 @@ public struct Projectile : IEntityType {
 	public byte Id() => 2;
 
 	/// <summary>
-	/// Only the components independent of a spawn position/direction. <see cref="Body"/>'s Transform,
+	/// Only the components independent of a spawn position/direction. Its <see cref="Body"/>,
 	/// its <see cref="Shape"/> (via <c>ShapeFactory.CreateShape</c>), and initial
 	/// <see cref="Body.LinearVelocity"/> are set by whichever system spawns the projectile (see
 	/// <c>Core&lt;TWorld&gt;.ShootSystem</c>) -- <c>ShapeFactory</c> lives on <c>Core&lt;TWorld&gt;</c>,
@@ -16,10 +16,7 @@ public struct Projectile : IEntityType {
 	/// system needed.
 	/// </summary>
 	public void OnCreate<TWorld>(World<TWorld>.Entity entity) where TWorld : struct, IWorldType {
-		entity.Set(
-			new ViewId { Value = ViewAsset.Projectile },
-			new Body { Type = BodyType.Kinematic }
-		);
+		entity.Set(new ViewId { Value = ViewAsset.Projectile });
 		entity.Set<IsProjectile>();
 	}
 }

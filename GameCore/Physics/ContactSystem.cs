@@ -73,7 +73,7 @@ public abstract partial class Core<TWorld> where TWorld : struct, ISessionType, 
 			return false;
 		}
 
-		private static bool TryCreateContact(EntityGID a, EntityGID b) {
+		internal static bool TryCreateContact(EntityGID a, EntityGID b) {
 			if (!a.TryUnpack<TWorld>(out var entityA) || !b.TryUnpack<TWorld>(out var entityB)) {
 				return false;
 			}
@@ -98,6 +98,7 @@ public abstract partial class Core<TWorld> where TWorld : struct, ISessionType, 
 			if (ownerA.Value == ownerB.Value
 				|| !ownerA.Value.TryUnpack<TWorld>(out var bodyA) || !bodyA.Has<Body>()
 				|| !ownerB.Value.TryUnpack<TWorld>(out var bodyB) || !bodyB.Has<Body>()
+				|| !BodyOperations.IsEnabled(bodyA.Read<Body>()) || !BodyOperations.IsEnabled(bodyB.Read<Body>())
 				|| (!needsContactEvents && bodyA.Read<Body>().Type != BodyType.Dynamic && bodyB.Read<Body>().Type != BodyType.Dynamic)) {
 				return false;
 			}
