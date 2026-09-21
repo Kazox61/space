@@ -37,6 +37,7 @@ public static class Program {
 		TouchEventsTest();
 		ContactPersistenceTest();
 		ParallelCapsuleManifoldTest();
+		FeatureIdValidityTest();
 		ParallelCapsuleRestingStabilityTest();
 		SpeculativeContactAndEventFlagsTest();
 		ContactHitEventTest();
@@ -219,6 +220,45 @@ public static class Program {
 		var coincident = Manifold.Collide(shapeA, new FWorldTransform(FPos.Zero, FQuaternion.Identity), shapeB,
 			new FWorldTransform(FPos.Zero, FQuaternion.Identity));
 		Check("deeply overlapping capsule cores retain a fallback contact", coincident.PointCount == 1 && coincident.Point0.Separation < FP.Zero);
+	}
+
+	private static void FeatureIdValidityTest() {
+		Console.WriteLine("--- FeatureIdValidityTest ---");
+		var sphere = Shape.MakeSphere(FVector3.Zero, FP.One);
+		var sphereManifold = Manifold.Collide(sphere, new FWorldTransform(FPos.Zero, FQuaternion.Identity), sphere,
+			new FWorldTransform(new FPos(Fixed64.FP.Zero, Fixed64.FP.One, Fixed64.FP.Zero), FQuaternion.Identity));
+		Check("analytic sphere contacts have no geometric feature ID",
+			sphereManifold.PointCount == 1 && !sphereManifold.Point0.HasFeatureId);
+
+		var capsule = Shape.MakeCapsule(new FVector3(-2.ToFP(), FP.Zero, FP.Zero), new FVector3(2.ToFP(), FP.Zero, FP.Zero), FP.One);
+		var capsuleManifold = Manifold.Collide(capsule, new FWorldTransform(FPos.Zero, FQuaternion.Identity), capsule,
+			new FWorldTransform(new FPos(Fixed64.FP.Zero, Fixed64.FP.FromRatio(3, 2), Fixed64.FP.Zero), FQuaternion.Identity));
+		Check("zero-valued geometric feature IDs remain valid",
+			capsuleManifold.PointCount == 2 && capsuleManifold.Point0.FeatureId == 0 && capsuleManifold.Point0.HasFeatureId);
+
+		Bootstrap();
+		var staticBody = W.NewEntity<Default>();
+		BodyOperations.CreateBody(staticBody, BodyType.Static, new FWorldTransform(FPos.Zero, FQuaternion.Identity));
+		ShapeFactory.CreateShape(staticBody, sphere);
+		var dynamicBody = W.NewEntity<Default>();
+		BodyOperations.CreateBody(dynamicBody, BodyType.Dynamic,
+			new FWorldTransform(new FPos(Fixed64.FP.Zero, Fixed64.FP.One, Fixed64.FP.Zero), FQuaternion.Identity));
+		ShapeFactory.CreateShape(dynamicBody, sphere);
+
+		W.Tick();
+		Systems.Update();
+		W.Tick();
+		Systems.Update();
+
+		var falselyPersisted = false;
+		foreach (var contactEntity in W.Query<All<Contact>>().Entities()) {
+			ref readonly var manifold = ref contactEntity.Read<Contact>().Manifold;
+			for (var i = 0; i < manifold.PointCount; i++) {
+				falselyPersisted |= manifold.GetPoint(i).Persisted;
+			}
+		}
+		Check("contacts without geometric feature IDs are not warm-start matched", !falselyPersisted);
+		Shutdown();
 	}
 
 	private static void ParallelCapsuleRestingStabilityTest() {

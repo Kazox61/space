@@ -68,6 +68,7 @@ public abstract partial class Core<TWorld> where TWorld : struct, ISessionType, 
 
 		private static void MatchManifoldPoints(in Manifold oldManifold, ref Manifold manifold) {
 			Span<bool> claimed = stackalloc bool[Manifold.MaxPoints];
+			claimed.Clear();
 			for (var i = 0; i < manifold.PointCount; i++) {
 				var point = manifold.GetPoint(i);
 				point.NormalImpulse = FP.Zero;
@@ -77,7 +78,7 @@ public abstract partial class Core<TWorld> where TWorld : struct, ISessionType, 
 						continue;
 					}
 					var oldPoint = oldManifold.GetPoint(j);
-					if (oldPoint.FeatureId != point.FeatureId) {
+					if (!oldPoint.HasFeatureId || !point.HasFeatureId || oldPoint.FeatureId != point.FeatureId) {
 						continue;
 					}
 					point.NormalImpulse = oldPoint.NormalImpulse;

@@ -11,6 +11,8 @@ public struct ManifoldPoint {
 	public FP Separation;
 	/// <summary>Stable geometric identity used to match this point across narrow-phase updates.</summary>
 	public uint FeatureId;
+	/// <summary>Whether <see cref="FeatureId"/> contains a stable geometric identity.</summary>
+	public bool HasFeatureId;
 	/// <summary>True when this point matched a point from the previous manifold.</summary>
 	public bool Persisted;
 	public FP NormalImpulse;
@@ -164,6 +166,7 @@ public struct Manifold {
 			Point0 = new ManifoldPoint {
 				Point = point,
 				Separation = distance - (radiusA + radiusB),
+				HasFeatureId = false,
 			},
 		};
 	}
@@ -239,11 +242,13 @@ public struct Manifold {
 								Point = FP.Half * ((segment[0].Position + a.Radius * normal1 + pointA1) - b.Radius * normal),
 								Separation = distance1 - radius,
 								FeatureId = segment[0].Pair.Id,
+								HasFeatureId = true,
 							},
 							Point1 = new ManifoldPoint {
 								Point = FP.Half * ((segment[1].Position + a.Radius * normal2 + pointA2) - b.Radius * normal),
 								Separation = distance2 - radius,
 								FeatureId = segment[1].Pair.Id,
+								HasFeatureId = true,
 							},
 						};
 					}
@@ -325,6 +330,7 @@ public struct Manifold {
 			Point0 = new ManifoldPoint {
 				Point = FP.Half * (pointOnBox + pointOnSphere),
 				Separation = separation - sphereRadius,
+				HasFeatureId = false,
 			},
 		};
 	}
@@ -568,7 +574,9 @@ public struct Manifold {
 		for (var i = 0; i < manifold.PointCount; i++) {
 			var point = manifold.GetPoint(i);
 			point.Point = centerB + rotationB * point.Point;
-			point.FeatureId = UnpackFeaturePair(point.FeatureId).Flip().Id;
+			if (point.HasFeatureId) {
+				point.FeatureId = UnpackFeaturePair(point.FeatureId).Flip().Id;
+			}
 			manifold.SetPoint(i, point);
 		}
 	}
@@ -576,7 +584,9 @@ public struct Manifold {
 	private static void FlipManifoldFeatures(ref Manifold manifold) {
 		for (var i = 0; i < manifold.PointCount; i++) {
 			var point = manifold.GetPoint(i);
-			point.FeatureId = UnpackFeaturePair(point.FeatureId).Flip().Id;
+			if (point.HasFeatureId) {
+				point.FeatureId = UnpackFeaturePair(point.FeatureId).Flip().Id;
+			}
 			manifold.SetPoint(i, point);
 		}
 	}
@@ -909,7 +919,7 @@ public struct Manifold {
 			var clipPoint = input[i];
 			// The half-way point keeps points in the same position whether A or B ends up the reference face.
 			var point = clipPoint.Position - FP.Half * clipPoint.Separation * refNormal;
-			points[i] = new ManifoldPoint { Point = point, Separation = clipPoint.Separation, FeatureId = clipPoint.Pair.Id };
+			points[i] = new ManifoldPoint { Point = point, Separation = clipPoint.Separation, FeatureId = clipPoint.Pair.Id, HasFeatureId = true };
 			minSeparation = FP.Min(minSeparation, clipPoint.Separation);
 		}
 
@@ -954,8 +964,8 @@ public struct Manifold {
 
 		manifold.Normal = refNormal;
 		manifold.PointCount = 2;
-		manifold.SetPoint(0, new ManifoldPoint { Point = point1, Separation = distance1 - radius, FeatureId = segment[0].Pair.Id });
-		manifold.SetPoint(1, new ManifoldPoint { Point = point2, Separation = distance2 - radius, FeatureId = segment[1].Pair.Id });
+		manifold.SetPoint(0, new ManifoldPoint { Point = point1, Separation = distance1 - radius, FeatureId = segment[0].Pair.Id, HasFeatureId = true });
+		manifold.SetPoint(1, new ManifoldPoint { Point = point2, Separation = distance2 - radius, FeatureId = segment[1].Pair.Id, HasFeatureId = true });
 		return true;
 	}
 
@@ -984,7 +994,7 @@ public struct Manifold {
 
 		manifold.Normal = normal;
 		manifold.PointCount = 1;
-		manifold.SetPoint(0, new ManifoldPoint { Point = point, Separation = separation, FeatureId = ContactFeaturePair.Make(0, edgeA, 1, edgeB).Id });
+		manifold.SetPoint(0, new ManifoldPoint { Point = point, Separation = separation, FeatureId = ContactFeaturePair.Make(0, edgeA, 1, edgeB).Id, HasFeatureId = true });
 		return true;
 	}
 
@@ -1012,7 +1022,7 @@ public struct Manifold {
 
 		manifold.Normal = normal;
 		manifold.PointCount = 1;
-		manifold.SetPoint(0, new ManifoldPoint { Point = point, Separation = separation, FeatureId = ContactFeaturePair.Make(0, edgeBox, 1, 0).Id });
+		manifold.SetPoint(0, new ManifoldPoint { Point = point, Separation = separation, FeatureId = ContactFeaturePair.Make(0, edgeBox, 1, 0).Id, HasFeatureId = true });
 		return true;
 	}
 
