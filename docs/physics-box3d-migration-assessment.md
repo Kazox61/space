@@ -570,11 +570,10 @@ Phase 0 (safety baseline) is implemented:
   restored world re-inserts pairs in a different order than a live one).
 - Lifecycle baseline: `ProjectileLifecycleCountsTest` runs 10,000
   spawn/destroy cycles and requires every physics count to stay at baseline.
-  It tears down through the correct sequence (release pairs, destroy
-  contacts, destroy shapes via `ShapeFactory.DestroyShape`, then the body) —
-  the sequence Phase 1 must productize and route `DeathSystem` through. The
-  naive bare `entity.Destroy()` path still leaks (finding 1) and is unchanged
-  until Phase 1.
+  Phase 1 now provides the correct sequence (release pairs, destroy contacts,
+  destroy shapes via `ShapeFactory.DestroyShape`, then the body) through
+  `PhysicsBodyLifecycle.DestroyBody`, and routes physics-body destruction from
+  `DeathSystem` through that operation.
 - Ray tests: `RayCastMissAndFilterTest` previously cast before proxies
   existed, so its sensor and filter checks passed vacuously. It now ticks
   `ShapeProxySystem` first and asserts positive controls (proxy presence,
