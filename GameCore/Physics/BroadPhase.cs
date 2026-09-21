@@ -154,6 +154,26 @@ public abstract partial class Core<TWorld> where TWorld : struct, ISessionType, 
 			_pairSet.Remove(pairKey);
 		}
 
+		/// <summary>Total proxies across all three body-type trees (Phase 0 diagnostics counter).</summary>
+		public int ProxyCount {
+			get {
+				var total = 0;
+				foreach (var tree in _trees) {
+					total += tree.ProxyCount;
+				}
+				return total;
+			}
+		}
+
+		/// <summary>Broad-phase pairs currently reserved in the dedup set (Phase 0 diagnostics counter).</summary>
+		public int CachedPairCount => _pairSet.Count;
+
+		/// <summary>
+		/// Proxies created or moved since the last <see cref="UpdatePairs"/> call (Phase 0 diagnostics
+		/// counter; expected to settle at zero plus any proxy moved later in the same update).
+		/// </summary>
+		public int MovedProxyCount => _movedProxies.Count;
+
 		private static int PackProxyKey(int nodeIndex, BodyType type) => (nodeIndex << TypeBits) | (int)type;
 
 		private static void UnpackProxyKey(int proxyKey, out int nodeIndex, out BodyType type) {
@@ -179,8 +199,14 @@ public abstract partial class Core<TWorld> where TWorld : struct, ISessionType, 
 			// WriteHashSet/WriteList need a registered packer for the element type -- (ulong,ulong)
 			// isn't one. The *Unmanaged array methods do a raw memory copy for any blittable type
 			// instead (and track their own length), so round-trip both collections through plain arrays.
+			// Canonical order: HashSet enumeration order depends on each set's own insertion/removal
+			// history, but a world restored from a snapshot re-inserts pairs in array order -- so an
+			// unsorted round-trip can make the same logical pair set serialize to different bytes in a
+			// live world vs a restored one, breaking state-hash comparison across rollback replay.
+			// Sorting decouples the serialized bytes from that history.
 			var pairs = new (ulong, ulong)[_pairSet.Count];
 			_pairSet.CopyTo(pairs);
+			Array.Sort(pairs);
 			writer.WriteArrayUnmanaged(pairs);
 			writer.WriteArrayUnmanaged(_movedProxies.ToArray());
 		}
