@@ -92,6 +92,8 @@ public abstract partial class Core<TWorld> where TWorld : struct, ISessionType, 
 
 			ref readonly var ownerA = ref entityA.Read<W.Link<BodyOwner>>();
 			ref readonly var ownerB = ref entityB.Read<W.Link<BodyOwner>>();
+			// Box3D rejects pairs with no dynamic body. Keep event-enabled pairs because the game
+			// intentionally uses kinematic projectiles against kinematic dummies for hit detection.
 			var needsContactEvents = shapeDataA.EnableContactEvents || shapeDataB.EnableContactEvents;
 			if (ownerA.Value == ownerB.Value
 				|| !ownerA.Value.TryUnpack<TWorld>(out var bodyA) || !bodyA.Has<Body>()

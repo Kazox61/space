@@ -623,3 +623,23 @@ The `GameUpdateRoot.Update` tick-advancement question remains open. Phase 1 does
 not use tracking filters, and the production `DeathSystem` path is covered with
 the current event receiver behavior, but session-level tick ownership should be
 resolved separately before adding tick-sensitive tracking logic.
+
+### Kinematic Gameplay Contact Exception
+
+Box3D normally rejects ordinary contact pairs unless at least one body is
+dynamic. The current game cannot apply that rule literally: both `Projectile`
+and `Dummy` use kinematic bodies, while `ProjectileHitSystem` depends on a
+`ContactBeginTouchEvent` to damage the dummy and destroy the projectile.
+
+For compatibility, GameCore creates contacts between non-dynamic bodies when
+either shape sets `EnableContactEvents`. Non-event static/static and
+kinematic/kinematic pairs remain rejected. `KinematicProjectileKillsDummyTest`
+protects this gameplay requirement.
+
+This exception must remain until its replacement is implemented end to end:
+
+- Phase 3 should formalize event-only contacts and honor contact event flags,
+  ensuring these pairs generate events without rigid response.
+- Phase 4 should give projectiles deterministic CCD or shape-cast hit detection.
+  If projectile hits are migrated away from ordinary contacts, the Box3D
+  dynamic-body restriction may then be restored without breaking gameplay.
