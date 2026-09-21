@@ -314,7 +314,8 @@ The following major Box3D areas have not been migrated:
 - Parallel broad phase, narrow phase, and solver stages.
 - SIMD contact solving.
 - Integrated debug drawing.
-- Per-phase profiling and physics counters.
+- Per-phase profiling and timing metrics (world-count physics counters exist
+  via `PhysicsDiagnostics.Capture()`).
 - Operation recording, replay files, and state-hash diagnostics.
 
 ## Required Scope for the Current Game

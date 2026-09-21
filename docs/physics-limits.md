@@ -25,7 +25,7 @@ headroom.
 
 | Limit | Value | Rationale |
 | --- | --- | --- |
-| Hard bound, any world coordinate | abs() < 32768 | Broad-phase AABBs are absolute Fixed32; `FWorldTransform` narrows Fixed64 positions without a range check, and any |p| + extent + margin >= 32768 wraps |
+| Hard bound, any world coordinate | abs() < 32768 | Broad-phase AABBs are absolute Fixed32; `FWorldTransform` narrows Fixed64 positions without a range check, and any abs(p) + extent + margin >= 32768 wraps |
 | Supported envelope | abs() <= 8192 | 4x headroom over the largest supported shape extent plus AABB margins |
 
 World ray-cast origins (`PhysicsQueries.CastRay`) also narrow the absolute
