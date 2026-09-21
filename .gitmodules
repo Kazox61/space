@@ -9,10 +9,13 @@
 	url = https://github.com/nilpunch/static-rollback
 [submodule "static-rollback"]
 	path = static-rollback
-	url = https://github.com/nilpunch/static-rollback
+	url = https://github.com/Kazox61/static-rollback.git
+	branch = space
 [submodule "static-rollback-litenetlib"]
 	path = static-rollback-litenetlib
-	url = https://github.com/nilpunch/static-rollback-litenetlib.git
+	url = https://github.com/Kazox61/static-rollback-litenetlib.git
+	branch = space
 [submodule "static-ecs"]
 	path = static-ecs
-	url = https://github.com/Felid-Force-Studios/StaticEcs.git
+	url = https://github.com/Kazox61/StaticEcs.git
+	branch = space

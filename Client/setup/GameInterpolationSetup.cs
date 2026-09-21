@@ -6,13 +6,11 @@ namespace Space.Client;
 public static class GameInterpolationSetup {
 	public static void CreateAndInitialize() {
 		WP.Create(GameWorldSetup.WorldConfig);
-		WP.Types().RegisterAll(typeof(CoreRoot).Assembly);
+		GameTypes.Register<GameWorldPrev>();
 		WP.Initialize();
 
 		S.SetInterpolationReceiver(new GameInterpolationReceiver());
 	}
 
-	public static void Destroy() {
-		WP.Destroy();
-	}
+	public static void Destroy() => WP.Destroy();
 }
