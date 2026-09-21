@@ -1,5 +1,3 @@
-using System.Collections.Generic;
-using FFS.Libraries.StaticEcs;
 using Fixed64;
 using Godot;
 using Shenanicode.Rollback.LiteNetLib;
@@ -8,11 +6,13 @@ using static Space.GameCore.Core<Space.Client.ClientWorld>;
 
 namespace Space.Client;
 
-public partial class Test : Node3D {
+public partial class ClientGame : Node3D {
+	[Export] private EntityViewCatalog _viewCatalog;
+
 	private float _clientTime;
-	private readonly Dictionary<EntityGID, EntityView> _views = [];
 	private FVector2 _attackInput;
 	private bool _inputConsumed;
+	private EntityViewUpdater _viewUpdater;
 
 	public override void _EnterTree() {
 		var (host, port, offline) = ParseLaunchArgs();
@@ -23,9 +23,14 @@ public partial class Test : Node3D {
 		var connection = new LiteNetLibServerConnection();
 		ClientSetup.CreateAndInitialize(connection);
 		connection.Connect(host, port);
+
+		_viewUpdater = new EntityViewUpdater();
+		AddChild(_viewUpdater);
+		_viewUpdater.Initialize(_viewCatalog);
 	}
 
 	public override void _ExitTree() {
+		_viewUpdater?.Cleanup();
 		ClientSetup.Destroy();
 		OfflineServer.Destroy();
 	}
@@ -34,7 +39,6 @@ public partial class Test : Node3D {
 		OfflineServer.Update(delta);
 		_clientTime += (float)delta;
 		CLNT.Update(_clientTime);
-		SyncViews();
 		var moveInput = Input.GetVector("move_left", "move_right", "move_forward", "move_backward").Normalized();
 		var playerInput = new PlayerInput {
 			MoveX = moveInput.X.ToFP(),
@@ -45,45 +49,6 @@ public partial class Test : Node3D {
 		};
 		_inputConsumed = true;
 		S.SetPredictionInput(channel: CLNT.Channel, playerInput);
-	}
-
-	private void SyncViews() {
-		foreach (var entity in W.Query<All<ViewId>>().Entities()) {
-			if (_views.ContainsKey(entity.GID)) {
-				continue;
-			}
-
-			var viewId = entity.Read<ViewId>();
-			var path = viewId.Value switch {
-				ViewAsset.Player => "res://player.tscn",
-				ViewAsset.Projectile => "res://projectile.tscn",
-				ViewAsset.Sphere => "res://sphere.tscn",
-				ViewAsset.Platform => "res://platform.tscn",
-				ViewAsset.Box => "res://box.tscn",
-				ViewAsset.Dummy => "res://dummy.tscn",
-				_ => ""
-			};
-			var packedScene = GD.Load<PackedScene>(path);
-			var view = packedScene.Instantiate<EntityView>();
-			_views[entity.GID] = view;
-			view.AssignEntity(entity.GID);
-		}
-
-		List<EntityGID> toRemove = [];
-		foreach (var (gid, view) in _views) {
-			if (!gid.TryUnpack<ClientWorld>(out _)) {
-				view.RemoveEntity(gid);
-				toRemove.Add(gid);
-			}
-		}
-
-		foreach (var gid in toRemove) {
-			_views.Remove(gid);
-		}
-
-		foreach (var (gid, view) in _views) {
-			view.UpdateEntity(gid);
-		}
 	}
 
 	public void OnAttack(Vector2 attackInput) {

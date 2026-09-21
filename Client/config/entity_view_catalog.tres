@@ -1,0 +1,50 @@
+[gd_resource type="Resource" script_class="EntityViewCatalog" load_steps=15 format=3]
+
+[ext_resource type="Script" path="res://synchronizer/EntityViewCatalog.cs" id="1_catalog"]
+[ext_resource type="Script" path="res://synchronizer/EntityViewDefinition.cs" id="2_definition"]
+[ext_resource type="PackedScene" path="res://player.tscn" id="3_player"]
+[ext_resource type="PackedScene" path="res://projectile.tscn" id="4_projectile"]
+[ext_resource type="PackedScene" path="res://sphere.tscn" id="5_sphere"]
+[ext_resource type="PackedScene" path="res://platform.tscn" id="6_platform"]
+[ext_resource type="PackedScene" path="res://box.tscn" id="7_box"]
+[ext_resource type="PackedScene" path="res://dummy.tscn" id="8_dummy"]
+
+[sub_resource type="Resource" id="Resource_player"]
+script = ExtResource("2_definition")
+Asset = 0
+Scene = ExtResource("3_player")
+PrewarmCount = 4
+
+[sub_resource type="Resource" id="Resource_projectile"]
+script = ExtResource("2_definition")
+Asset = 1
+Scene = ExtResource("4_projectile")
+PrewarmCount = 32
+
+[sub_resource type="Resource" id="Resource_sphere"]
+script = ExtResource("2_definition")
+Asset = 2
+Scene = ExtResource("5_sphere")
+PrewarmCount = 1
+
+[sub_resource type="Resource" id="Resource_platform"]
+script = ExtResource("2_definition")
+Asset = 3
+Scene = ExtResource("6_platform")
+PrewarmCount = 1
+
+[sub_resource type="Resource" id="Resource_box"]
+script = ExtResource("2_definition")
+Asset = 4
+Scene = ExtResource("7_box")
+PrewarmCount = 1
+
+[sub_resource type="Resource" id="Resource_dummy"]
+script = ExtResource("2_definition")
+Asset = 5
+Scene = ExtResource("8_dummy")
+PrewarmCount = 4
+
+[resource]
+script = ExtResource("1_catalog")
+Entries = Array[ExtResource("2_definition")]([SubResource("Resource_player"), SubResource("Resource_projectile"), SubResource("Resource_sphere"), SubResource("Resource_platform"), SubResource("Resource_box"), SubResource("Resource_dummy")])
