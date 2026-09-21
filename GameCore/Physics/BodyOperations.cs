@@ -263,7 +263,7 @@ public abstract partial class Core<TWorld> where TWorld : struct, ISessionType, 
 			ApplyAngularLocks(ref body.AngularVelocity, body.MotionLocks);
 		}
 
-		private static void ApplyLinearLocks(ref FVector3 value, MotionLocks locks) {
+		internal static void ApplyLinearLocks(ref FVector3 value, MotionLocks locks) {
 			if (locks.LinearX)
 				value.X = FP.Zero;
 			if (locks.LinearY)
@@ -272,7 +272,7 @@ public abstract partial class Core<TWorld> where TWorld : struct, ISessionType, 
 				value.Z = FP.Zero;
 		}
 
-		private static void ApplyAngularLocks(ref FVector3 value, MotionLocks locks) {
+		internal static void ApplyAngularLocks(ref FVector3 value, MotionLocks locks) {
 			if (locks.AngularX)
 				value.X = FP.Zero;
 			if (locks.AngularY)

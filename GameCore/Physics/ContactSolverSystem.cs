@@ -326,6 +326,12 @@ public abstract partial class Core<TWorld> where TWorld : struct, ISessionType, 
 
 				body.LinearVelocity = h * gravityScale * gravity + body.InvMass * (h * body.Force) + linearDamping * body.LinearVelocity;
 				body.AngularVelocity = body.InvInertiaWorld * (h * body.Torque) + angularDamping * body.AngularVelocity;
+
+				// Locks before solving (box3d enforces them on every velocity write-back, e.g.
+				// b3ScatterBodies): without this, the relax pass after IntegratePositions can leave
+				// impulse-added velocity on locked axes stored in the body across ticks.
+				BodyOperations.ApplyLinearLocks(ref body.LinearVelocity, body.MotionLocks);
+				BodyOperations.ApplyAngularLocks(ref body.AngularVelocity, body.MotionLocks);
 			}
 		}
 

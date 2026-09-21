@@ -16,6 +16,9 @@ public abstract partial class Core<TWorld> where TWorld : struct, ISessionType, 
 		public void Update() {
 			W.Query().For(static (W.Entity entity, ref Lifetime lifetime) => {
 				if (lifetime.TimeRemaining <= FP.Zero) {
+					// Already expired at spawn (or restored expired): never crosses zero via the
+					// countdown below, so die immediately rather than live forever.
+					W.SendEvent(new DeadEvent { Gid = entity.GID });
 					return;
 				}
 
