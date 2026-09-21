@@ -1,15 +1,16 @@
-using Space.GameCore;
-using Shenanicode.Rollback;
 using FFS.Libraries.StaticEcs;
-using static Space.GameCore.Core<ServerWorld>;
+using Shenanicode.Rollback;
+using static Space.GameCore.Core<Space.GameCore.ServerWorld>;
+
+namespace Space.GameCore;
 
 public struct ServerWorld : IWorldType, ISessionType { }
 
 public abstract class SRVR : Server<ServerWorld> { }
 
 public static class ServerSetup {
-	public static void CreateAndInitialize(IRemoteClientListener remoteClientListener) {
-		SRVR.Create(GameSessionSetup.SessionConfig, remoteClientListener, new GameWorldFullSyncHandler(), logger: new ConsoleLogger("Server"));
+	public static void CreateAndInitialize(IRemoteClientListener remoteClientListener, ILogger? logger = null) {
+		SRVR.Create(GameSessionSetup.SessionConfig, remoteClientListener, new GameWorldFullSyncHandler(), logger: logger);
 		GameSessionSetup.Register();
 		SRVR.Initialize();
 
