@@ -14,7 +14,7 @@ public abstract partial class Core<TWorld> where TWorld : struct, ISessionType, 
 			W.Create(WorldConfig);
 			Systems.Create();
 
-			W.Types().RegisterAll(typeof(CoreRoot).Assembly);
+			GameTypes.Register<TWorld>();
 			SimulationSetup.Register();
 
 			W.Initialize();
