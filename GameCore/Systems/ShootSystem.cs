@@ -8,7 +8,7 @@ namespace Space.GameCore;
 public abstract partial class Core<TWorld> where TWorld : struct, ISessionType, IWorldType {
 	/// <summary>
 	/// Spawns a projectile whenever a player's queued attack input (<see cref="PlayerInput.AttackX"/>/
-	/// <see cref="PlayerInput.AttackY"/>, set by <c>Test.OnAttack</c> client-side and zeroed again
+	/// <see cref="PlayerInput.AttackY"/>, set by <c>ClientGame.OnAttack</c> client-side and zeroed again
 	/// after one tick) carries a direction. Mirrors <see cref="PlayerMoverSystem"/>'s XZ mapping of a
 	/// 2D input into a 3D world direction.
 	/// </summary>

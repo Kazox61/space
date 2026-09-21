@@ -15,6 +15,7 @@ public partial class CameraViewBehavior : EntityBehavior {
 	}
 
 	public override void OnEntityRemoved(EntityGID entityGid) {
+		_camera.Current = false;
 	}
 
 

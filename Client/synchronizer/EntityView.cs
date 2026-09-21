@@ -13,24 +13,15 @@ public partial class EntityView : Node3D {
 	public void AssignEntity(EntityGID entityGid) {
 		EntityGid = entityGid;
 
-		if (Engine.GetMainLoop() is not SceneTree tree) {
-			GD.PrintErr("Failed to get SceneTree.");
-			return;
-		}
-
-		tree.Root.AddChild(this);
-
 		foreach (var viewBehaviour in _entityBehaviours) {
 			viewBehaviour.OnEntityAssigned(EntityGid);
 		}
 	}
 
-	public void RemoveEntity(EntityGID entityGid) {
+	public void RemoveEntity() {
 		foreach (var viewBehaviour in _entityBehaviours) {
-			viewBehaviour.OnEntityRemoved(entityGid);
+			viewBehaviour.OnEntityRemoved(EntityGid);
 		}
-
-		GetParent().RemoveChild(this);
 
 		EntityGid = default;
 	}

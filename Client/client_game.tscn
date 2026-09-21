@@ -1,7 +1,8 @@
 [gd_scene format=3 uid="uid://b5msydkueejbm"]
 
-[ext_resource type="Script" uid="uid://8s5cf28weng7" path="res://setup/Test.cs" id="1_myinc"]
+[ext_resource type="Script" uid="uid://8s5cf28weng7" path="res://setup/ClientGame.cs" id="1_myinc"]
 [ext_resource type="PackedScene" uid="uid://daakfmjk2otty" path="res://touchscreen_ui.tscn" id="2_2au82"]
+[ext_resource type="Resource" path="res://config/entity_view_catalog.tres" id="3_catalog"]
 
 [sub_resource type="Environment" id="Environment_aq4fw"]
 background_mode = 1
@@ -17,8 +18,9 @@ fog_light_color = Color(0.14901961, 0.14901961, 0.14901961, 1)
 fog_density = 1.0
 fog_depth_end = 50.0
 
-[node name="Test" type="Node3D" unique_id=1684976908]
+[node name="ClientGame" type="Node3D" unique_id=1684976908]
 script = ExtResource("1_myinc")
+_viewCatalog = ExtResource("3_catalog")
 
 [node name="TouchscreenUi" parent="." unique_id=1386424317 instance=ExtResource("2_2au82")]
 
