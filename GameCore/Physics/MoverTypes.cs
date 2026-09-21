@@ -77,14 +77,30 @@ public struct MoverPlaneBuffer {
 
 	public void SetPlane(int index, MoverPlane plane) {
 		switch (index) {
-			case 0: Plane0 = plane; break;
-			case 1: Plane1 = plane; break;
-			case 2: Plane2 = plane; break;
-			case 3: Plane3 = plane; break;
-			case 4: Plane4 = plane; break;
-			case 5: Plane5 = plane; break;
-			case 6: Plane6 = plane; break;
-			default: Plane7 = plane; break;
+			case 0:
+				Plane0 = plane;
+				break;
+			case 1:
+				Plane1 = plane;
+				break;
+			case 2:
+				Plane2 = plane;
+				break;
+			case 3:
+				Plane3 = plane;
+				break;
+			case 4:
+				Plane4 = plane;
+				break;
+			case 5:
+				Plane5 = plane;
+				break;
+			case 6:
+				Plane6 = plane;
+				break;
+			default:
+				Plane7 = plane;
+				break;
 		}
 	}
 

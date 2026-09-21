@@ -1,10 +1,10 @@
+using System.Collections.Generic;
+using FFS.Libraries.StaticEcs;
+using Fixed64;
 using Godot;
 using Shenanicode.Rollback.LiteNetLib;
 using Space.GameCore;
-using FFS.Libraries.StaticEcs;
 using static Space.GameCore.Core<Space.Client.ClientWorld>;
-using System.Collections.Generic;
-using Fixed64;
 
 namespace Space.Client;
 
@@ -15,12 +15,23 @@ public partial class Test : Node3D {
 	private bool _inputConsumed;
 
 	public override void _EnterTree() {
+		var (host, port, offline) = ParseLaunchArgs();
+		if (offline && !OfflineServer.TryStart(port)) {
+			GD.Print($"Port {port} is occupied — connecting to an external server instead.");
+		}
+
 		var connection = new LiteNetLibServerConnection();
 		ClientSetup.CreateAndInitialize(connection);
-		connection.Connect("127.0.0.1", 8153);
+		connection.Connect(host, port);
+	}
+
+	public override void _ExitTree() {
+		ClientSetup.Destroy();
+		OfflineServer.Destroy();
 	}
 
 	public override void _Process(double delta) {
+		OfflineServer.Update(delta);
 		_clientTime += (float)delta;
 		CLNT.Update(_clientTime);
 		SyncViews();
@@ -41,6 +52,7 @@ public partial class Test : Node3D {
 			if (_views.ContainsKey(entity.GID)) {
 				continue;
 			}
+
 			var viewId = entity.Read<ViewId>();
 			var path = viewId.Value switch {
 				ViewAsset.Player => "res://player.tscn",
@@ -64,6 +76,7 @@ public partial class Test : Node3D {
 				toRemove.Add(gid);
 			}
 		}
+
 		foreach (var gid in toRemove) {
 			_views.Remove(gid);
 		}
@@ -77,5 +90,24 @@ public partial class Test : Node3D {
 		attackInput = attackInput.Normalized();
 		_attackInput = new FVector2(attackInput.X.ToFP(), attackInput.Y.ToFP());
 		_inputConsumed = false;
+	}
+
+	private static (string host, ushort port, bool offline) ParseLaunchArgs() {
+		var host = "127.0.0.1";
+		var port = OfflineServer.DefaultPort;
+		var offline = true;
+
+		var args = OS.GetCmdlineUserArgs();
+		for (var i = 0; i < args.Length; i++) {
+			if (args[i] == "--server" && i + 1 < args.Length) {
+				host = args[++i];
+				offline = false;
+			} else if (args[i] == "--port" && i + 1 < args.Length && ushort.TryParse(args[i + 1], out var parsedPort)) {
+				port = parsedPort;
+				i++;
+			}
+		}
+
+		return (host, port, offline);
 	}
 }

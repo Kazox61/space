@@ -1,9 +1,9 @@
 using System.Numerics;
 using FFS.Libraries.StaticEcs;
+using Fixed;
+using Fixed32;
 using Raylib_cs;
 using Space.GameCore;
-using Fixed32;
-using Fixed;
 using static Space.GameCore.Core<PhysicsSmokeTest.TestWorld>;
 
 namespace PhysicsSmokeTest;
@@ -153,41 +153,41 @@ public static class VisualTest {
 				ref readonly var shape = ref shapeEntity.Read<Shape>();
 				switch (shape.Type) {
 					case ShapeType.Sphere: {
-							var worldCenter = FWorldTransform.TransformPoint(body.Transform, shape.SphereShape.Center);
+						var worldCenter = FWorldTransform.TransformPoint(body.Transform, shape.SphereShape.Center);
 
-							DrawSphereGizmo(
-								ToVector3(worldCenter),
-								(float)shape.SphereShape.Radius.ToDouble(),
-								color);
+						DrawSphereGizmo(
+							ToVector3(worldCenter),
+							(float)shape.SphereShape.Radius.ToDouble(),
+							color);
 
-							break;
-						}
+						break;
+					}
 
 					case ShapeType.Capsule: {
-							var c1 = FWorldTransform.TransformPoint(body.Transform, shape.CapsuleShape.Center1);
-							var c2 = FWorldTransform.TransformPoint(body.Transform, shape.CapsuleShape.Center2);
-							DrawCapsuleWire(
-								ToVector3(c1),
-								ToVector3(c2),
-								(float)shape.CapsuleShape.Radius.ToDouble(),
-								color
-							);
-							break;
-						}
+						var c1 = FWorldTransform.TransformPoint(body.Transform, shape.CapsuleShape.Center1);
+						var c2 = FWorldTransform.TransformPoint(body.Transform, shape.CapsuleShape.Center2);
+						DrawCapsuleWire(
+							ToVector3(c1),
+							ToVector3(c2),
+							(float)shape.CapsuleShape.Radius.ToDouble(),
+							color
+						);
+						break;
+					}
 
 					case ShapeType.Hull: {
-							var points = shape.HullShape.GetCorners();
-							var corners = new Vector3[points.Length];
-							for (var p = 0; p < points.Length; p++) {
-								corners[p] = ToVector3(FWorldTransform.TransformPoint(body.Transform, points[p]));
-							}
-
-							foreach (var (a, b) in BoxEdges) {
-								Raylib.DrawLine3D(corners[a], corners[b], color);
-							}
-
-							break;
+						var points = shape.HullShape.GetCorners();
+						var corners = new Vector3[points.Length];
+						for (var p = 0; p < points.Length; p++) {
+							corners[p] = ToVector3(FWorldTransform.TransformPoint(body.Transform, points[p]));
 						}
+
+						foreach (var (a, b) in BoxEdges) {
+							Raylib.DrawLine3D(corners[a], corners[b], color);
+						}
+
+						break;
+					}
 				}
 			}
 		}

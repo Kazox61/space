@@ -3,10 +3,10 @@ using System.Collections.Generic;
 using System.Diagnostics;
 using FFS.Libraries.StaticEcs;
 using FFS.Libraries.StaticPack;
+using Fixed;
+using Fixed32;
 using Shenanicode.Rollback;
 using Space.GameCore;
-using Fixed32;
-using Fixed;
 using static Space.GameCore.Core<PhysicsSmokeTest.TestWorld>;
 
 namespace PhysicsSmokeTest;
@@ -55,8 +55,7 @@ public static class Program {
 
 		if (_failures == 0) {
 			Console.WriteLine("ALL CHECKS PASSED");
-		}
-		else {
+		} else {
 			Console.WriteLine($"{_failures} CHECK(S) FAILED");
 			Environment.Exit(1);
 		}
@@ -164,7 +163,8 @@ public static class Program {
 			lastY = y;
 			lastSpeed = speed;
 
-			if (tick == 0) firstY = y;
+			if (tick == 0)
+				firstY = y;
 			if (tick % 30 == 0 || tick == totalTicks - 1) {
 				Console.WriteLine($"  tick {tick,4}: y={y:F4} speed={speed:F4}");
 			}
@@ -493,8 +493,7 @@ public static class Program {
 					}
 				}
 			}
-		}
-		catch (Exception e) {
+		} catch (Exception e) {
 			threw = true;
 			Console.WriteLine($"  threw: {e}");
 		}
@@ -668,8 +667,7 @@ public static class Program {
 			moverVelocity.Y = jumpForce;
 			grounded = false;
 			jumpCooldown = jumpCooldownTime;
-		}
-		else if (grounded) {
+		} else if (grounded) {
 			moverVelocity.Y = FP.Zero;
 		}
 
@@ -1030,8 +1028,7 @@ public static class Program {
 					bounded = false;
 				}
 			}
-		}
-		catch (Exception e) {
+		} catch (Exception e) {
 			threw = true;
 			caught = e;
 		}
@@ -1449,8 +1446,7 @@ public static class Program {
 	private static void Check(string label, bool condition) {
 		if (condition) {
 			Console.WriteLine($"PASS: {label}");
-		}
-		else {
+		} else {
 			Console.WriteLine($"FAIL: {label}");
 			_failures++;
 		}

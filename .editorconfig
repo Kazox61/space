@@ -109,6 +109,12 @@ csharp_style_allow_embedded_statements_on_same_line_experimental = false:suggest
 
 #### Naming conventions ####
 
+# Namespaces are hand-chosen (Space.GameCore, Space.Client, ...), not folder-derived
+dotnet_diagnostic.IDE0130.severity = none
+
+# IDE2001 false-positives on attached braces `if (...) {` (the repo-wide brace style)
+dotnet_diagnostic.IDE2001.severity = none
+
 # Interfaces: IPascalCase
 dotnet_naming_symbols.interfaces.applicable_kinds = interface
 dotnet_naming_symbols.interfaces.applicable_accessibilities = *

@@ -10,7 +10,7 @@
         "Space.sln",
         "--verify-no-changes",
         "--severity",
-        "info",
+        "warn",
         "--exclude",
         "static-ecs",
         "static-rollback",

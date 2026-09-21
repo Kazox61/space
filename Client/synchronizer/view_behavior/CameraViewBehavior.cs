@@ -1,6 +1,6 @@
-using Godot;
 using FFS.Libraries.StaticEcs;
 using Fixed64;
+using Godot;
 using Space.GameCore;
 using static Space.GameCore.Core<Space.Client.ClientWorld>;
 

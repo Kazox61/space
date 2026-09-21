@@ -220,8 +220,7 @@ public struct Capsule {
 			}
 
 			tr = gamma / (-beta + FP.Sqrt(disc));
-		}
-		else {
+		} else {
 			// Ray and capsule axes are not parallel.
 			var invDet = FP.One / det;
 			var sa1 = u;

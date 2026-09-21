@@ -1,6 +1,6 @@
 using FFS.Libraries.StaticEcs;
-using Shenanicode.Rollback;
 using Fixed64;
+using Shenanicode.Rollback;
 
 namespace Space.GameCore;
 
