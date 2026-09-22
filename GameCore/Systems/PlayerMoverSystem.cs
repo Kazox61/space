@@ -59,20 +59,22 @@ public abstract partial class Core<TWorld> where TWorld : struct, ISessionType, 
 				var broadPhase = W.GetResource<BroadPhase>();
 				var capsule = new Capsule(mover.CapsuleCenter1, mover.CapsuleCenter2, mover.CapsuleRadius);
 				var moverXf = transform.ToWorldTransform();
+				var moverFilter = Filter.Default;
+				moverFilter.GroupIndex = Filter.SelfGroup(playerInfo.InputChannel);
 
 				mover.Grounded = CharacterMover.UpdatePogoGrounding(
 					broadPhase, moverXf, capsule, dt, characterRes.PogoHertz.To32(), characterRes.PogoDampingRatio.To32(), mover.JumpCooldown,
-					characterRes.MaxSlopeNormalThreshold.To32(), ref mover.PogoVelocity);
+					characterRes.MaxSlopeNormalThreshold.To32(), moverFilter, ref mover.PogoVelocity);
 
 				var target = moverXf.Position + dt * mover.Velocity + dt * mover.PogoVelocity * FVector3.Up;
 
 				var planes = new MoverPlaneBuffer();
 				for (var iteration = 0; iteration < 5; iteration++) {
 					planes.Clear();
-					CharacterMover.CollideMover(broadPhase, moverXf, capsule, ref planes);
+					CharacterMover.CollideMover(broadPhase, moverXf, capsule, moverFilter, ref planes);
 
 					var (delta, _) = MoverSolver.SolvePlanes(target - moverXf.Position, ref planes);
-					var fraction = CharacterMover.CastMover(broadPhase, moverXf, capsule, delta, FP.One);
+					var fraction = CharacterMover.CastMover(broadPhase, moverXf, capsule, delta, FP.One, moverFilter);
 					delta *= fraction;
 					moverXf.Position += delta;
 

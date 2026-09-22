@@ -42,6 +42,10 @@ public abstract partial class Core<TWorld> where TWorld : struct, ISessionType, 
 		/// <see cref="CollideMover"/>'s plane-solve is what resolves existing overlap, not the sweep.
 		/// </summary>
 		public static FP CastMover(BroadPhase broadPhase, FWorldTransform moverXf, Capsule capsule, FVector3 translation, FP maxFraction) {
+			return CastMover(broadPhase, moverXf, capsule, translation, maxFraction, Filter.Default);
+		}
+
+		public static FP CastMover(BroadPhase broadPhase, FWorldTransform moverXf, Capsule capsule, FVector3 translation, FP maxFraction, Filter filter) {
 			var localAabb = Capsule.ComputeSweptAABB(capsule, FTransform.Identity, new FTransform(translation, FQuaternion.Identity));
 			var queryAabb = FWorldTransform.OffsetAABB(localAabb, moverXf.Position);
 
@@ -50,7 +54,8 @@ public abstract partial class Core<TWorld> where TWorld : struct, ISessionType, 
 			var moverProxy = new ShapeProxy { Points = MoverCapsuleProxyPoints, Radius = capsule.Radius };
 
 			CastCandidates.Clear();
-			broadPhase.Query(queryAabb, CastCandidates);
+			broadPhase.Query(queryAabb, QueryMask(filter), CastCandidates);
+			CastCandidates.Sort(static (a, b) => a.Raw.CompareTo(b.Raw));
 
 			var bestFraction = maxFraction;
 			for (var i = 0; i < CastCandidates.Count; i++) {
@@ -58,7 +63,7 @@ public abstract partial class Core<TWorld> where TWorld : struct, ISessionType, 
 					continue;
 				}
 
-				if (shape.IsSensor) {
+				if (shape.IsSensor || !Filter.ShouldCollide(filter, shape.Filter)) {
 					continue;
 				}
 
@@ -89,6 +94,10 @@ public abstract partial class Core<TWorld> where TWorld : struct, ISessionType, 
 		/// stays well-defined under deep overlap, so this is strictly more robust, not a regression.
 		/// </summary>
 		public static void CollideMover(BroadPhase broadPhase, FWorldTransform moverXf, Capsule capsule, ref MoverPlaneBuffer outPlanes) {
+			CollideMover(broadPhase, moverXf, capsule, Filter.Default, ref outPlanes);
+		}
+
+		public static void CollideMover(BroadPhase broadPhase, FWorldTransform moverXf, Capsule capsule, Filter filter, ref MoverPlaneBuffer outPlanes) {
 			var localAabb = Capsule.ComputeAABB(capsule, FTransform.Identity);
 			var margin = new FVector3(B3Config.SpeculativeDistance, B3Config.SpeculativeDistance, B3Config.SpeculativeDistance);
 			localAabb = new FAABB(localAabb.LowerBound - margin, localAabb.UpperBound + margin);
@@ -97,7 +106,8 @@ public abstract partial class Core<TWorld> where TWorld : struct, ISessionType, 
 			var moverShape = Shape.MakeCapsule(capsule.Center1, capsule.Center2, capsule.Radius);
 
 			CollideCandidates.Clear();
-			broadPhase.Query(queryAabb, CollideCandidates);
+			broadPhase.Query(queryAabb, QueryMask(filter), CollideCandidates);
+			CollideCandidates.Sort(static (a, b) => a.Raw.CompareTo(b.Raw));
 
 			for (var i = 0; i < CollideCandidates.Count; i++) {
 				var candidateGid = CollideCandidates[i];
@@ -105,7 +115,7 @@ public abstract partial class Core<TWorld> where TWorld : struct, ISessionType, 
 					continue;
 				}
 
-				if (shape.IsSensor) {
+				if (shape.IsSensor || !Filter.ShouldCollide(filter, shape.Filter)) {
 					continue;
 				}
 
@@ -218,7 +228,7 @@ public abstract partial class Core<TWorld> where TWorld : struct, ISessionType, 
 		/// loop as <see cref="CastMover"/>, just against a box proxy built fresh here instead of the
 		/// mover's own capsule, and reporting hit/normal/deep-overlap instead of only a fraction.
 		/// </summary>
-		private static GroundTraceResult TraceBody(BroadPhase broadPhase, FPos origin, FVector3 translation, FP halfWidth, FP halfDepth, FP halfHeight) {
+		private static GroundTraceResult TraceBody(BroadPhase broadPhase, FPos origin, FVector3 translation, FP halfWidth, FP halfDepth, FP halfHeight, Filter filter) {
 			for (var i = 0; i < 8; i++) {
 				var sx = (i & 1) != 0 ? halfWidth : -halfWidth;
 				var sy = (i & 2) != 0 ? halfHeight : -halfHeight;
@@ -236,7 +246,8 @@ public abstract partial class Core<TWorld> where TWorld : struct, ISessionType, 
 			var queryAabb = new FAABB(treeOrigin + sweptMin, treeOrigin + sweptMax);
 
 			GroundProbeCandidates.Clear();
-			broadPhase.Query(queryAabb, GroundProbeCandidates);
+			broadPhase.Query(queryAabb, QueryMask(filter), GroundProbeCandidates);
+			GroundProbeCandidates.Sort(static (a, b) => a.Raw.CompareTo(b.Raw));
 
 			var result = new GroundTraceResult();
 			var bestFraction = FP.One;
@@ -246,7 +257,7 @@ public abstract partial class Core<TWorld> where TWorld : struct, ISessionType, 
 					continue;
 				}
 
-				if (shape.IsSensor) {
+				if (shape.IsSensor || !Filter.ShouldCollide(filter, shape.Filter)) {
 					continue;
 				}
 
@@ -308,6 +319,10 @@ public abstract partial class Core<TWorld> where TWorld : struct, ISessionType, 
 		/// footprint-aware sweep is ported here, feeding the same spring this project already has.
 		/// </summary>
 		public static bool UpdatePogoGrounding(BroadPhase broadPhase, FWorldTransform moverXf, Capsule capsule, FP dt, FP hertz, FP dampingRatio, FP jumpCooldown, FP maxSlopeNormalThreshold, ref FP pogoVelocity) {
+			return UpdatePogoGrounding(broadPhase, moverXf, capsule, dt, hertz, dampingRatio, jumpCooldown, maxSlopeNormalThreshold, Filter.Default, ref pogoVelocity);
+		}
+
+		public static bool UpdatePogoGrounding(BroadPhase broadPhase, FWorldTransform moverXf, Capsule capsule, FP dt, FP hertz, FP dampingRatio, FP jumpCooldown, FP maxSlopeNormalThreshold, Filter filter, ref FP pogoVelocity) {
 			// See Mover.JumpCooldown's remarks: skip the trace entirely while a jump is still in its
 			// cooldown window, matching box3d's CategorizeGround gating re-grounding on m_jumpCooldown.
 			if (jumpCooldown > FP.Zero) {
@@ -323,7 +338,7 @@ public abstract partial class Core<TWorld> where TWorld : struct, ISessionType, 
 			var halfHeight = capsule.Radius * FP.Half;
 			var radiusScale = FP.One;
 			var halfWidth = capsule.Radius * FP.Half * radiusScale;
-			var trace = TraceBody(broadPhase, origin, translation, halfWidth, halfWidth, halfHeight);
+			var trace = TraceBody(broadPhase, origin, translation, halfWidth, halfWidth, halfHeight, filter);
 
 			while (trace.StartedSolid || (trace.Hit && !IsStandableSurface(trace.Normal, maxSlopeNormalThreshold))) {
 				radiusScale -= FP.FromRatio(1, 10);
@@ -333,7 +348,7 @@ public abstract partial class Core<TWorld> where TWorld : struct, ISessionType, 
 				}
 
 				halfWidth = capsule.Radius * FP.Half * radiusScale;
-				trace = TraceBody(broadPhase, origin, translation, halfWidth, halfWidth, halfHeight);
+				trace = TraceBody(broadPhase, origin, translation, halfWidth, halfWidth, halfHeight, filter);
 			}
 
 			if (trace.StartedSolid || !trace.Hit || !IsStandableSurface(trace.Normal, maxSlopeNormalThreshold)) {
@@ -374,5 +389,7 @@ public abstract partial class Core<TWorld> where TWorld : struct, ISessionType, 
 			transform = bodyEntity.Read<Body>()!.Transform; // BodyOwner always links to an entity with Body.
 			return true;
 		}
+
+		private static ulong QueryMask(Filter filter) => filter.GroupIndex > 0 ? ulong.MaxValue : filter.MaskBits;
 	}
 }
