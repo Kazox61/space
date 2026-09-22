@@ -143,7 +143,10 @@ public struct Sphere {
 
 		var p = shape.Center;
 		var s = input.Origin - p;
-		var d = FVector3.Normalize(input.Translation);
+		var d = FVector3.GetLengthAndNormalize(input.Translation, out var length);
+		if (length == FP.Zero) {
+			return output;
+		}
 
 		var t = -FVector3.Dot(s, d);
 		var c = s + t * d;
@@ -167,13 +170,13 @@ public struct Sphere {
 			return output;
 		}
 
-		if (fraction > input.MaxFraction) {
+		if (fraction > input.MaxFraction * length) {
 			return output;
 		}
 
 		var hitPoint = s + fraction * d;
 
-		output.Fraction = fraction;
+		output.Fraction = fraction / length;
 		output.Normal = FVector3.Normalize(hitPoint);
 		output.Point = p + shape.Radius * output.Normal;
 		output.Hit = true;

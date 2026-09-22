@@ -59,6 +59,10 @@ public static class Program {
 		SensorSensorDirectionalEventsTest();
 		RayCastHitsSphereCapsuleAndBoxTest();
 		RayCastMissAndFilterTest();
+		HollowSphereRayFractionTest();
+		WorldShapeQueriesTest();
+		CharacterMoverFilterTest();
+		BulletCcdRollbackTest();
 		PogoGroundingRayTest();
 		KinematicProjectileKillsDummyTest();
 		RejectedBroadPhasePairsTest();
@@ -1635,6 +1639,135 @@ public static class Program {
 		var queryFilter = new Filter { CategoryBits = ulong.MaxValue, MaskBits = 1, GroupIndex = 0 };
 		Check("ray respects Filter.ShouldCollide", !PhysicsQueries.CastRayClosest(broadPhase, filteredOrigin, translation, queryFilter, out _));
 
+		Shutdown();
+	}
+
+	private static void HollowSphereRayFractionTest() {
+		Console.WriteLine("--- HollowSphereRayFractionTest ---");
+		var sphere = new Sphere(FVector3.Zero, 2.ToFP());
+		var outside = Sphere.RayCastHollow(sphere, new RayCastInput {
+			Origin = new FVector3(-10.ToFP(), FP.Zero, FP.Zero),
+			Translation = new FVector3(20.ToFP(), FP.Zero, FP.Zero),
+			MaxFraction = FP.One,
+		});
+		Check("hollow-sphere ray returns a normalized translation fraction", outside.Hit && FP.Abs(outside.Fraction - FP.FromRatio(2, 5)) < FP.FromRatio(1, 1000));
+
+		var inside = Sphere.RayCastHollow(sphere, new RayCastInput {
+			Origin = FVector3.Zero,
+			Translation = new FVector3(8.ToFP(), FP.Zero, FP.Zero),
+			MaxFraction = FP.One,
+		});
+		Check("hollow-sphere ray starting inside hits the far wall", inside.Hit && FP.Abs(inside.Fraction - FP.Quarter) < FP.FromRatio(1, 1000));
+		Check("zero-length hollow-sphere ray is a miss", !Sphere.RayCastHollow(sphere, new RayCastInput { Origin = FVector3.Zero, MaxFraction = FP.One }).Hit);
+	}
+
+	private static void WorldShapeQueriesTest() {
+		Console.WriteLine("--- WorldShapeQueriesTest ---");
+		Bootstrap();
+		var solidBody = W.NewEntity<Default>();
+		BodyOperations.CreateBody(solidBody, BodyType.Static, new FWorldTransform(new FPos(Fixed64.FP.FromRatio(5, 1), Fixed64.FP.Zero, Fixed64.FP.Zero), FQuaternion.Identity));
+		var solidShape = ShapeFactory.CreateShape(solidBody, Shape.MakeBox(FVector3.Zero, new FVector3(FP.Quarter, 2.ToFP(), 2.ToFP())));
+		var solidShapeGid = solidShape.GID;
+
+		var sensorBody = W.NewEntity<Default>();
+		BodyOperations.CreateBody(sensorBody, BodyType.Static, new FWorldTransform(new FPos(Fixed64.FP.FromRatio(10, 1), Fixed64.FP.Zero, Fixed64.FP.Zero), FQuaternion.Identity));
+		var sensor = Shape.MakeSphere(FVector3.Zero, FP.One);
+		sensor.IsSensor = true;
+		var sensorShape = ShapeFactory.CreateShape(sensorBody, sensor);
+		var sensorShapeGid = sensorShape.GID;
+
+		W.Tick();
+		Systems.Update();
+		var broadPhase = W.GetResource<BroadPhase>();
+		var sphereProxy = new ShapeProxy { Points = new[] { FVector3.Zero }, Radius = FP.Half };
+		var queryXf = new FWorldTransform(FPos.Zero, FQuaternion.Identity);
+		Check("world shape cast hits a thin box", PhysicsQueries.CastShapeClosest(broadPhase, queryXf, sphereProxy, new FVector3(8.ToFP(), FP.Zero, FP.Zero), Filter.Default, QuerySensorMode.Exclude, out var castHit)
+			&& castHit.Shape == solidShapeGid && castHit.Fraction > FP.Zero && castHit.Fraction < FP.One);
+
+		var overlapCount = 0;
+		PhysicsQueries.OverlapShape(broadPhase,
+			new FWorldTransform(new FPos(Fixed64.FP.FromRatio(5, 1), Fixed64.FP.Zero, Fixed64.FP.Zero), FQuaternion.Identity),
+			sphereProxy, Filter.Default, QuerySensorMode.Exclude, gid => {
+				overlapCount++;
+				return gid != solidShapeGid;
+			});
+		Check("world overlap performs an exact convex test and reports the solid", overlapCount == 1);
+
+		var sensorRayOrigin = new FPos(Fixed64.FP.FromRatio(8, 1), Fixed64.FP.Zero, Fixed64.FP.Zero);
+		var sensorRay = new FVector3(4.ToFP(), FP.Zero, FP.Zero);
+		Check("world ray excludes sensors by default", !PhysicsQueries.CastRayClosest(broadPhase, sensorRayOrigin, sensorRay, Filter.Default, out _));
+		Check("world ray can include sensors", PhysicsQueries.CastRayClosest(broadPhase, sensorRayOrigin, sensorRay, Filter.Default, QuerySensorMode.Include, out var sensorHit)
+			&& sensorHit.Shape == sensorShapeGid);
+		Shutdown();
+	}
+
+	private static void CharacterMoverFilterTest() {
+		Console.WriteLine("--- CharacterMoverFilterTest ---");
+		Bootstrap();
+		var wall = W.NewEntity<Default>();
+		BodyOperations.CreateBody(wall, BodyType.Static, new FWorldTransform(new FPos(Fixed64.FP.FromRatio(2, 1), Fixed64.FP.Zero, Fixed64.FP.Zero), FQuaternion.Identity));
+		var wallShape = Shape.MakeBox(FVector3.Zero, new FVector3(FP.Quarter, 2.ToFP(), 2.ToFP()));
+		wallShape.Filter.CategoryBits = 2;
+		ShapeFactory.CreateShape(wall, wallShape);
+		W.Tick();
+		Systems.Update();
+
+		var capsule = new Capsule(new FVector3(FP.Zero, -FP.Half, FP.Zero), new FVector3(FP.Zero, FP.Half, FP.Zero), FP.Half);
+		var translation = new FVector3(4.ToFP(), FP.Zero, FP.Zero);
+		var broadPhase = W.GetResource<BroadPhase>();
+		var blocked = CharacterMover.CastMover(broadPhase, FWorldTransform.Identity, capsule, translation, FP.One, Filter.Default);
+		var excludedFilter = new Filter { CategoryBits = ulong.MaxValue, MaskBits = 1, GroupIndex = 0 };
+		var excluded = CharacterMover.CastMover(broadPhase, FWorldTransform.Identity, capsule, translation, FP.One, excludedFilter);
+		Check("character mover is blocked by an allowed wall", blocked < FP.One);
+		Check("character mover respects category and mask filtering", excluded == FP.One);
+		Shutdown();
+	}
+
+	private static void BulletCcdRollbackTest() {
+		Console.WriteLine("--- BulletCcdRollbackTest ---");
+		Bootstrap();
+		var wall = W.NewEntity<Default>();
+		BodyOperations.CreateBody(wall, BodyType.Static, new FWorldTransform(new FPos(Fixed64.FP.FromRatio(3, 1), Fixed64.FP.Zero, Fixed64.FP.Zero), FQuaternion.Identity));
+		ShapeFactory.CreateShape(wall, Shape.MakeBox(FVector3.Zero, new FVector3(FP.FromRatio(1, 20), 2.ToFP(), 2.ToFP())));
+
+		var bullet = W.NewEntity<Default>();
+		BodyOperations.CreateBody(bullet, BodyType.Kinematic, FWorldTransform.Identity);
+		BodyOperations.SetBullet(bullet, true);
+		BodyOperations.SetLinearVelocity(bullet, new FVector3(400.ToFP(), FP.Zero, FP.Zero));
+		ShapeFactory.CreateShape(bullet, Shape.MakeSphere(FVector3.Zero, FP.FromRatio(1, 10)));
+		var bulletGid = bullet.GID;
+
+		var snapshot = W.Serializer.CreateWorldSnapshot();
+		W.Tick();
+		Systems.Update();
+		if (!bulletGid.TryUnpack<TestWorld>(out var liveBullet)) {
+			Check("bullet resolves after the live CCD tick", false);
+			Shutdown();
+			return;
+		}
+		Check("bullet resolves after the live CCD tick", true);
+		var liveX = liveBullet.Read<Body>().Transform.Position.X;
+		var liveState = W.Serializer.CreateWorldSnapshot();
+		Check("maximum-speed bullet does not tunnel through a thin wall", liveX > Fixed64.FP.Zero && liveX < Fixed64.FP.FromRatio(3, 1));
+
+		W.Serializer.LoadWorldSnapshot(snapshot, hardReset: true);
+		W.Tick();
+		Systems.Update();
+		if (!bulletGid.TryUnpack<TestWorld>(out var replayBullet)) {
+			Check("bullet resolves after rollback replay", false);
+			Shutdown();
+			return;
+		}
+		Check("bullet resolves after rollback replay", true);
+		var replayX = replayBullet.Read<Body>().Transform.Position.X;
+		var replayState = W.Serializer.CreateWorldSnapshot();
+		Check("bullet CCD reproduces the same time of impact after rollback", replayX == liveX && Fnv1a64(replayState, replayState.Length) == Fnv1a64(liveState, liveState.Length));
+		for (var tick = 0; tick < 5; tick++) {
+			W.Tick();
+			Systems.Update();
+		}
+		Check("surviving bullet does not drive through the wall after impact", bulletGid.TryUnpack<TestWorld>(out var stoppedBullet)
+			&& stoppedBullet.Read<Body>().Transform.Position.X < Fixed64.FP.FromRatio(3, 1));
 		Shutdown();
 	}
 

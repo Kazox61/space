@@ -3,6 +3,12 @@ using Fixed32;
 
 namespace Space.GameCore;
 
+/// <summary>Controls whether world queries may report sensor shapes.</summary>
+public enum QuerySensorMode : byte {
+	Exclude,
+	Include,
+}
+
 /// <summary>
 /// A shape proxy used by the GJK algorithm. Can represent a convex shape as a point cloud with a radius.
 /// </summary>

@@ -36,8 +36,16 @@ public abstract partial class Core<TWorld> where TWorld : struct, ISessionType, 
 		/// Recompute this shape's AABB from the body's current world transform and, if it grew outside
 		/// the existing fat AABB, re-fatten it and move the broad-phase proxy.
 		/// </summary>
-		public static void UpdateAABBs(ref Shape shape, FWorldTransform bodyTransform, BroadPhase broadPhase) {
+		public static void UpdateAABBs(ref Shape shape, FWorldTransform bodyTransform, BroadPhase broadPhase, FVector3 predictedTranslation = default) {
 			var aabb = shape.ComputeFatAABB(bodyTransform, B3Config.SpeculativeDistance);
+			if (predictedTranslation != FVector3.Zero) {
+				var endTransform = bodyTransform;
+				endTransform.Position += predictedTranslation;
+				var endAabb = shape.ComputeFatAABB(endTransform, B3Config.SpeculativeDistance);
+				aabb = new FAABB(
+					FVector3.MinComponents(aabb.LowerBound, endAabb.LowerBound),
+					FVector3.MaxComponents(aabb.UpperBound, endAabb.UpperBound));
+			}
 			shape.Aabb = aabb;
 
 			if (!shape.FatAabb.Contains(aabb)) {

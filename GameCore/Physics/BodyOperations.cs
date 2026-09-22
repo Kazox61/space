@@ -164,6 +164,13 @@ public abstract partial class Core<TWorld> where TWorld : struct, ISessionType, 
 			SetAngularVelocity(entity, angular);
 		}
 
+		/// <summary>Enables deterministic linear continuous collision detection for this body.</summary>
+		public static void SetBullet(W.Entity entity, bool isBullet) {
+			ref var body = ref RequireBody(entity);
+			body.IsBullet = isBullet;
+			Wake(ref body);
+		}
+
 		public static void ApplyLinearImpulseToCenter(W.Entity entity, FVector3 impulse) {
 			ref var body = ref RequireDynamicBody(entity);
 			body.LinearVelocity += body.InvMass * impulse;

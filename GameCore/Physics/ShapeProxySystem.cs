@@ -1,4 +1,6 @@
 using FFS.Libraries.StaticEcs;
+using Fixed;
+using Fixed32;
 using Shenanicode.Rollback;
 
 namespace Space.GameCore;
@@ -24,32 +26,33 @@ public abstract partial class Core<TWorld> where TWorld : struct, ISessionType, 
 	public struct ShapeProxySystem : ISystem {
 		public void Update() {
 			var broadPhase = W.GetResource<BroadPhase>();
+			var dt = Const.DeltaTime.To32();
 
-			W.Query<All<W.Link<BodyOwner>>>().For(ref broadPhase,
-				static (ref BroadPhase bp, W.Entity shapeEntity, ref Shape shape) => {
-					ref readonly var owner = ref shapeEntity.Read<W.Link<BodyOwner>>();
-					if (!owner.Value.TryUnpack<TWorld>(out var bodyEntity)) {
-						return;
-					}
+			foreach (var shapeEntity in W.Query<All<Shape, W.Link<BodyOwner>>>().Entities()) {
+				ref var shape = ref shapeEntity.Ref<Shape>();
+				ref readonly var owner = ref shapeEntity.Read<W.Link<BodyOwner>>();
+				if (!owner.Value.TryUnpack<TWorld>(out var bodyEntity)) {
+					continue;
+				}
 
-					ref readonly var body = ref bodyEntity.Read<Body>()!; // BodyOwner always links to an entity with Body.
-					if (!BodyOperations.IsEnabled(body)) {
-						if (shape.ProxyKey != Shape.NullProxyKey) {
-							ShapeBroadPhaseOps.DestroyProxy(ref shape, bp);
-						}
-						return;
+				ref readonly var body = ref bodyEntity.Read<Body>()!; // BodyOwner always links to an entity with Body.
+				if (!BodyOperations.IsEnabled(body)) {
+					if (shape.ProxyKey != Shape.NullProxyKey) {
+						ShapeBroadPhaseOps.DestroyProxy(ref shape, broadPhase);
 					}
+					continue;
+				}
 
-					if (shape.ProxyKey == Shape.NullProxyKey) {
-						var forcePairCreation = body.Type != BodyType.Static || shape.InvokeContactCreation;
-						ShapeBroadPhaseOps.CreateProxy(ref shape, shapeEntity, bp, body.Type, body.Transform, forcePairCreation);
-						return;
-					}
+				if (shape.ProxyKey == Shape.NullProxyKey) {
+					var forcePairCreation = body.Type != BodyType.Static || shape.InvokeContactCreation;
+					ShapeBroadPhaseOps.CreateProxy(ref shape, shapeEntity, broadPhase, body.Type, body.Transform, forcePairCreation);
+				}
 
-					if (body.Type != BodyType.Static) {
-						ShapeBroadPhaseOps.UpdateAABBs(ref shape, body.Transform, bp);
-					}
-				});
+				if (body.Type != BodyType.Static) {
+					var predictedTranslation = body.IsBullet ? dt * body.LinearVelocity : FVector3.Zero;
+					ShapeBroadPhaseOps.UpdateAABBs(ref shape, body.Transform, broadPhase, predictedTranslation);
+				}
+			}
 		}
 	}
 }

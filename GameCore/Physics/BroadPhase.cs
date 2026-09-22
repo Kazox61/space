@@ -108,11 +108,29 @@ public abstract partial class Core<TWorld> where TWorld : struct, ISessionType, 
 		/// reference (no boxing, since it's already a reference type), so this allocates nothing per call.
 		/// </summary>
 		public void Query(FAABB aabb, List<EntityGID> results) {
+			Query(aabb, ulong.MaxValue, results);
+		}
+
+		/// <summary>Mask-pruned variant of <see cref="Query(FAABB,List{EntityGID})"/>.</summary>
+		public void Query(FAABB aabb, ulong maskBits, List<EntityGID> results) {
 			for (var type = 0; type < TypeCount; type++) {
-				_trees[type].Query(aabb, ulong.MaxValue, static (_, userData, context) => {
+				_trees[type].Query(aabb, maskBits, static (_, userData, context) => {
 					((List<EntityGID>)context).Add(new EntityGID(userData));
 					return true;
 				}, results);
+			}
+		}
+
+		/// <summary>Appends every live proxy. Used by relative-motion CCD before target swept trees exist.</summary>
+		internal void CollectProxies(List<EntityGID> results) {
+			for (var treeIndex = 0; treeIndex < TypeCount; treeIndex++) {
+				var tree = _trees[treeIndex];
+				for (var nodeIndex = 0; nodeIndex < tree.NodesCapacity; nodeIndex++) {
+					ref readonly var node = ref tree.Nodes[nodeIndex];
+					if ((node.Flags & (DynamicTree.AllocatedNode | DynamicTree.LeafNode)) == (DynamicTree.AllocatedNode | DynamicTree.LeafNode)) {
+						results.Add(new EntityGID(node.UserData));
+					}
+				}
 			}
 		}
 
@@ -135,12 +153,17 @@ public abstract partial class Core<TWorld> where TWorld : struct, ISessionType, 
 		/// static/kinematic/dynamic trees in a single query for the same reason.
 		/// </summary>
 		public void CastRay(FVector3 origin, FVector3 translation, FP maxFraction, RayCastCallback callback) {
+			CastRay(origin, translation, maxFraction, ulong.MaxValue, callback);
+		}
+
+		/// <summary>Mask-pruned variant of <see cref="CastRay(FVector3,FVector3,FP,RayCastCallback)"/>.</summary>
+		public void CastRay(FVector3 origin, FVector3 translation, FP maxFraction, ulong maskBits, RayCastCallback callback) {
 			var stopped = false;
 
 			for (var type = 0; type < TypeCount && !stopped; type++) {
 				var input = new DynamicTree.RayCastInput { Origin = origin, Direction = translation, MaxFraction = maxFraction };
 
-				_trees[type].RayCast(input, ulong.MaxValue, (ref DynamicTree.RayCastInput subInput, int _, ulong userData, object _) => {
+				_trees[type].RayCast(input, maskBits, (ref DynamicTree.RayCastInput subInput, int _, ulong userData, object _) => {
 					var value = callback(new EntityGID(userData), origin, translation, subInput.MaxFraction);
 
 					if (value == FP.Zero) {
