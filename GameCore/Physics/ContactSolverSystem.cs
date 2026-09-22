@@ -308,6 +308,9 @@ public abstract partial class Core<TWorld> where TWorld : struct, ISessionType, 
 					continue;
 				}
 				ref readonly var shape = ref shapeEntity.Read<Shape>();
+				if (shape.IsSensor) {
+					continue;
+				}
 				var shapeMin = shape.ComputeMinimumExtent();
 				if (shapeMin <= FP.Zero) {
 					continue;
