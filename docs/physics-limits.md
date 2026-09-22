@@ -81,7 +81,7 @@ magnitudes in Fixed32, so any squared magnitude must stay below 32768:
 | `PhysicsWorld.MaximumLinearSpeed` default 400 | **Unsafe — known issue** | 400^2 = 160000 wraps in Q16.16; the clamp itself misbehaves. Phase 5 replaces the default. Keep gameplay speeds well under 181 meanwhile. |
 | Supported linear speed | <= 60 | Validated gameplay speeds are <= 12 (projectile); 60 keeps translation per tick ~1 unit at 60 Hz |
 | Angular speed | Auto-clamped at ~47.1 rad/s (MaxRotation * 60); supported <= 30 | Clamp arithmetic is safe; leave headroom for solver cross products |
-| Translation per tick | <= 1 unit (60 Hz) for ordinary bodies | Explicit bullets now use linear CCD; automatic fast-body CCD and rotating TOI remain Phase 4 follow-up work |
+| Translation per tick | <= 1 unit (60 Hz) before CCD is expected to engage | Dynamic bodies whose linear and angular motion exceeds half their smallest shape extent receive automatic CCD against static geometry; explicit bullets sweep against static, kinematic, and non-bullet dynamic bodies |
 
 ## Events, filters, and lifecycle invariants (non-numeric Phase 0 contracts)
 

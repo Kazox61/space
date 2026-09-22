@@ -50,23 +50,27 @@ public abstract partial class Core<TWorld> where TWorld : struct, ISessionType, 
 		}
 
 		public static void CastRay(BroadPhase broadPhase, FPos origin, FVector3 translation, Filter filter, QuerySensorMode sensors, WorldRayCastCallback callback) {
-			// The broad-phase trees themselves are Fixed32 (see Shape.ComputeFatAABB/BroadPhase),
-			// so tree pruning is inherently bounded to that precision; only the per-candidate local
-			// transform below (InvTransformPoint) needs to stay full-precision.
 			var treeOrigin = new FVector3(origin.X.To32(), origin.Y.To32(), origin.Z.To32());
+			var treeEnd = treeOrigin + translation;
+			var rayAabb = new FAABB(
+				FVector3.MinComponents(treeOrigin, treeEnd),
+				FVector3.MaxComponents(treeOrigin, treeEnd));
+			var candidates = CollectCandidates(broadPhase, rayAabb, filter);
+			var maxFraction = FP.One;
 
-			broadPhase.CastRay(treeOrigin, translation, FP.One, QueryMask(filter), (shapeGid, _, _, maxFraction) => {
+			for (var i = 0; i < candidates.Count; i++) {
+				var shapeGid = candidates[i];
 				if (!shapeGid.TryUnpack<TWorld>(out var shapeEntity)) {
-					return -FP.One;
+					continue;
 				}
 
 				ref readonly var shape = ref shapeEntity.Read<Shape>()!; // Broad-phase leaves are always shape entities.
 				if ((shape.IsSensor && sensors == QuerySensorMode.Exclude) || !Filter.ShouldCollide(filter, shape.Filter)) {
-					return -FP.One;
+					continue;
 				}
 
 				if (!TryGetBodyTransform(shapeEntity, out var bodyXf)) {
-					return -FP.One;
+					continue;
 				}
 
 				var localOrigin = FWorldTransform.InvTransformPoint(bodyXf, origin);
@@ -74,13 +78,19 @@ public abstract partial class Core<TWorld> where TWorld : struct, ISessionType, 
 
 				var output = shape.RayCast(new RayCastInput { Origin = localOrigin, Translation = localTranslation, MaxFraction = maxFraction });
 				if (!output.Hit) {
-					return -FP.One;
+					continue;
 				}
 
 				var worldPoint = FWorldTransform.TransformPoint(bodyXf, output.Point);
 				var worldNormal = bodyXf.Rotation * output.Normal;
-				return callback(shapeGid, worldPoint, worldNormal, output.Fraction);
-			});
+				var value = callback(shapeGid, worldPoint, worldNormal, output.Fraction);
+				if (value == FP.Zero) {
+					break;
+				}
+				if (value > FP.Zero && value <= maxFraction) {
+					maxFraction = value;
+				}
+			}
 		}
 
 		/// <summary>Canned <see cref="CastRay"/> callback that keeps only the closest hit -- box3d's b3World_CastRayClosest.</summary>

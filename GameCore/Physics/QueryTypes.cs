@@ -20,6 +20,80 @@ public struct ShapeProxy {
 	public FP Radius;
 }
 
+/// <summary>Outcome of a continuous, rotating convex time-of-impact query.</summary>
+public enum TimeOfImpactState : byte {
+	/// <summary>The query did not produce a result.</summary>
+	Unknown,
+
+	/// <summary>The deterministic iteration limit or fixed-point progress limit was reached.</summary>
+	Failed,
+
+	/// <summary>The proxy point clouds overlap at fraction zero.</summary>
+	Overlapped,
+
+	/// <summary>The shapes reach the time-of-impact target within <see cref="B3Config.LinearSlop"/>.</summary>
+	Hit,
+
+	/// <summary>The shapes remain separated through the requested maximum fraction.</summary>
+	Separated,
+}
+
+/// <summary>
+/// Input for a deterministic continuous collision query between two rotating convex proxies.
+/// Translation is interpolated in 64-bit world space and rotation uses shortest-path
+/// <see cref="FQuaternion.Nlerp(FQuaternion, FQuaternion, FP, bool)"/>.
+/// </summary>
+public struct TimeOfImpactInput {
+	/// <summary>The convex proxy for shape A.</summary>
+	public ShapeProxy ProxyA;
+
+	/// <summary>The convex proxy for shape B.</summary>
+	public ShapeProxy ProxyB;
+
+	/// <summary>World transform of shape A at fraction zero.</summary>
+	public FWorldTransform TransformAStart;
+
+	/// <summary>World transform of shape A at fraction one.</summary>
+	public FWorldTransform TransformAEnd;
+
+	/// <summary>Shape A's local center of rotation. Zero for an ordinary transform sweep.</summary>
+	public FVector3 LocalCenterA;
+
+	/// <summary>World transform of shape B at fraction zero.</summary>
+	public FWorldTransform TransformBStart;
+
+	/// <summary>World transform of shape B at fraction one.</summary>
+	public FWorldTransform TransformBEnd;
+
+	/// <summary>Shape B's local center of rotation. Zero for an ordinary transform sweep.</summary>
+	public FVector3 LocalCenterB;
+
+	/// <summary>The inclusive sweep fraction to consider, clamped to the range [0, 1].</summary>
+	public FP MaxFraction;
+}
+
+/// <summary>Result of a rotating convex time-of-impact query.</summary>
+public struct TimeOfImpactOutput {
+	/// <summary>The way the query terminated.</summary>
+	public TimeOfImpactState State;
+
+	/// <summary>
+	/// Fraction along both start-to-end sweeps. For <see cref="TimeOfImpactState.Separated"/> this
+	/// is the requested maximum fraction; for <see cref="TimeOfImpactState.Failed"/> it is the last
+	/// conservatively reached fraction.
+	/// </summary>
+	public FP Fraction;
+
+	/// <summary>
+	/// World-space contact estimate, averaged between the radius-adjusted GJK witness points at
+	/// <see cref="Fraction"/>. This retains the 64-bit precision of world positions.
+	/// </summary>
+	public FPos Point;
+
+	/// <summary>Normalized world-space normal pointing from shape A toward shape B.</summary>
+	public FVector3 Normal;
+}
+
 /// <summary>
 /// Low level ray cast input data.
 /// </summary>

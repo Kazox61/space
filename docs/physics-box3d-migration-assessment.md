@@ -716,33 +716,47 @@ Phase 3 (contact persistence and events) is implemented:
 
 ## Phase 4 Implementation Status
 
-Phase 4 has started with the game-critical linear CCD and world-query slice:
+Phase 4 (game-critical CCD and queries) is implemented:
 
-- Bullet CCD: `BodyOperations.SetBullet` enables deterministic linear convex
-  sweeps after integration. Bullet proxies include their predicted translation,
-  candidates are processed in stable GID order, and relative translation accounts
-  for moving static, kinematic, and dynamic targets. Sensors and bullet/bullet pairs
-  are excluded. The earliest impact clips movement and removes inward relative
-  normal velocity so a surviving bullet cannot continue through the target.
+- Convex TOI: `Distance.TimeOfImpact` performs deterministic conservative advancement
+  over translating and rotating convex proxies. Translation retains `FPos` precision,
+  rotation uses shortest-path fixed-point NLerp, and the motion bound prevents
+  intermediate angular collisions from being skipped.
+- Fast-body CCD: dynamic bodies are classified from their actual per-tick linear and
+  angular motion relative to their smallest shape extent. Automatically fast dynamics
+  sweep against static geometry; explicit kinematic or dynamic bullets sweep against
+  static, kinematic, and non-bullet dynamic targets. Static bullets are rejected,
+  sensors and bullet/bullet pairs are excluded, and candidate processing is stable by
+  shape GID. Predicted fast-body proxies use a rotation-independent bound around the
+  center-of-mass path, so broad-phase discovery includes angular and linear motion.
+- Impact response: the earliest TOI clips both translation and rotation. Inward point
+  velocity is removed using both bodies' linear and angular velocities. This is the
+  intended projectile/anti-tunneling response, not a full impulse solve at TOI.
 - Projectile integration: spawned projectiles are bullets. CCD impacts use a
   dedicated `ContinuousHitEvent` rather than synthesizing ordinary contact state;
-  `ProjectileHitSystem` consumes both discrete begin-touch and continuous-hit
-  events through the same gameplay path.
+  its payload now includes fraction, point, and target-to-bullet normal.
+  `ProjectileHitSystem` consumes both discrete begin-touch and continuous-hit events
+  through the same gameplay path.
 - World queries: `PhysicsQueries` now exposes exact convex overlap and linear shape
-  cast APIs, with deterministic candidate order, precise narrow-phase filtering,
-  callback clipping/termination, and configurable sensor inclusion. Broad-phase
-  ray and AABB traversals accept category masks for pruning.
+  cast APIs, with deterministic GID candidate order across ray, overlap, and shape
+  casts; precise narrow-phase filtering; callback ignore, clipping, and termination;
+  collision-group behavior; and configurable sensor inclusion. Broad-phase ray and
+  AABB traversals accept category masks for pruning.
 - Character filtering: capsule casts, overlap-plane collection, and ground probes
   all apply `Filter.ShouldCollide`. Production players use their per-input-channel
   negative self group, matching projectile ownership filtering.
 - Ray correctness: hollow-sphere ray hits now return normalized translation
   fractions and safely reject zero-length casts.
-- Regression coverage: the harness verifies hollow-sphere fractions, public shape
-  cast and exact overlap behavior, ray sensor inclusion, character category/mask
-  filtering, maximum-speed bullet collision against a thin wall, post-impact
-  containment, and exact rollback replay of the CCD state hash in Debug and Release.
+- Regression coverage: the harness verifies rotational-only TOI, automatic linear and
+  angular fast-body CCD, center-of-mass sweep reconstruction, explicit kinematic and
+  dynamic bullet target policy, the configured maximum-speed thin-wall case, bullet
+  event payloads, post-impact containment, and exact linear and angular rollback replay.
+  Query coverage verifies stable
+  callback ordering and ignore/clip/terminate semantics, exact overlap, shape casts,
+  category/mask/group filtering, sensor inclusion, and character cast, overlap-plane,
+  and ground-probe filtering in Debug and Release.
 
-This is not yet the full rotating Box3D TOI port. CCD currently uses the existing
-linear convex shape cast and is restricted to explicitly marked bullets; automatic
-fast-body classification, angular sweeps, a complete target-type test matrix, and
-broader query/filter callback coverage remain Phase 4 follow-up work.
+The CCD stage deliberately remains narrower than Box3D's full continuous solver: it
+does not create a contact island or solve friction, restitution, or reciprocal impact
+impulses at TOI. Sensors also remain excluded from CCD. Those behaviors should only be
+expanded if non-projectile gameplay requires physically persistent fast bodies.

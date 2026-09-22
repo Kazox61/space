@@ -160,9 +160,8 @@ public abstract partial class Core<TWorld> where TWorld : struct, ISessionType, 
 				Solve(constraints, h, invH, world.ContactSpeed, useBias: false);
 			}
 
-			SolveContinuousCollisions(bodies, W.GetResource<BroadPhase>());
-
 			ApplyRestitution(constraints, world.RestitutionThreshold);
+			SolveContinuousCollisions(bodies, W.GetResource<BroadPhase>());
 			StoreImpulses(constraints, world.HitEventThreshold);
 			FinalizeBodies(bodies);
 		}
@@ -176,7 +175,7 @@ public abstract partial class Core<TWorld> where TWorld : struct, ISessionType, 
 					continue;
 				}
 				ref var body = ref bodyEntity.Ref<Body>();
-				if (!body.IsBullet || body.DeltaPosition == FVector3.Zero || !bodyEntity.Has<W.Links<Shapes>>()) {
+				if (!bodyEntity.Has<W.Links<Shapes>>() || !TryGetContinuousPolicy(bodyEntity, body, out var explicitBullet)) {
 					continue;
 				}
 
@@ -184,8 +183,10 @@ public abstract partial class Core<TWorld> where TWorld : struct, ISessionType, 
 				var bestBulletShape = default(EntityGID);
 				var bestTargetShape = default(EntityGID);
 				var bestNormal = FVector3.Zero;
-				var bestTargetVelocity = FVector3.Zero;
+				var bestPoint = FPos.Zero;
+				var bestTargetBody = default(W.Entity);
 				var bestEnablesEvents = false;
+				var bodyEndTransform = GetSweepEnd(body);
 				ref readonly var shapeLinks = ref bodyEntity.Read<W.Links<Shapes>>();
 				for (var shapeIndex = 0; shapeIndex < shapeLinks.Length; shapeIndex++) {
 					if (!shapeLinks[shapeIndex].Value.TryUnpack<TWorld>(out var bulletShapeEntity) || !bulletShapeEntity.Has<Shape>()) {
@@ -196,13 +197,7 @@ public abstract partial class Core<TWorld> where TWorld : struct, ISessionType, 
 						continue;
 					}
 
-					var endTransform = body.Transform;
-					endTransform.Position += body.DeltaPosition;
-					var startAabb = bulletShape.ComputeFatAABB(body.Transform, B3Config.SpeculativeDistance);
-					var endAabb = bulletShape.ComputeFatAABB(endTransform, B3Config.SpeculativeDistance);
-					var sweptAabb = new FAABB(
-						FVector3.MinComponents(startAabb.LowerBound, endAabb.LowerBound),
-						FVector3.MaxComponents(startAabb.UpperBound, endAabb.UpperBound));
+					var sweptAabb = ComputeSweptAabb(body, bulletShape);
 
 					candidates.Clear();
 					broadPhase.CollectProxies(candidates);
@@ -221,53 +216,125 @@ public abstract partial class Core<TWorld> where TWorld : struct, ISessionType, 
 							continue;
 						}
 						ref readonly var targetBody = ref targetBodyEntity.Read<Body>();
-						if (!BodyOperations.IsEnabled(targetBody) || targetBody.IsBullet) {
+						if (!BodyOperations.IsEnabled(targetBody) || targetBody.IsBullet
+							|| (!explicitBullet && targetBody.Type != BodyType.Static)) {
 							continue;
 						}
-						var targetEndTransform = targetBody.Transform;
-						targetEndTransform.Position += targetBody.DeltaPosition;
-						var targetStartAabb = targetShape.ComputeFatAABB(targetBody.Transform, B3Config.SpeculativeDistance);
-						var targetEndAabb = targetShape.ComputeFatAABB(targetEndTransform, B3Config.SpeculativeDistance);
-						var targetSweptAabb = new FAABB(
-							FVector3.MinComponents(targetStartAabb.LowerBound, targetEndAabb.LowerBound),
-							FVector3.MaxComponents(targetStartAabb.UpperBound, targetEndAabb.UpperBound));
+						var targetEndTransform = GetSweepEnd(targetBody);
+						var targetSweptAabb = ComputeSweptAabb(targetBody, targetShape);
 						if (!FAABB.Overlaps(sweptAabb, targetSweptAabb)) {
 							continue;
 						}
 
-						var relativeTranslation = body.DeltaPosition - targetBody.DeltaPosition;
-						var output = Distance.ShapeCast(new ShapeCastPairInput {
+						var output = Distance.TimeOfImpact(new TimeOfImpactInput {
 							ProxyA = targetShape.MakeProxy(),
 							ProxyB = bulletShape.MakeProxy(),
-							Transform = FWorldTransform.InvMul(targetBody.Transform, body.Transform),
-							TranslationB = FQuaternion.Inverse(targetBody.Transform.Rotation) * relativeTranslation,
+							TransformAStart = targetBody.Transform,
+							TransformAEnd = targetEndTransform,
+							LocalCenterA = targetBody.LocalCenter,
+							TransformBStart = body.Transform,
+							TransformBEnd = bodyEndTransform,
+							LocalCenterB = body.LocalCenter,
 							MaxFraction = bestFraction,
-							CanEncroach = true,
 						});
-						if (!output.Hit || output.Fraction <= FP.Zero || output.Fraction >= bestFraction) {
+						var usableHit = output.State == TimeOfImpactState.Hit
+							|| (output.State == TimeOfImpactState.Failed && output.Fraction > FP.Zero);
+						if (!usableHit || output.Fraction <= FP.Zero || output.Fraction >= bestFraction) {
 							continue;
 						}
 
 						bestFraction = output.Fraction;
 						bestBulletShape = bulletShapeEntity.GID;
 						bestTargetShape = targetGid;
-						bestNormal = targetBody.Transform.Rotation * output.Normal;
-						bestTargetVelocity = targetBody.LinearVelocity;
+						bestNormal = output.Normal;
+						bestPoint = output.Point;
+						bestTargetBody = targetBodyEntity;
 						bestEnablesEvents = bulletShape.EnableContactEvents || targetShape.EnableContactEvents;
 					}
 				}
 
 				if (bestFraction < FP.One) {
 					body.DeltaPosition *= bestFraction;
-					var relativeNormalVelocity = FVector3.Dot(body.LinearVelocity - bestTargetVelocity, bestNormal);
+					body.DeltaRotation = FQuaternion.Nlerp(FQuaternion.Identity, body.DeltaRotation, bestFraction);
+					if (!bestTargetBody.Has<Body>()) {
+						continue;
+					}
+					ref readonly var targetBody = ref bestTargetBody.Read<Body>();
+					var bodyCenter = body.Center + body.DeltaPosition;
+					var targetCenter = targetBody.Center + bestFraction * targetBody.DeltaPosition;
+					var bodyPointVelocity = body.LinearVelocity + FVector3.Cross(body.AngularVelocity, bestPoint - bodyCenter);
+					var targetPointVelocity = targetBody.LinearVelocity + FVector3.Cross(targetBody.AngularVelocity, bestPoint - targetCenter);
+					var relativeNormalVelocity = FVector3.Dot(bodyPointVelocity - targetPointVelocity, bestNormal);
 					if (relativeNormalVelocity < FP.Zero) {
 						body.LinearVelocity -= relativeNormalVelocity * bestNormal;
 					}
-					if (bestEnablesEvents) {
-						W.SendEvent(new ContinuousHitEvent { BulletShape = bestBulletShape, TargetShape = bestTargetShape });
+					if (explicitBullet && bestEnablesEvents) {
+						W.SendEvent(new ContinuousHitEvent {
+							BulletShape = bestBulletShape,
+							TargetShape = bestTargetShape,
+							Point = bestPoint,
+							Normal = bestNormal,
+							Fraction = bestFraction,
+						});
 					}
 				}
 			}
+		}
+
+		private static bool TryGetContinuousPolicy(W.Entity bodyEntity, in Body body, out bool explicitBullet) {
+			explicitBullet = body.IsBullet && body.Type != BodyType.Static;
+			if (explicitBullet) {
+				return body.DeltaPosition != FVector3.Zero || !FQuaternion.ApproximatelyEqual(body.DeltaRotation, FQuaternion.Identity);
+			}
+			if (body.Type != BodyType.Dynamic || !TryGetBodyExtents(bodyEntity, body.LocalCenter, out var minExtent, out var maxExtent)) {
+				return false;
+			}
+
+			var deltaRotation = body.DeltaRotation.W < FP.Zero ? -body.DeltaRotation : body.DeltaRotation;
+			var maxMotion = FVector3.Length(body.DeltaPosition) + FQuaternion.GetAngle(deltaRotation) * maxExtent;
+			return maxMotion > FP.Half * minExtent;
+		}
+
+		private static bool TryGetBodyExtents(W.Entity bodyEntity, FVector3 localCenter, out FP minExtent, out FP maxExtent) {
+			minExtent = FP.MaxValue;
+			maxExtent = FP.Zero;
+			if (!bodyEntity.Has<W.Links<Shapes>>()) {
+				return false;
+			}
+			var found = false;
+			ref readonly var links = ref bodyEntity.Read<W.Links<Shapes>>();
+			for (var i = 0; i < links.Length; i++) {
+				if (!links[i].Value.TryUnpack<TWorld>(out var shapeEntity) || !shapeEntity.Has<Shape>()) {
+					continue;
+				}
+				ref readonly var shape = ref shapeEntity.Read<Shape>();
+				if (shape.IsSensor) {
+					continue;
+				}
+				var shapeMin = shape.ComputeMinimumExtent();
+				if (shapeMin <= FP.Zero) {
+					continue;
+				}
+				found = true;
+				minExtent = FP.Min(minExtent, shapeMin);
+				maxExtent = FP.Max(maxExtent, shape.ComputeSweepRadius(localCenter));
+			}
+			return found;
+		}
+
+		private static FWorldTransform GetSweepEnd(in Body body) {
+			var deltaRotation = FQuaternion.NormalizeSafe(body.DeltaRotation, FQuaternion.Identity);
+			var rotation = FQuaternion.Normalize(deltaRotation * body.Transform.Rotation);
+			var center = body.Center + body.DeltaPosition;
+			return new FWorldTransform(center + -(rotation * body.LocalCenter), rotation);
+		}
+
+		private static FAABB ComputeSweptAabb(in Body body, in Shape shape) {
+			var radiusValue = shape.ComputeSweepRadius(body.LocalCenter) + B3Config.SpeculativeDistance;
+			var radius = new FVector3(radiusValue, radiusValue, radiusValue);
+			var start = new FVector3(body.Center.X.To32(), body.Center.Y.To32(), body.Center.Z.To32());
+			var end = start + body.DeltaPosition;
+			return new FAABB(FVector3.MinComponents(start, end) - radius, FVector3.MaxComponents(start, end) + radius);
 		}
 
 		private static bool TryPrepare(W.Entity contactEntity, bool enableWarmStarting, Softness contactSoftness, Softness staticSoftness, out ContactConstraint constraint) {

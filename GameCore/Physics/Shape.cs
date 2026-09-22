@@ -182,6 +182,26 @@ public struct Shape : IComponent, IComponentConfig<Shape> {
 		};
 	}
 
+	/// <summary>The smallest solid extent used to decide when discrete motion is unsafe.</summary>
+	public FP ComputeMinimumExtent() {
+		return Type switch {
+			ShapeType.Sphere => SphereShape.Radius,
+			ShapeType.Capsule => CapsuleShape.Radius,
+			ShapeType.Hull => FP.Min(HullShape.HalfExtents.X, FP.Min(HullShape.HalfExtents.Y, HullShape.HalfExtents.Z)),
+			_ => FP.Zero,
+		};
+	}
+
+	/// <summary>Maximum distance from a body's local center to this shape, including its radius.</summary>
+	public FP ComputeSweepRadius(FVector3 localCenter) {
+		var proxy = MakeProxy();
+		var radius = FP.Zero;
+		for (var i = 0; i < proxy.Points!.Length; i++) {
+			radius = FP.Max(radius, FVector3.Length(proxy.Points[i] - localCenter));
+		}
+		return radius + proxy.Radius;
+	}
+
 	/// <summary>
 	/// When shapes are created they scan the environment for collision the next time step. This can
 	/// significantly slow down static body creation when there are many static shapes. Ignored for

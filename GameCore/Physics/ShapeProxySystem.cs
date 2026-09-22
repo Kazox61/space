@@ -49,8 +49,16 @@ public abstract partial class Core<TWorld> where TWorld : struct, ISessionType, 
 				}
 
 				if (body.Type != BodyType.Static) {
-					var predictedTranslation = body.IsBullet ? dt * body.LinearVelocity : FVector3.Zero;
-					ShapeBroadPhaseOps.UpdateAABBs(ref shape, body.Transform, broadPhase, predictedTranslation);
+					var predictedTranslation = dt * body.LinearVelocity;
+					var predictedRotation = FQuaternion.IntegrateRotation(FQuaternion.Identity, dt * body.AngularVelocity);
+					var angularMotion = FQuaternion.GetAngle(predictedRotation) * shape.ComputeSweepRadius(body.LocalCenter);
+					var fast = body.IsBullet || (body.Type == BodyType.Dynamic
+						&& FVector3.Length(predictedTranslation) + angularMotion > FP.Half * shape.ComputeMinimumExtent());
+					if (fast) {
+						ShapeBroadPhaseOps.UpdateSweptAABBs(ref shape, body, predictedTranslation, broadPhase);
+					} else {
+						ShapeBroadPhaseOps.UpdateAABBs(ref shape, body.Transform, broadPhase);
+					}
 				}
 			}
 		}

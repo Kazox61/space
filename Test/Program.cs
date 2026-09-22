@@ -61,7 +61,13 @@ public static class Program {
 		RayCastMissAndFilterTest();
 		HollowSphereRayFractionTest();
 		WorldShapeQueriesTest();
+		WorldQueryCallbackContractTest();
 		CharacterMoverFilterTest();
+		RotatingTimeOfImpactTest();
+		AutomaticFastBodyCcdTest();
+		AngularCcdTest();
+		BulletCcdTargetPolicyTest();
+		MaximumSpeedBulletCcdTest();
 		BulletCcdRollbackTest();
 		PogoGroundingRayTest();
 		KinematicProjectileKillsDummyTest();
@@ -1698,6 +1704,263 @@ public static class Program {
 		Check("world ray excludes sensors by default", !PhysicsQueries.CastRayClosest(broadPhase, sensorRayOrigin, sensorRay, Filter.Default, out _));
 		Check("world ray can include sensors", PhysicsQueries.CastRayClosest(broadPhase, sensorRayOrigin, sensorRay, Filter.Default, QuerySensorMode.Include, out var sensorHit)
 			&& sensorHit.Shape == sensorShapeGid);
+		Check("world shape cast excludes sensors", !PhysicsQueries.CastShapeClosest(broadPhase,
+			new FWorldTransform(sensorRayOrigin, FQuaternion.Identity), sphereProxy, sensorRay, Filter.Default, QuerySensorMode.Exclude, out _));
+		Check("world shape cast can include sensors", PhysicsQueries.CastShapeClosest(broadPhase,
+			new FWorldTransform(sensorRayOrigin, FQuaternion.Identity), sphereProxy, sensorRay, Filter.Default, QuerySensorMode.Include, out var sensorCastHit)
+			&& sensorCastHit.Shape == sensorShapeGid);
+
+		var sensorOverlapExcluded = 0;
+		PhysicsQueries.OverlapShape(broadPhase, new FWorldTransform(new FPos(Fixed64.FP.FromRatio(10, 1), Fixed64.FP.Zero, Fixed64.FP.Zero), FQuaternion.Identity),
+			sphereProxy, Filter.Default, QuerySensorMode.Exclude, _ => { sensorOverlapExcluded++; return true; });
+		var sensorOverlapIncluded = 0;
+		PhysicsQueries.OverlapShape(broadPhase, new FWorldTransform(new FPos(Fixed64.FP.FromRatio(10, 1), Fixed64.FP.Zero, Fixed64.FP.Zero), FQuaternion.Identity),
+			sphereProxy, Filter.Default, QuerySensorMode.Include, _ => { sensorOverlapIncluded++; return true; });
+		Check("world overlap sensor inclusion is configurable", sensorOverlapExcluded == 0 && sensorOverlapIncluded == 1);
+
+		ShapeOperations.SetFilter(solidShape, new Filter { CategoryBits = 2, MaskBits = 0, GroupIndex = 5 });
+		var positiveGroupHits = 0;
+		PhysicsQueries.OverlapShape(broadPhase,
+			new FWorldTransform(new FPos(Fixed64.FP.FromRatio(5, 1), Fixed64.FP.Zero, Fixed64.FP.Zero), FQuaternion.Identity), sphereProxy,
+			new Filter { CategoryBits = 4, MaskBits = 0, GroupIndex = 5 }, QuerySensorMode.Exclude, _ => { positiveGroupHits++; return true; });
+		var negativeGroupHits = 0;
+		PhysicsQueries.OverlapShape(broadPhase,
+			new FWorldTransform(new FPos(Fixed64.FP.FromRatio(5, 1), Fixed64.FP.Zero, Fixed64.FP.Zero), FQuaternion.Identity), sphereProxy,
+			new Filter { CategoryBits = 4, MaskBits = ulong.MaxValue, GroupIndex = -5 }, QuerySensorMode.Exclude, _ => { negativeGroupHits++; return true; });
+		Check("world queries honor positive and negative collision groups", positiveGroupHits == 1 && negativeGroupHits == 0);
+		Shutdown();
+	}
+
+	private static void WorldQueryCallbackContractTest() {
+		Console.WriteLine("--- WorldQueryCallbackContractTest ---");
+		Bootstrap();
+		var farBody = W.NewEntity<Default>();
+		BodyOperations.CreateBody(farBody, BodyType.Static, new FWorldTransform(new FPos(Fixed64.FP.FromRatio(6, 1), Fixed64.FP.Zero, Fixed64.FP.Zero), FQuaternion.Identity));
+		var farShape = ShapeFactory.CreateShape(farBody, Shape.MakeSphere(FVector3.Zero, FP.Half));
+		var nearBody = W.NewEntity<Default>();
+		BodyOperations.CreateBody(nearBody, BodyType.Static, new FWorldTransform(new FPos(Fixed64.FP.FromRatio(2, 1), Fixed64.FP.Zero, Fixed64.FP.Zero), FQuaternion.Identity));
+		var nearShape = ShapeFactory.CreateShape(nearBody, Shape.MakeSphere(FVector3.Zero, FP.Half));
+		var lastBody = W.NewEntity<Default>();
+		BodyOperations.CreateBody(lastBody, BodyType.Static, new FWorldTransform(new FPos(Fixed64.FP.FromRatio(8, 1), Fixed64.FP.Zero, Fixed64.FP.Zero), FQuaternion.Identity));
+		ShapeFactory.CreateShape(lastBody, Shape.MakeSphere(FVector3.Zero, FP.Half));
+		W.Tick();
+		Systems.Update();
+
+		var broadPhase = W.GetResource<BroadPhase>();
+		var origin = FPos.Zero;
+		var translation = new FVector3(10.ToFP(), FP.Zero, FP.Zero);
+		var order = new List<EntityGID>();
+		PhysicsQueries.CastRay(broadPhase, origin, translation, Filter.Default, (EntityGID gid, in FPos _, in FVector3 _, FP _) => {
+			order.Add(gid);
+			return FP.One;
+		});
+		Check("ray callbacks use stable shape GID order", order.Count == 3 && order[0] == farShape.GID && order[1] == nearShape.GID);
+
+		var terminatedCount = 0;
+		PhysicsQueries.CastRay(broadPhase, origin, translation, Filter.Default, (EntityGID _, in FPos _, in FVector3 _, FP _) => {
+			terminatedCount++;
+			return FP.Zero;
+		});
+		Check("ray callback zero terminates traversal", terminatedCount == 1);
+
+		var clippedCount = 0;
+		PhysicsQueries.CastRay(broadPhase, origin, translation, Filter.Default, (EntityGID _, in FPos _, in FVector3 _, FP fraction) => {
+			clippedCount++;
+			return fraction;
+		});
+		Check("ray callback fractions clip farther candidates", clippedCount == 2);
+
+		var ignoredCount = 0;
+		PhysicsQueries.CastRay(broadPhase, origin, translation, Filter.Default, (EntityGID _, in FPos _, in FVector3 _, FP _) => {
+			ignoredCount++;
+			return -FP.One;
+		});
+		Check("negative ray callback values ignore without clipping", ignoredCount == 3);
+
+		var shapeCastOrder = new List<EntityGID>();
+		var proxy = new ShapeProxy { Points = new[] { FVector3.Zero }, Radius = FP.FromRatio(1, 10) };
+		PhysicsQueries.CastShape(broadPhase, FWorldTransform.Identity, proxy, translation, Filter.Default, QuerySensorMode.Exclude,
+			(EntityGID gid, in FPos _, in FVector3 _, FP _) => { shapeCastOrder.Add(gid); return FP.One; });
+		Check("shape-cast callbacks use stable shape GID order", shapeCastOrder.Count == 3 && shapeCastOrder[0] == farShape.GID && shapeCastOrder[1] == nearShape.GID);
+
+		var shapeTerminatedCount = 0;
+		PhysicsQueries.CastShape(broadPhase, FWorldTransform.Identity, proxy, translation, Filter.Default, QuerySensorMode.Exclude,
+			(EntityGID _, in FPos _, in FVector3 _, FP _) => { shapeTerminatedCount++; return FP.Zero; });
+		var shapeIgnoredCount = 0;
+		PhysicsQueries.CastShape(broadPhase, FWorldTransform.Identity, proxy, translation, Filter.Default, QuerySensorMode.Exclude,
+			(EntityGID _, in FPos _, in FVector3 _, FP _) => { shapeIgnoredCount++; return -FP.One; });
+		var shapeClippedCount = 0;
+		PhysicsQueries.CastShape(broadPhase, FWorldTransform.Identity, proxy, translation, Filter.Default, QuerySensorMode.Exclude,
+			(EntityGID _, in FPos _, in FVector3 _, FP fraction) => { shapeClippedCount++; return fraction; });
+		Check("shape-cast callbacks honor terminate, ignore, and clip semantics",
+			shapeTerminatedCount == 1 && shapeIgnoredCount == 3 && shapeClippedCount == 2);
+
+		var overlapTerminatedCount = 0;
+		PhysicsQueries.OverlapShape(broadPhase,
+			new FWorldTransform(new FPos(Fixed64.FP.FromRatio(5, 1), Fixed64.FP.Zero, Fixed64.FP.Zero), FQuaternion.Identity),
+			new ShapeProxy { Points = new[] { FVector3.Zero }, Radius = 5.ToFP() }, Filter.Default, QuerySensorMode.Exclude,
+			_ => { overlapTerminatedCount++; return false; });
+		Check("overlap callback false terminates traversal", overlapTerminatedCount == 1);
+		Shutdown();
+	}
+
+	private static void RotatingTimeOfImpactTest() {
+		Console.WriteLine("--- RotatingTimeOfImpactTest ---");
+		var endRotation = FQuaternion.AxisAngleRadians(FVector3.Forward, FP.Pi);
+		var midpoint = FQuaternion.Nlerp(FQuaternion.Identity, endRotation, FP.Half) * new FVector3(3.ToFP(), FP.Zero, FP.Zero);
+		var obstacle = new ShapeProxy { Points = new[] { FVector3.Zero }, Radius = FP.FromRatio(1, 5) };
+		var rotatingCapsule = new ShapeProxy { Points = new[] { FVector3.Zero, new FVector3(3.ToFP(), FP.Zero, FP.Zero) }, Radius = FP.FromRatio(1, 10) };
+		var output = Distance.TimeOfImpact(new TimeOfImpactInput {
+			ProxyA = obstacle,
+			ProxyB = rotatingCapsule,
+			TransformAStart = new FWorldTransform(FPos.FromLocal(midpoint), FQuaternion.Identity),
+			TransformAEnd = new FWorldTransform(FPos.FromLocal(midpoint), FQuaternion.Identity),
+			TransformBStart = FWorldTransform.Identity,
+			TransformBEnd = new FWorldTransform(FPos.Zero, endRotation),
+			MaxFraction = FP.One,
+		});
+		Check("rotating convex TOI detects an intermediate rotational-only collision", output.State == TimeOfImpactState.Hit && output.Fraction > FP.Zero && output.Fraction < FP.One);
+
+		var localCenter = new FVector3(2.ToFP(), FP.Zero, FP.Zero);
+		var endOrigin = localCenter - endRotation * localCenter;
+		var incorrectMidpoint = FP.Half * endOrigin + FQuaternion.Nlerp(FQuaternion.Identity, endRotation, FP.Half) * localCenter;
+		var centeredOutput = Distance.TimeOfImpact(new TimeOfImpactInput {
+			ProxyA = obstacle,
+			ProxyB = new ShapeProxy { Points = new[] { localCenter }, Radius = FP.FromRatio(1, 10) },
+			TransformAStart = new FWorldTransform(FPos.FromLocal(incorrectMidpoint), FQuaternion.Identity),
+			TransformAEnd = new FWorldTransform(FPos.FromLocal(incorrectMidpoint), FQuaternion.Identity),
+			TransformBStart = FWorldTransform.Identity,
+			TransformBEnd = new FWorldTransform(FPos.FromLocal(endOrigin), endRotation),
+			LocalCenterB = localCenter,
+			MaxFraction = FP.One,
+		});
+		Check("rotating TOI reconstructs intermediate origins around the center of mass", centeredOutput.State == TimeOfImpactState.Separated);
+	}
+
+	private static void AutomaticFastBodyCcdTest() {
+		Console.WriteLine("--- AutomaticFastBodyCcdTest ---");
+		Bootstrap();
+		var wall = W.NewEntity<Default>();
+		BodyOperations.CreateBody(wall, BodyType.Static, new FWorldTransform(new FPos(Fixed64.FP.FromRatio(3, 2), Fixed64.FP.Zero, Fixed64.FP.Zero), FQuaternion.Identity));
+		ShapeFactory.CreateShape(wall, Shape.MakeBox(FVector3.Zero, new FVector3(FP.FromRatio(1, 20), 2.ToFP(), 2.ToFP())));
+		var fastBody = W.NewEntity<Default>();
+		BodyOperations.CreateBody(fastBody, BodyType.Dynamic, FWorldTransform.Identity);
+		var fastShape = Shape.MakeSphere(FVector3.Zero, FP.FromRatio(1, 10));
+		fastShape.Density = FP.One;
+		ShapeFactory.CreateShape(fastBody, fastShape);
+		BodyOperations.SetLinearVelocity(fastBody, new FVector3(120.ToFP(), FP.Zero, FP.Zero));
+		var fastBodyGid = fastBody.GID;
+		var snapshot = W.Serializer.CreateWorldSnapshot();
+		W.Tick();
+		Systems.Update();
+		Check("unmarked fast dynamic body receives automatic CCD against static geometry", fastBody.Read<Body>().Transform.Position.X < Fixed64.FP.FromRatio(3, 2));
+		var liveState = W.Serializer.CreateWorldSnapshot();
+		var liveX = fastBody.Read<Body>().Transform.Position.X;
+		W.Serializer.LoadWorldSnapshot(snapshot, hardReset: true);
+		W.Tick();
+		Systems.Update();
+		var replayState = W.Serializer.CreateWorldSnapshot();
+		Check("automatic fast-body CCD reproduces exactly after rollback", fastBodyGid.TryUnpack<TestWorld>(out var replayBody)
+			&& replayBody.Read<Body>().Transform.Position.X == liveX
+			&& Fnv1a64(replayState, replayState.Length) == Fnv1a64(liveState, liveState.Length));
+		Shutdown();
+	}
+
+	private static void AngularCcdTest() {
+		Console.WriteLine("--- AngularCcdTest ---");
+		Bootstrap();
+		var obstacle = W.NewEntity<Default>();
+		BodyOperations.CreateBody(obstacle, BodyType.Static, new FWorldTransform(new FPos(Fixed64.FP.FromRatio(7, 4), Fixed64.FP.One, Fixed64.FP.Zero), FQuaternion.Identity));
+		ShapeFactory.CreateShape(obstacle, Shape.MakeSphere(FVector3.Zero, FP.FromRatio(1, 5)));
+		var rotor = W.NewEntity<Default>();
+		BodyOperations.CreateBody(rotor, BodyType.Dynamic, FWorldTransform.Identity);
+		var rotorShape = Shape.MakeBox(FVector3.Zero, new FVector3(2.ToFP(), FP.FromRatio(1, 10), FP.FromRatio(1, 10)));
+		rotorShape.Density = FP.One;
+		ShapeFactory.CreateShape(rotor, rotorShape);
+		BodyOperations.SetAngularVelocity(rotor, new FVector3(FP.Zero, FP.Zero, 60.ToFP()));
+		var rotorGid = rotor.GID;
+		var snapshot = W.Serializer.CreateWorldSnapshot();
+		W.Tick();
+		Systems.Update();
+		var angle = FQuaternion.GetAngle(rotor.Read<Body>().Transform.Rotation);
+		Check("automatic CCD clips a rotating thin body at its intermediate impact", angle > FP.Zero && angle < FP.FromRatio(4, 5));
+		var liveState = W.Serializer.CreateWorldSnapshot();
+		var liveRotation = rotor.Read<Body>().Transform.Rotation;
+		W.Serializer.LoadWorldSnapshot(snapshot, hardReset: true);
+		W.Tick();
+		Systems.Update();
+		var replayState = W.Serializer.CreateWorldSnapshot();
+		Check("angular CCD reproduces the full clipped pose after rollback", rotorGid.TryUnpack<TestWorld>(out var replayRotor)
+			&& replayRotor.Read<Body>().Transform.Rotation == liveRotation
+			&& Fnv1a64(replayState, replayState.Length) == Fnv1a64(liveState, liveState.Length));
+		Shutdown();
+	}
+
+	private static void BulletCcdTargetPolicyTest() {
+		Console.WriteLine("--- BulletCcdTargetPolicyTest ---");
+		static bool Hits(BodyType sourceType, BodyType targetType, bool targetIsBullet) {
+			Bootstrap();
+			var target = W.NewEntity<Default>();
+			BodyOperations.CreateBody(target, targetType, new FWorldTransform(new FPos(Fixed64.FP.FromRatio(3, 2), Fixed64.FP.Zero, Fixed64.FP.Zero), FQuaternion.Identity));
+			if (targetIsBullet)
+				BodyOperations.SetBullet(target, true);
+			var targetShape = Shape.MakeSphere(FVector3.Zero, FP.FromRatio(1, 5));
+			targetShape.Density = FP.One;
+			ShapeFactory.CreateShape(target, targetShape);
+			var bullet = W.NewEntity<Default>();
+			BodyOperations.CreateBody(bullet, sourceType, FWorldTransform.Identity);
+			BodyOperations.SetBullet(bullet, true);
+			BodyOperations.SetLinearVelocity(bullet, new FVector3(120.ToFP(), FP.Zero, FP.Zero));
+			var bulletShape = Shape.MakeSphere(FVector3.Zero, FP.FromRatio(1, 10));
+			bulletShape.Density = FP.One;
+			ShapeFactory.CreateShape(bullet, bulletShape);
+			W.Tick();
+			Systems.Update();
+			var bulletX = bullet.Read<Body>().Transform.Position.X;
+			var targetX = target.Read<Body>().Transform.Position.X;
+			var hit = bulletX < targetX;
+			Shutdown();
+			return hit;
+		}
+
+		Check("explicit kinematic bullets sweep against static targets", Hits(BodyType.Kinematic, BodyType.Static, false));
+		Check("explicit kinematic bullets sweep against kinematic targets", Hits(BodyType.Kinematic, BodyType.Kinematic, false));
+		Check("explicit kinematic bullets sweep against dynamic targets", Hits(BodyType.Kinematic, BodyType.Dynamic, false));
+		Check("explicit dynamic bullets sweep against kinematic targets", Hits(BodyType.Dynamic, BodyType.Kinematic, false));
+		Check("explicit bullets do not sweep against other explicit bullets", !Hits(BodyType.Kinematic, BodyType.Kinematic, true));
+
+		Bootstrap();
+		var staticBody = W.NewEntity<Default>();
+		BodyOperations.CreateBody(staticBody, BodyType.Static, FWorldTransform.Identity);
+		var rejected = false;
+		try {
+			BodyOperations.SetBullet(staticBody, true);
+		} catch (InvalidOperationException) {
+			rejected = true;
+		}
+		var mutableBody = W.NewEntity<Default>();
+		BodyOperations.CreateBody(mutableBody, BodyType.Kinematic, FWorldTransform.Identity);
+		BodyOperations.SetBullet(mutableBody, true);
+		BodyOperations.SetType(mutableBody, BodyType.Static);
+		Check("static bodies reject or clear bullet state", rejected && !mutableBody.Read<Body>().IsBullet);
+		Shutdown();
+	}
+
+	private static void MaximumSpeedBulletCcdTest() {
+		Console.WriteLine("--- MaximumSpeedBulletCcdTest ---");
+		Bootstrap();
+		var wall = W.NewEntity<Default>();
+		BodyOperations.CreateBody(wall, BodyType.Static, new FWorldTransform(new FPos(Fixed64.FP.FromRatio(3, 1), Fixed64.FP.Zero, Fixed64.FP.Zero), FQuaternion.Identity));
+		ShapeFactory.CreateShape(wall, Shape.MakeBox(FVector3.Zero, new FVector3(FP.FromRatio(1, 20), 2.ToFP(), 2.ToFP())));
+		var bullet = W.NewEntity<Default>();
+		BodyOperations.CreateBody(bullet, BodyType.Kinematic, FWorldTransform.Identity);
+		BodyOperations.SetBullet(bullet, true);
+		BodyOperations.SetLinearVelocity(bullet, new FVector3(W.GetResource<PhysicsWorld>().MaximumLinearSpeed, FP.Zero, FP.Zero));
+		ShapeFactory.CreateShape(bullet, Shape.MakeSphere(FVector3.Zero, FP.FromRatio(1, 10)));
+		W.Tick();
+		Systems.Update();
+		Check("configured maximum-speed bullet cannot tunnel through the minimum thin-wall fixture",
+			bullet.Read<Body>().Transform.Position.X < Fixed64.FP.FromRatio(3, 1));
 		Shutdown();
 	}
 
@@ -1708,7 +1971,7 @@ public static class Program {
 		BodyOperations.CreateBody(wall, BodyType.Static, new FWorldTransform(new FPos(Fixed64.FP.FromRatio(2, 1), Fixed64.FP.Zero, Fixed64.FP.Zero), FQuaternion.Identity));
 		var wallShape = Shape.MakeBox(FVector3.Zero, new FVector3(FP.Quarter, 2.ToFP(), 2.ToFP()));
 		wallShape.Filter.CategoryBits = 2;
-		ShapeFactory.CreateShape(wall, wallShape);
+		var wallShapeEntity = ShapeFactory.CreateShape(wall, wallShape);
 		W.Tick();
 		Systems.Update();
 
@@ -1720,6 +1983,21 @@ public static class Program {
 		var excluded = CharacterMover.CastMover(broadPhase, FWorldTransform.Identity, capsule, translation, FP.One, excludedFilter);
 		Check("character mover is blocked by an allowed wall", blocked < FP.One);
 		Check("character mover respects category and mask filtering", excluded == FP.One);
+
+		var overlapTransform = new FWorldTransform(new FPos(Fixed64.FP.FromRatio(2, 1), Fixed64.FP.Zero, Fixed64.FP.Zero), FQuaternion.Identity);
+		var allowedPlanes = new MoverPlaneBuffer();
+		CharacterMover.CollideMover(broadPhase, overlapTransform, capsule, Filter.Default, ref allowedPlanes);
+		var excludedPlanes = new MoverPlaneBuffer();
+		CharacterMover.CollideMover(broadPhase, overlapTransform, capsule, excludedFilter, ref excludedPlanes);
+		Check("character overlap-plane collection respects filtering", allowedPlanes.Count > 0 && excludedPlanes.Count == 0);
+
+		ShapeOperations.SetFilter(wallShapeEntity, new Filter { CategoryBits = 2, MaskBits = 0, GroupIndex = -9 });
+		var negativeGroup = CharacterMover.CastMover(broadPhase, FWorldTransform.Identity, capsule, translation, FP.One,
+			new Filter { CategoryBits = 4, MaskBits = ulong.MaxValue, GroupIndex = -9 });
+		ShapeOperations.SetFilter(wallShapeEntity, new Filter { CategoryBits = 2, MaskBits = 0, GroupIndex = 9 });
+		var positiveGroup = CharacterMover.CastMover(broadPhase, FWorldTransform.Identity, capsule, translation, FP.One,
+			new Filter { CategoryBits = 4, MaskBits = 0, GroupIndex = 9 });
+		Check("character mover respects negative and positive collision groups", negativeGroup == FP.One && positiveGroup < FP.One);
 		Shutdown();
 	}
 
@@ -1727,14 +2005,17 @@ public static class Program {
 		Console.WriteLine("--- BulletCcdRollbackTest ---");
 		Bootstrap();
 		var wall = W.NewEntity<Default>();
-		BodyOperations.CreateBody(wall, BodyType.Static, new FWorldTransform(new FPos(Fixed64.FP.FromRatio(3, 1), Fixed64.FP.Zero, Fixed64.FP.Zero), FQuaternion.Identity));
+		BodyOperations.CreateBody(wall, BodyType.Static, new FWorldTransform(new FPos(Fixed64.FP.FromRatio(3, 2), Fixed64.FP.Zero, Fixed64.FP.Zero), FQuaternion.Identity));
 		ShapeFactory.CreateShape(wall, Shape.MakeBox(FVector3.Zero, new FVector3(FP.FromRatio(1, 20), 2.ToFP(), 2.ToFP())));
 
+		var continuousReceiver = W.RegisterEventReceiver<ContinuousHitEvent>();
 		var bullet = W.NewEntity<Default>();
 		BodyOperations.CreateBody(bullet, BodyType.Kinematic, FWorldTransform.Identity);
 		BodyOperations.SetBullet(bullet, true);
-		BodyOperations.SetLinearVelocity(bullet, new FVector3(400.ToFP(), FP.Zero, FP.Zero));
-		ShapeFactory.CreateShape(bullet, Shape.MakeSphere(FVector3.Zero, FP.FromRatio(1, 10)));
+		BodyOperations.SetLinearVelocity(bullet, new FVector3(120.ToFP(), FP.Zero, FP.Zero));
+		var bulletShape = Shape.MakeSphere(FVector3.Zero, FP.FromRatio(1, 10));
+		bulletShape.EnableContactEvents = true;
+		ShapeFactory.CreateShape(bullet, bulletShape);
 		var bulletGid = bullet.GID;
 
 		var snapshot = W.Serializer.CreateWorldSnapshot();
@@ -1748,7 +2029,14 @@ public static class Program {
 		Check("bullet resolves after the live CCD tick", true);
 		var liveX = liveBullet.Read<Body>().Transform.Position.X;
 		var liveState = W.Serializer.CreateWorldSnapshot();
-		Check("maximum-speed bullet does not tunnel through a thin wall", liveX > Fixed64.FP.Zero && liveX < Fixed64.FP.FromRatio(3, 1));
+		Check("supported-speed bullet does not tunnel through a thin wall", liveX > Fixed64.FP.Zero && liveX < Fixed64.FP.FromRatio(3, 2));
+		var continuousCount = 0;
+		var validContinuousEvent = false;
+		foreach (var e in continuousReceiver) {
+			continuousCount++;
+			validContinuousEvent |= e.Value.Fraction > FP.Zero && e.Value.Fraction < FP.One && e.Value.Normal.X < FP.Zero;
+		}
+		Check("bullet CCD emits one oriented continuous hit event", continuousCount == 1 && validContinuousEvent);
 
 		W.Serializer.LoadWorldSnapshot(snapshot, hardReset: true);
 		W.Tick();
@@ -1767,7 +2055,7 @@ public static class Program {
 			Systems.Update();
 		}
 		Check("surviving bullet does not drive through the wall after impact", bulletGid.TryUnpack<TestWorld>(out var stoppedBullet)
-			&& stoppedBullet.Read<Body>().Transform.Position.X < Fixed64.FP.FromRatio(3, 1));
+			&& stoppedBullet.Read<Body>().Transform.Position.X < Fixed64.FP.FromRatio(3, 2));
 		Shutdown();
 	}
 
@@ -1783,7 +2071,9 @@ public static class Program {
 
 		var groundBody = W.NewEntity<Default>();
 		groundBody.Set(new Body { Type = BodyType.Static, Transform = new FWorldTransform(FPos.Zero, FQuaternion.Identity) });
-		ShapeFactory.CreateShape(groundBody, Shape.MakeBox(FVector3.Zero, new FVector3(40.ToFP(), FP.Half, 40.ToFP())));
+		var groundShape = Shape.MakeBox(FVector3.Zero, new FVector3(40.ToFP(), FP.Half, 40.ToFP()));
+		groundShape.Filter.CategoryBits = 2;
+		ShapeFactory.CreateShape(groundBody, groundShape);
 
 		// See RayCastHitsSphereCapsuleAndBoxTest's remarks: the ground's proxy doesn't exist until
 		// ShapeProxySystem has run at least once.
@@ -1803,6 +2093,10 @@ public static class Program {
 		var pogoVelocity = FP.Zero;
 		Check("mover standing near the ground is grounded via the pogo ray", CharacterMover.UpdatePogoGrounding(broadPhase, standingXf, capsule, dt, hertz, dampingRatio, FP.Zero, FP.FromRatio(7071, 10000), ref pogoVelocity));
 		Check("the pogo spring produces a nonzero corrective velocity when off its rest length", pogoVelocity != FP.Zero);
+		var excludedPogoVelocity = FP.Zero;
+		var excludedGround = new Filter { CategoryBits = ulong.MaxValue, MaskBits = 1, GroupIndex = 0 };
+		Check("character ground probing respects filtering", !CharacterMover.UpdatePogoGrounding(broadPhase, standingXf, capsule, dt, hertz, dampingRatio,
+			FP.Zero, FP.FromRatio(7071, 10000), excludedGround, ref excludedPogoVelocity));
 
 		var airborneXf = new FWorldTransform(new FPos(Fixed64.FP.Zero, Fixed64.FP.FromRatio(50, 1), Fixed64.FP.Zero), FQuaternion.Identity);
 		var airbornePogoVelocity = FP.Zero;

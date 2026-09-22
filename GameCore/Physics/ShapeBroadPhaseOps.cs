@@ -46,8 +46,22 @@ public abstract partial class Core<TWorld> where TWorld : struct, ISessionType, 
 					FVector3.MinComponents(aabb.LowerBound, endAabb.LowerBound),
 					FVector3.MaxComponents(aabb.UpperBound, endAabb.UpperBound));
 			}
-			shape.Aabb = aabb;
+			SetAabb(ref shape, broadPhase, aabb);
+		}
 
+		/// <summary>Uses a rotation-independent bound around the center-of-mass path.</summary>
+		public static void UpdateSweptAABBs(ref Shape shape, in Body body, FVector3 predictedTranslation, BroadPhase broadPhase) {
+			var sweepRadius = shape.ComputeSweepRadius(body.LocalCenter) + B3Config.SpeculativeDistance;
+			var radius = new FVector3(sweepRadius, sweepRadius, sweepRadius);
+			var start = new FVector3(body.Center.X.To32(), body.Center.Y.To32(), body.Center.Z.To32());
+			var end = start + predictedTranslation;
+			SetAabb(ref shape, broadPhase, new FAABB(
+				FVector3.MinComponents(start, end) - radius,
+				FVector3.MaxComponents(start, end) + radius));
+		}
+
+		private static void SetAabb(ref Shape shape, BroadPhase broadPhase, FAABB aabb) {
+			shape.Aabb = aabb;
 			if (!shape.FatAabb.Contains(aabb)) {
 				var margin = new FVector3(shape.AabbMargin, shape.AabbMargin, shape.AabbMargin);
 				shape.FatAabb = new FAABB(aabb.LowerBound - margin, aabb.UpperBound + margin);
