@@ -1,8 +1,8 @@
 [gd_scene format=3 uid="uid://b5msydkueejbm"]
 
 [ext_resource type="Script" uid="uid://8s5cf28weng7" path="res://setup/ClientGame.cs" id="1_myinc"]
-[ext_resource type="PackedScene" uid="uid://daakfmjk2otty" path="res://touchscreen_ui.tscn" id="2_2au82"]
-[ext_resource type="Resource" path="res://config/entity_view_catalog.tres" id="3_catalog"]
+[ext_resource type="PackedScene" uid="uid://daakfmjk2otty" path="res://ui/touchscreen_ui.tscn" id="2_2au82"]
+[ext_resource type="Resource" uid="uid://c5o1gws06ymte" path="res://config/entity_view_catalog.tres" id="3_catalog"]
 
 [sub_resource type="Environment" id="Environment_aq4fw"]
 background_mode = 1
@@ -11,6 +11,7 @@ ambient_light_source = 2
 ambient_light_color = Color(0.36078432, 0.36078432, 0.36078432, 1)
 tonemap_mode = 2
 glow_enabled = true
+glow_levels/1 = 1.0
 glow_levels/2 = 1.0
 glow_levels/4 = 1.0
 fog_mode = 1

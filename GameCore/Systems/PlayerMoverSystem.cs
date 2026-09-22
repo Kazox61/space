@@ -33,7 +33,7 @@ public abstract partial class Core<TWorld> where TWorld : struct, ISessionType, 
 				var characterRes = Systems.GetResource<CharacterRes>();
 				var moveSpeed = characterRes.MoveSpeed;
 				var jumpForce = characterRes.JumpForce.To32();
-				var gravity = W.GetResource<PhysicsWorld>().Gravity;
+				var gravity = -characterRes.Gravity.To32();
 				var dt = Const.DeltaTime.To32();
 
 				// Jump check comes before the grounded reset (and clears Grounded immediately) so the
@@ -53,7 +53,7 @@ public abstract partial class Core<TWorld> where TWorld : struct, ISessionType, 
 
 				mover.Velocity = new FVector3(
 					(moveInput.X * moveSpeed).To32(),
-					mover.Velocity.Y + gravity.Y * dt,
+					mover.Velocity.Y + gravity * dt,
 					(moveInput.Y * moveSpeed).To32());
 
 				var broadPhase = W.GetResource<BroadPhase>();

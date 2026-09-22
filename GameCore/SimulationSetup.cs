@@ -10,7 +10,6 @@ public abstract partial class Core<TWorld> where TWorld : struct, ISessionType, 
 			Const.DeltaTime = FP.One / S.TickRate;
 			Const.InvDeltaTime = S.TickRate.ToFP();
 
-			Systems.SetResource(new PhysicsRes());
 			Systems.SetResource(new CharacterRes());
 			Systems.SetResource(new PlanetRes());
 			Systems.SetResource(new DummyRes());
