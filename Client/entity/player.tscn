@@ -1,24 +1,42 @@
-[gd_scene format=3 uid="uid://sv6lfeph1nso"]
+[gd_scene load_steps=12 format=3 uid="uid://sv6lfeph1nso"]
 
-[ext_resource type="Script" uid="uid://cip1dwd0y0jcp" path="res://synchronizer/EntityView.cs" id="1_onrkg"]
-[ext_resource type="Script" uid="uid://dgbo3w1kixhiy" path="res://synchronizer/view_behavior/TransformViewBehavior.cs" id="2_i3pqv"]
-[ext_resource type="Script" uid="uid://bbephpp4drco4" path="res://synchronizer/view_behavior/CameraViewBehavior.cs" id="3_i3pqv"]
+[ext_resource type="Script" uid="uid://cip1dwd0y0jcp" path="res://synchronizer/EntityView.cs" id="1_view"]
+[ext_resource type="Script" uid="uid://dgbo3w1kixhiy" path="res://synchronizer/view_behavior/TransformViewBehavior.cs" id="2_transform"]
+[ext_resource type="Script" uid="uid://bbephpp4drco4" path="res://synchronizer/view_behavior/CameraViewBehavior.cs" id="3_camera"]
+[ext_resource type="Script" path="res://synchronizer/view_behavior/PlayerPresentationBehavior.cs" id="4_presentation"]
+[ext_resource type="PackedScene" path="res://assets/player/godot_plush_skin.tscn" id="5_skin"]
+[ext_resource type="AudioStream" path="res://assets/player/audio/footstep_concrete_000.ogg" id="7_step0"]
+[ext_resource type="AudioStream" path="res://assets/player/audio/footstep_concrete_001.ogg" id="8_step1"]
+[ext_resource type="AudioStream" path="res://assets/player/audio/footstep_concrete_002.ogg" id="9_step2"]
+[ext_resource type="PackedScene" path="res://assets/player/vfx/jump_particles.tscn" id="10_jump"]
+[ext_resource type="PackedScene" path="res://assets/player/vfx/land_particles.tscn" id="11_land"]
 
-[sub_resource type="StandardMaterial3D" id="StandardMaterial3D_yqvkn"]
-albedo_color = Color(3.85046e-07, 0.76537454, 0.84069073, 1)
-
-[sub_resource type="CapsuleMesh" id="CapsuleMesh_jfow4"]
+[sub_resource type="AudioStreamRandomizer" id="AudioStreamRandomizer_footstep"]
+random_pitch = 1.2
+streams_count = 3
+stream_0/stream = ExtResource("7_step0")
+stream_1/stream = ExtResource("8_step1")
+stream_2/stream = ExtResource("9_step2")
 
 [node name="Player" type="Node3D" unique_id=1321113511 node_paths=PackedStringArray("_entityBehaviours")]
-script = ExtResource("1_onrkg")
-_entityBehaviours = [NodePath("TransformViewBehavior"), NodePath("CameraViewBehavior")]
+script = ExtResource("1_view")
+_entityBehaviours = [NodePath("TransformViewBehavior"), NodePath("CameraViewBehavior"), NodePath("PlayerPresentationBehavior")]
 
-[node name="MeshInstance3D" type="MeshInstance3D" parent="." unique_id=186001492]
-material_override = SubResource("StandardMaterial3D_yqvkn")
-mesh = SubResource("CapsuleMesh_jfow4")
+[node name="VisualRoot" type="Node3D" parent="."]
+position = Vector3(0, -1, 0)
+
+[node name="GodotPlushSkin" parent="VisualRoot" instance=ExtResource("5_skin")]
+
+[node name="FootstepAudio" type="AudioStreamPlayer3D" parent="."]
+stream = SubResource("AudioStreamRandomizer_footstep")
+max_polyphony = 3
+
+[node name="ImpactAudio" type="AudioStreamPlayer3D" parent="."]
+stream = SubResource("AudioStreamRandomizer_footstep")
+max_polyphony = 3
 
 [node name="TransformViewBehavior" type="Node" parent="." unique_id=2029104163 node_paths=PackedStringArray("_targetNodePosition", "_targetNodeRotation")]
-script = ExtResource("2_i3pqv")
+script = ExtResource("2_transform")
 _targetNodePosition = NodePath("..")
 _targetNodeRotation = NodePath("..")
 metadata/_custom_type_script = "uid://dgbo3w1kixhiy"
@@ -29,6 +47,15 @@ current = true
 fov = 30.0
 
 [node name="CameraViewBehavior" type="Node" parent="." unique_id=1616736107 node_paths=PackedStringArray("_camera")]
-script = ExtResource("3_i3pqv")
+script = ExtResource("3_camera")
 _camera = NodePath("../Camera3D")
 metadata/_custom_type_script = "uid://bbephpp4drco4"
+
+[node name="PlayerPresentationBehavior" type="Node" parent="." node_paths=PackedStringArray("_visualRoot", "_skin", "_footstepAudio", "_impactAudio")]
+script = ExtResource("4_presentation")
+_visualRoot = NodePath("../VisualRoot")
+_skin = NodePath("../VisualRoot/GodotPlushSkin")
+_footstepAudio = NodePath("../FootstepAudio")
+_impactAudio = NodePath("../ImpactAudio")
+_jumpParticlesScene = ExtResource("10_jump")
+_landParticlesScene = ExtResource("11_land")
