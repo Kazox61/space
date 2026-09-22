@@ -28,10 +28,11 @@ left dynamic bodies frozen. Preserving the first missing hook then exposed an un
 | 6 | StaticEcs | `TypeRegistrar.Link<T>()` / `Links<T>()` → `LinkType<T>.HasOnAdd()` | Relation type method metadata is not preserved | `BodyOwner.OnAdd` never creates the body's `Links<Shapes>` component |
 | 7 | StaticEcs | `RegisterComponentType<Links<T>>()` → `ComponentType<Links<T>>.HasOnAdd()` | The generated wrapper type's method metadata is not preserved | `Links<T>.OnAdd` does not allocate segment storage; the first `TryAdd` throws `NullReferenceException` |
 
-The common thread: **a reflection call that can only work under a JIT, or whose metadata requirements are not
-carried through the complete generic registration path.** Under NativeAOT this becomes either a loud exception
-or silent misbehavior. The fixes below replace runtime generic construction, preserve the required method
-metadata, or avoid reflection-based lifecycle gating entirely.
+The common thread: **reflection requires preserved metadata, while runtime-constructed generic types and methods
+require native code for the exact instantiation to be statically rooted.** When either requirement is unmet under
+NativeAOT, the result is a loud exception or silent misbehavior. The fixes below replace dynamic generic
+construction with statically rooted generic paths, preserve the required method metadata, or avoid
+reflection-based lifecycle gating entirely.
 
 ---
 
