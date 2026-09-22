@@ -2,8 +2,10 @@
 
 **Audience:** maintainers of [StaticEcs](https://github.com/Felid-Force-Studios/StaticEcs) and
 [static-rollback](https://github.com/nilpunch/static-rollback), and our future selves.
-**Status:** all issues below are fixed locally (patches included) and verified on device and with a macOS NativeAOT repro.
-**Versions:** StaticEcs `d06e6fe` (v2.2.8+4), static-rollback `de524da`, FFS.StaticPack 1.2.6, Godot 4.7.2 (.NET 8, `PublishAot=true`).
+**Status:** all issues below are fixed locally (patches included). Reflection/serialization failures were reproduced
+with macOS NativeAOT where noted, and the complete simulation was verified on a physical iOS device.
+**Versions:** StaticEcs `d06e6fe` (v2.2.8+4) plus local commits `95de490` and `1762819`, static-rollback
+`de524da`, FFS.StaticPack 1.2.6, Godot 4.7.2 (.NET 8, `PublishAot=true`).
 
 ## Summary
 
@@ -12,7 +14,9 @@ Godot compiles C# for iOS with **NativeAOT**. Both libraries construct generic t
 `try/catch` blocks that return `null`/`false` on failure. Under NativeAOT such calls only succeed for generic
 instantiations the compiler already emitted from static code, and method metadata only exists if something made
 the type reflection‑visible. The result on iOS was a `SIGSEGV`, a `NotSupportedException`, an exception on the
-first network write, and — worst — snapshots that silently deserialized to zeros.
+first network write, snapshots that silently deserialized to zeros, and a simulation that appeared healthy but
+left dynamic bodies frozen. Preserving the first missing hook then exposed an uninitialized relation-storage
+`NullReferenceException` at the next reflection gate.
 
 | # | Library | Location | What fails under NativeAOT | Effect |
 |---|---|---|---|---|
@@ -20,10 +24,14 @@ first network write, and — worst — snapshots that silently deserialized to z
 | 2 | StaticEcs | `AutoRegistration.GetAutoRegisterGenericMethod` | `MakeGenericType(World<W>.Components<>, W, T)` for a `T` that no static code uses in world `W` | `NotSupportedException: … is missing native code or metadata` |
 | 3 | StaticEcs | `AutoRegistration.TryCreateUnmanagedPackArrayStrategy<T>` | `MakeGenericType(UnmanagedPackArrayStrategy<>, T)` + `Activator.CreateInstance` | Returns `null` for **every** component → fallback strategy writes nothing → snapshot restores default values |
 | 4 | static-rollback | `TypeUtils.TryRegisterUnmanagedPacking<T>` | `MakeGenericMethod` to reach an `unmanaged`‑constrained method from a `struct`‑constrained one | Returns `false` → `Method Write not implemented for input type PlayerConnectedSignal` |
+| 5 | StaticEcs | `Systems.Add<TSystem>` → `SystemType<TSystem>.HasUpdate()` | `GetMethods()` does not find trimmed lifecycle methods | Physics systems are registered but never updated; the sphere remains frozen |
+| 6 | StaticEcs | `TypeRegistrar.Link<T>()` / `Links<T>()` → `LinkType<T>.HasOnAdd()` | Relation type method metadata is not preserved | `BodyOwner.OnAdd` never creates the body's `Links<Shapes>` component |
+| 7 | StaticEcs | `RegisterComponentType<Links<T>>()` → `ComponentType<Links<T>>.HasOnAdd()` | The generated wrapper type's method metadata is not preserved | `Links<T>.OnAdd` does not allocate segment storage; the first `TryAdd` throws `NullReferenceException` |
 
-The common thread: **a reflection call that can only work under a JIT, guarded by a catch that hides the
-failure.** Under NativeAOT the guard turns a loud error into silent misbehavior. Each fix below replaces the
-reflection with a path that is generic over the type parameter, so the AOT compiler emits it statically.
+The common thread: **a reflection call that can only work under a JIT, or whose metadata requirements are not
+carried through the complete generic registration path.** Under NativeAOT this becomes either a loud exception
+or silent misbehavior. The fixes below replace runtime generic construction, preserve the required method
+metadata, or avoid reflection-based lifecycle gating entirely.
 
 ---
 
@@ -314,10 +322,104 @@ StaticEcs's (Issue 2). It works for us only because every `IInput`/`ISignal` typ
 
 ---
 
+## Issues 5-7 - StaticEcs lifecycle and relation hook metadata
+
+After fixing registration and serialization, the app initialized and synchronized without crashing, but the
+dynamic sphere stayed at its spawn height. This was another silent trimming failure, followed by a second failure
+that only became visible after the first was fixed.
+
+### Issue 5: system lifecycle dispatch was disabled
+
+`Systems.Add<TSystem>` used `SystemType<TSystem>.HasInit()`, `HasUpdate()`, `HasUpdateIsActive()`, and
+`HasDestroy()` to decide which interface methods to call. Those probes use `typeof(TSystem).GetMethods()`. On iOS
+they reported that the concrete physics systems did not implement `Update`, so the systems were registered but
+their update methods were skipped. The world tick advanced while physics remained frozen.
+
+The fix in `Src/Systems.cs` is to enable all four lifecycle calls unconditionally:
+
+```csharp
+var data = new SystemData {
+    ...
+    HasDestroy = true,
+    HasInit = true,
+    HasUpdate = true,
+    HasUpdateIsActive = true
+};
+```
+
+This is safe because `ISystem` supplies default no-op implementations. Calling through the interface therefore
+preserves the intended behavior without requiring reflection metadata. Reflection remains in use for optional
+snapshot `Write`/`Read` detection.
+
+### Issue 6: relation callbacks were trimmed
+
+Once systems ran, bodies still lacked their shapes. `BodyOwner.OnAdd<TWorld>` is discovered through the same
+`GetMethods()` pattern. If its metadata is trimmed, adding the owner link never executes its hook and therefore
+never adds the shape to the body's `Links<Shapes>` collection.
+
+The six explicit fluent registration methods in `Src/World.API.cs` now declare that their registered type needs
+public method metadata:
+
+```csharp
+public TypeRegistrar Link<
+    [DynamicallyAccessedMembers(DynamicallyAccessedMemberTypes.PublicMethods)] T>()
+    where T : unmanaged, ILinkType { ... }
+```
+
+The same annotation is applied to `Component<T>`, `Tag<T>`, `Event<T>`, `Links<T>`, and `Multi<T>`. This lets the
+trimmer follow each concrete type from the game's explicit `GameTypes.Register<TWorld>()` calls to the hook
+probe.
+
+### Issue 7: preserving the user type was not enough
+
+After Issue 6 was fixed, `BodyOwner.OnAdd` ran and reached `TryAddLinkItem`, but the app threw a
+`NullReferenceException`. The generated component `World<TWorld>.Links<Shapes>` has its own
+`OnAdd<TW>` method, which allocates the collection's segment storage. Its registration followed this chain:
+
+```text
+TypeRegistrar.Links<Shapes>()
+  -> RegisterComponentType<World<TWorld>.Links<Shapes>>()
+  -> ComponentType<World<TWorld>.Links<Shapes>>.HasOnAdd()
+  -> Links<Shapes>.OnAdd<TW>()
+```
+
+Annotating only the fluent method preserved methods on `Shapes`, not methods on the constructed wrapper type.
+Consequently `HasOnAdd` was false, `Components<Links<Shapes>>.Add` skipped the allocator, and `TryAdd` indexed an
+uninitialized segment.
+
+The fix in `Src/World.Data.cs` carries the metadata requirement into the internal registration boundary:
+
+```csharp
+internal static void RegisterComponentType<
+    [DynamicallyAccessedMembers(DynamicallyAccessedMemberTypes.PublicMethods)] T>(...)
+    where T : struct, IComponent { ... }
+```
+
+Equivalent annotations were added to `RegisterMultiComponentType<T>`, `RegisterTagType<T>`, and
+`RegisterEventType<T>`. The important case is the closed wrapper passed to `RegisterComponentType<T>`:
+`Link<T>`, `Links<T>`, or `Multi<T>`. Its public hook and serializer methods are now reflection-visible.
+
+### Device verification
+
+The final instrumented build ran on an iPhone 12 and showed the complete expected simulation:
+
+```text
+server sphere Y: 50.0000 -> 49.9081 -> 43.3647 -> 5.4527 -> 0.9998
+inverse mass:    1.909881591796875
+velocity Y:      -3.5 -> ... -> -31 -> approximately 0
+client/server:   both settled at Y=0.9998
+```
+
+The resting height is correct: platform top `0.5` plus sphere radius `0.5`. After removing the diagnostics, the
+full physics test executable passed, the client built with zero warnings/errors, StaticEcs built for all target
+frameworks, and a clean iOS NativeAOT package exported, installed, and launched successfully.
+
+---
+
 ## How to reproduce without a device
 
 A console project referencing the game assembly, published with NativeAOT on macOS, uses the same ILCompiler as
-the iOS export and reproduces every issue in ~1 minute per build:
+the iOS export and reproduces the registration and serialization failures in ~1 minute per build:
 
 ```xml
 <Project Sdk="Microsoft.NET.Sdk">
@@ -382,6 +484,9 @@ diagnostics out of the binary you are measuring.
 | `GameCore/GameTypes.cs` (new) | Explicit, AOT‑safe ECS registration generic over the world + DEBUG coverage check |
 | `GameCore/GameWorldSetup.cs`, `Client/setup/GameInterpolationSetup.cs` | `RegisterAll` → `GameTypes.Register<…>()` |
 | `static-ecs/Src/Lib.cs` (submodule, on top of `d06e6fe`) | `BlittablePackArrayStrategy<T>`; reflection‑free `TryCreateUnmanagedPackArrayStrategy` |
+| `static-ecs/Src/Systems.cs` | Always dispatch lifecycle methods through `ISystem` defaults instead of reflection-gating them |
+| `static-ecs/Src/World.API.cs` | Preserve public methods for explicitly registered component, relation, tag, event, and multi types |
+| `static-ecs/Src/World.Data.cs` | Carry public-method requirements to generated `Link<T>`, `Links<T>`, and `Multi<T>` wrapper registrations |
 | `static-rollback/Runtime/Static/Utils/TypeUtils.cs` (submodule, on top of `de524da`) | Reflection‑free `TryRegisterUnmanagedPacking` |
 
 The two submodule diffs are self‑contained and are offered as‑is for upstream.
