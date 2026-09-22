@@ -1,6 +1,6 @@
 [gd_scene format=3 uid="uid://daakfmjk2otty"]
 
-[ext_resource type="Script" uid="uid://cr0dt7adw3v5s" path="res://ActionButton.cs" id="1_j3wxj"]
+[ext_resource type="Script" uid="uid://cr0dt7adw3v5s" path="res://ui/ActionButton.cs" id="1_j3wxj"]
 
 [sub_resource type="StyleBoxFlat" id="StyleBoxFlat_nqa15"]
 content_margin_left = 0.0
