@@ -38,8 +38,11 @@ public struct ContactHitEvent : IEvent {
 	public Fixed32.FP NormalImpulse;
 }
 
-/// <summary>Sent when linear bullet CCD finds an impact before discrete contact processing can observe it.</summary>
+/// <summary>Sent when explicit-bullet CCD finds an impact before discrete contact processing can observe it.</summary>
 public struct ContinuousHitEvent : IEvent {
 	public EntityGID BulletShape;
 	public EntityGID TargetShape;
+	public Fixed.FPos Point;
+	public Fixed32.FVector3 Normal;
+	public Fixed32.FP Fraction;
 }

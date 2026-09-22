@@ -72,6 +72,9 @@ public abstract partial class Core<TWorld> where TWorld : struct, ISessionType, 
 			InvalidateBodyProxies(entity, broadPhase);
 
 			body.Type = type;
+			if (type == BodyType.Static) {
+				body.IsBullet = false;
+			}
 			body.Force = FVector3.Zero;
 			body.Torque = FVector3.Zero;
 			if (type == BodyType.Static) {
@@ -164,9 +167,16 @@ public abstract partial class Core<TWorld> where TWorld : struct, ISessionType, 
 			SetAngularVelocity(entity, angular);
 		}
 
-		/// <summary>Enables deterministic linear continuous collision detection for this body.</summary>
+		/// <summary>
+		/// Enables continuous collision detection against static, kinematic, and non-bullet dynamic
+		/// bodies. Dynamic bodies also receive automatic CCD against static geometry when their motion
+		/// exceeds their smallest shape extent.
+		/// </summary>
 		public static void SetBullet(W.Entity entity, bool isBullet) {
 			ref var body = ref RequireBody(entity);
+			if (isBullet && body.Type == BodyType.Static) {
+				throw new InvalidOperationException("Static bodies cannot be bullets.");
+			}
 			body.IsBullet = isBullet;
 			Wake(ref body);
 		}

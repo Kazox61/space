@@ -3,10 +3,9 @@ using Fixed32;
 namespace Space.GameCore;
 
 /// <summary>
-/// Shape distance and shape cast queries, ported from box3d's distance.c. Continuous
-/// time-of-impact (b3TimeOfImpact) is not yet ported.
+/// Shape distance, shape cast, and continuous time-of-impact queries, adapted from box3d's distance.c.
 /// </summary>
-public static class Distance {
+public static partial class Distance {
 	private const int MaxSimplexVertices = 4;
 	private const int MaxGjkIterations = 32;
 
