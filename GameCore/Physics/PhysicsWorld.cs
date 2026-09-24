@@ -15,10 +15,14 @@ public abstract partial class Core<TWorld> where TWorld : struct, ISessionType, 
 
 		public FP ContactHertz = FP.FromRatio(30, 1);
 		public FP ContactDampingRatio = FP.FromRatio(10, 1);
-		public FP ContactSpeed = 3 * B3Config.GetLengthUnitsPerMeter();
-		public FP RestitutionThreshold = B3Config.GetLengthUnitsPerMeter();
-		public FP HitEventThreshold = B3Config.GetLengthUnitsPerMeter();
-		public FP MaximumLinearSpeed = 60 * B3Config.GetLengthUnitsPerMeter();
+		public FP ContactSpeed = ScaledSpeed(3);
+		public FP RestitutionThreshold = ScaledSpeed(1);
+		public FP HitEventThreshold = ScaledSpeed(1);
+		public FP MaximumLinearSpeed = ScaledSpeed(60);
+
+		// Length-scaled defaults stay inside the fixed validation envelope for any supported length scale.
+		private static FP ScaledSpeed(int metersPerSecond) =>
+			FP.Min(metersPerSecond * B3Config.GetLengthUnitsPerMeter(), PhysicsValidation.MaximumLinearSpeed);
 		public bool EnableWarmStarting = true;
 
 		/// <summary>Number of solver sub-steps per full step. Box3d's usual default is 4.</summary>

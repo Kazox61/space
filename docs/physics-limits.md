@@ -67,7 +67,8 @@ safe to rotate arbitrarily.
 
 ## Density and mass
 
-Dynamic-shape mass math runs entirely in Fixed32:
+Per-shape mass and inertia are computed in Fixed32; body aggregation and inversion
+run in Fixed64 (see below):
 
 - Sphere: `mass = density * 4/3*pi*r^3`, `inertia ~ 2/5 * mass * r^2`
 - Box: `mass = density * 8*h^3` (cube), `inertia ~ mass * h^2` terms
@@ -95,10 +96,15 @@ overflow. When the smallest moment of a rotating dynamic body is below 1/4096,
 with slightly more inertia than its geometry implies. Fixed-rotation bodies skip
 the inversion entirely.
 
-Worked example of the boundary: a dynamic sphere with density 1 is safe up to
-about r = 5 (r = 8 gives inertia ~ 5.5e4, already beyond 32768). Satisfying the
-dimension table above (dynamic r <= 4) keeps both mass and inertia comfortably
-in range.
+Geometry, mass, and inertia limits apply together: satisfying the dimension
+table above does not by itself guarantee a dynamic shape is accepted, because
+its mass and every inertia entry must also stay <= 1000.
+
+Worked example of the boundary: a density-1 sphere has inertia
+`8*pi/15 * r^5`, so the inertia cap limits it to about r = 3.59 (below the
+geometric r <= 4). A density-1 cube with equal half-extents h has inertia
+`16/3 * h^5` per axis, so the cap limits it to about h = 2.85. Doubling the
+density lowers both limits further.
 
 ## Speeds and per-tick motion
 

@@ -16,6 +16,11 @@ public abstract partial class Core<TWorld> {
 		public static readonly FP MaximumMassOrInertia = 1000.ToFP();
 		public static readonly FP MaximumInverseMassOrInertia = 4096.ToFP();
 		public static readonly FP MaximumLinearSpeed = 60.ToFP();
+		/// <summary>
+		/// Cap for accumulated body force and torque. At one sub-step and 60 Hz, the largest inverse mass or
+		/// inertia (4096) times h * 250 is ~17000, so IntegrateVelocities' Fixed32 products stay inside Q16.16.
+		/// </summary>
+		public static readonly FP MaximumForceOrTorque = 250.ToFP();
 		/// <summary>Hard cap for bodies with <see cref="Body.AllowFastRotation"/>, which the solver never clamps; keeps squared magnitudes inside Q16.16.</summary>
 		public static readonly FP MaximumFastAngularSpeed = 100.ToFP();
 		public static readonly FP MaximumQueryDistance = 100.ToFP();

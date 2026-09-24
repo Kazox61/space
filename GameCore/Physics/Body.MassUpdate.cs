@@ -89,10 +89,14 @@ public abstract partial class Core<TWorld> where TWorld : struct, ISessionType, 
 				// Raising every principal moment by the floor keeps the tensor positive definite (and
 				// physical: the triangle inequality still holds), bounds the inverse by 1/floor, and lets the
 				// body rotate instead of silently getting a zero or overflowing inverse.
+				// The smallest eigenvalue is bounded below by the Gershgorin bound (diagonal minus the row's
+				// off-diagonal magnitudes); offset or oriented shapes have off-diagonal terms, so the smallest
+				// diagonal entry alone would overestimate it. Shifting the diagonal by (floor - bound) raises
+				// every eigenvalue, and thus the bound, to at least the floor.
 				var floor = FP64.One / maximumInverse;
-				var smallest = FP64.Min(inertia64.Cx.X, FP64.Min(inertia64.Cy.Y, inertia64.Cz.Z));
+				var smallest = GershgorinLowerBound(inertia64);
 				if (smallest < floor) {
-					inertia64 += floor * Matrix64.Identity;
+					inertia64 += FP64.Max(floor, floor - smallest) * Matrix64.Identity;
 				}
 
 				// Invert the tensor normalized by its largest moment: the raw determinant of a small tensor
@@ -125,6 +129,13 @@ public abstract partial class Core<TWorld> where TWorld : struct, ISessionType, 
 				body.InvInertiaLocal = FMatrix3.Zero;
 				body.InvInertiaWorld = FMatrix3.Zero;
 			}
+		}
+
+		private static FP64 GershgorinLowerBound(Matrix64 m) {
+			var x = m.Cx.X - FP64.Abs(m.Cy.X) - FP64.Abs(m.Cz.X);
+			var y = m.Cy.Y - FP64.Abs(m.Cx.Y) - FP64.Abs(m.Cz.Y);
+			var z = m.Cz.Z - FP64.Abs(m.Cx.Z) - FP64.Abs(m.Cy.Z);
+			return FP64.Min(x, FP64.Min(y, z));
 		}
 
 		private static Matrix64 Steiner(FP64 mass, Vector64 origin) {

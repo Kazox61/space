@@ -129,6 +129,12 @@ public abstract partial class Core<TWorld> where TWorld : struct, ISessionType, 
 				return;
 			}
 
+			// A body parked outside the escape line would be disabled again by FinalizeBodies only after
+			// it had moved another tick outward, so re-enabling it there is rejected up front.
+			if (body.Type != BodyType.Static && !PhysicsValidation.IsInsideSimulationBounds(body.Transform.Position)) {
+				throw new InvalidOperationException("Cannot enable a body outside the physics simulation bounds; move it back inside first.");
+			}
+
 			body.IsEnabled = true;
 			body.EnableStateInitialized = true;
 			entity.Delete<OutOfPhysicsBounds>();
@@ -215,21 +221,23 @@ public abstract partial class Core<TWorld> where TWorld : struct, ISessionType, 
 
 		public static void ApplyForceToCenter(W.Entity entity, FVector3 force) {
 			ref var body = ref RequireDynamicBody(entity);
-			body.Force += force;
+			body.Force = ClampForceOrTorque(body.Force.To64() + ClampForceOrTorque(force.To64()).To64());
 			Wake(ref body);
 		}
 
 		public static void ApplyForce(W.Entity entity, FVector3 force, FPos worldPoint) {
 			ref var body = ref RequireDynamicBody(entity);
 			PhysicsValidation.ValidatePosition(worldPoint, nameof(worldPoint));
-			body.Force += force;
-			body.Torque += FVector3.Cross(worldPoint - body.Center, force);
+			var clampedForce = ClampForceOrTorque(force.To64()).To64();
+			var offset = new Vector64(worldPoint.X - body.Center.X, worldPoint.Y - body.Center.Y, worldPoint.Z - body.Center.Z);
+			body.Force = ClampForceOrTorque(body.Force.To64() + clampedForce);
+			body.Torque = ClampForceOrTorque(body.Torque.To64() + ClampForceOrTorque(Vector64.Cross(offset, clampedForce)).To64());
 			Wake(ref body);
 		}
 
 		public static void ApplyTorque(W.Entity entity, FVector3 torque) {
 			ref var body = ref RequireDynamicBody(entity);
-			body.Torque += torque;
+			body.Torque = ClampForceOrTorque(body.Torque.To64() + ClampForceOrTorque(torque.To64()).To64());
 			Wake(ref body);
 		}
 
@@ -326,6 +334,11 @@ public abstract partial class Core<TWorld> where TWorld : struct, ISessionType, 
 
 		private static FVector3 ClampAngular(in Body body, Vector64 velocity) =>
 			PhysicsValidation.ClampMagnitude(velocity, MaximumAngularSpeed(body));
+
+		// Forces and torques saturate like impulses: inputs and accumulated sums are clamped in Fixed64
+		// so the Fixed32 accumulators and IntegrateVelocities' products cannot wrap.
+		private static FVector3 ClampForceOrTorque(Vector64 value) =>
+			PhysicsValidation.ClampMagnitude(value, PhysicsValidation.MaximumForceOrTorque);
 
 		/// <summary>The angular speed cap ContactSolverSystem.IntegratePositions applies to this body.</summary>
 		internal static FP MaximumAngularSpeed(in Body body) =>

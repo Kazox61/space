@@ -1891,7 +1891,7 @@ public static class Program {
 		W.Tick();
 		Systems.Update();
 		var angle = FQuaternion.GetAngle(rotor.Read<Body>().Transform.Rotation);
-		Check("automatic CCD clips a rotating thin body at its intermediate impact", angle > FP.Zero && angle < FP.FromRatio(4, 5));
+		Check("automatic CCD clips a rotating thin body at its intermediate impact", angle > FP.Zero && angle < FP.FromRatio(9, 20));
 		var liveState = W.Serializer.CreateWorldSnapshot();
 		var liveRotation = rotor.Read<Body>().Transform.Rotation;
 		W.Serializer.LoadWorldSnapshot(snapshot, hardReset: true);
@@ -2063,7 +2063,7 @@ public static class Program {
 			Systems.Update();
 		}
 		Check("surviving bullet does not drive through the wall after impact", bulletGid.TryUnpack<TestWorld>(out var stoppedBullet)
-			&& stoppedBullet.Read<Body>().Transform.Position.X < Fixed64.FP.FromRatio(3, 2));
+			&& stoppedBullet.Read<Body>().Transform.Position.X < Fixed64.FP.FromRatio(3, 4));
 		Shutdown();
 	}
 
@@ -2994,6 +2994,17 @@ public static class Program {
 		Check("a thin dynamic capsule gets a floored, invertible inertia instead of overflowing",
 			thin.InvInertiaLocal.Cy.Y > FP.Zero && thin.InvInertiaLocal.Cy.Y <= maxInverse
 			&& thin.InvInertiaLocal.Cx.X > FP.Zero && thin.InvInertiaLocal.Cz.Z > FP.Zero);
+		// The same thin capsule laid diagonally and offset from the body origin: its tiny long-axis moment
+		// hides in off-diagonal terms, so a floor based on the smallest diagonal entry would miss it.
+		var obliqueCapsule = Shape.MakeCapsule(new FVector3(FP.Zero, -FP.One, FP.One), new FVector3(2.ToFP(), FP.One, FP.One), FP.FromRatio(4, 100));
+		var obliqueBody = W.NewEntity<Default>();
+		BodyOperations.CreateBody(obliqueBody, BodyType.Dynamic, new FWorldTransform(new FPos(20.ToFP().To64(), 20.ToFP().To64(), Fixed64.FP.Zero), FQuaternion.Identity));
+		ShapeFactory.CreateShape(obliqueBody, obliqueCapsule);
+		ref readonly var oblique = ref obliqueBody.Read<Body>();
+		Check("an oriented, offset thin capsule gets a floored inertia with bounded inverse diagonal",
+			oblique.InvInertiaLocal.Cx.X > FP.Zero && oblique.InvInertiaLocal.Cx.X <= maxInverse
+			&& oblique.InvInertiaLocal.Cy.Y > FP.Zero && oblique.InvInertiaLocal.Cy.Y <= maxInverse
+			&& oblique.InvInertiaLocal.Cz.Z > FP.Zero && oblique.InvInertiaLocal.Cz.Z <= maxInverse);
 		var tinyBody = W.NewEntity<Default>();
 		BodyOperations.CreateBody(tinyBody, BodyType.Dynamic, new FWorldTransform(new FPos(10.ToFP().To64(), 20.ToFP().To64(), Fixed64.FP.Zero), FQuaternion.Identity));
 		var shapeCountBeforeTiny = W.Query<All<Shape>>().EntitiesCount();
@@ -3038,6 +3049,9 @@ public static class Program {
 		Check("stepping a body across the escape line does not throw", !threw);
 		Check("the escaped body is disabled and tagged", !BodyOperations.IsEnabled(body.Read<Body>()) && body.Has<OutOfPhysicsBounds>());
 		Check("the escaped body's proxies and contacts are released", PhysicsDiagnostics.Capture().Proxies == 0);
+
+		Check("re-enabling an escaped body in place is rejected", Throws<InvalidOperationException>(() => BodyOperations.Enable(body))
+			&& !BodyOperations.IsEnabled(body.Read<Body>()) && body.Has<OutOfPhysicsBounds>());
 
 		BodyOperations.SetTransform(body, FWorldTransform.Identity);
 		BodyOperations.Enable(body);
