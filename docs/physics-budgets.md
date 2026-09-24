@@ -47,14 +47,14 @@ follows a warm-up in which reusable buffers reach their working size.
 ## Running
 
 ```sh
-# Full harness, including the allocation budget
-dotnet run --project Test/Test.csproj -c Release
+# Full NUnit suite, including the allocation budget
+dotnet test tests/GameCore.Tests/GameCore.Tests.csproj -c Release
 
-# Timing report plus the older resimulation and interpolation benchmarks
-dotnet run --project Test/Test.csproj -c Release -- bench
+# Timing report plus the resimulation and interpolation benchmarks
+dotnet run --project benchmarks/GameCore.Benchmarks/GameCore.Benchmarks.csproj -c Release
 
 # Timing budgets only; exits non-zero when any budget is exceeded (the CI "budgets" job)
-dotnet run --project Test/Test.csproj -c Release -- bench --enforce
+dotnet run --project benchmarks/GameCore.Benchmarks/GameCore.Benchmarks.csproj -c Release -- --enforce
 ```
 
 ## Where the time goes

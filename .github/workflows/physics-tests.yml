@@ -11,7 +11,7 @@ permissions:
 
 jobs:
   physics:
-    name: Physics harness (${{ matrix.configuration }})
+    name: Physics tests (${{ matrix.configuration }})
     runs-on: ubuntu-latest
     timeout-minutes: 30
     strategy:
@@ -33,10 +33,10 @@ jobs:
       # missing static-rollback/static-rollback-litenetlib CHANGELOG.md packaging files, which is
       # unrelated to physics (see docs/physics-box3d-migration-assessment.md, Verification Status).
       - name: Restore test project
-        run: dotnet restore Test/Test.csproj
+        run: dotnet restore tests/GameCore.Tests/GameCore.Tests.csproj --property:Configuration=${{ matrix.configuration }}
 
-      - name: Run physics checks
-        run: dotnet run --project Test/Test.csproj --configuration ${{ matrix.configuration }} --no-restore
+      - name: Run physics tests
+        run: dotnet test tests/GameCore.Tests/GameCore.Tests.csproj --configuration ${{ matrix.configuration }} --no-restore --logger "console;verbosity=normal"
 
   # The per-configuration job above proves each build is internally deterministic; this one proves
   # Debug and Release agree with each other (Phase 5 acceptance criterion).
@@ -55,20 +55,18 @@ jobs:
         with:
           dotnet-version: 10.0.x
 
-      - name: Restore test project
-        run: dotnet restore Test/Test.csproj
-
       - name: Compare state hashes
         run: |
           set -euo pipefail
           for configuration in Debug Release; do
-            dotnet run --project Test/Test.csproj --configuration "$configuration" --no-restore \
-              | grep '^STATE-HASH ' > "hashes-$configuration.txt"
+            dotnet restore tests/GameCore.Tests/GameCore.Tests.csproj --property:Configuration="$configuration"
+            dotnet test tests/GameCore.Tests/GameCore.Tests.csproj --configuration "$configuration" --no-restore --logger "console;verbosity=detailed" \
+              | grep -E '^[[:space:]]+STATE-HASH ' | sed -E 's/^[[:space:]]+//' > "hashes-$configuration.txt"
           done
           test -s hashes-Debug.txt
           diff hashes-Debug.txt hashes-Release.txt
 
-  # Phase 6: allocation budgets are enforced by the harness above; this job enforces the timing
+  # Phase 6: allocation budgets are enforced by the test suite above; this job enforces the timing
   # budgets from docs/physics-budgets.md on the Release load scene.
   budgets:
     name: Physics load and rollback budgets
@@ -85,10 +83,10 @@ jobs:
         with:
           dotnet-version: 10.0.x
 
-      - name: Restore test project
-        run: dotnet restore Test/Test.csproj
+      - name: Restore benchmark project
+        run: dotnet restore benchmarks/GameCore.Benchmarks/GameCore.Benchmarks.csproj --property:Configuration=Release
 
       - name: Enforce timing budgets
         run: |
-          dotnet run --project Test/Test.csproj --configuration Release --no-restore -- bench --enforce || \
-            dotnet run --project Test/Test.csproj --configuration Release --no-restore -- bench --enforce
+          dotnet run --project benchmarks/GameCore.Benchmarks/GameCore.Benchmarks.csproj --configuration Release --no-restore -- --enforce || \
+            dotnet run --project benchmarks/GameCore.Benchmarks/GameCore.Benchmarks.csproj --configuration Release --no-restore -- --enforce
