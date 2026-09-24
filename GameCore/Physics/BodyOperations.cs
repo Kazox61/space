@@ -55,6 +55,11 @@ public abstract partial class Core<TWorld> where TWorld : struct, ISessionType, 
 			UpdateWorldInertia(ref body);
 			Wake(ref body);
 			SyncGameplayTransform(entity, transform);
+			// Setting a body's transform directly is a jump by definition; continuous motion goes
+			// through velocity. Stamp it so render interpolation snaps instead of sliding.
+			if (entity.Has<Transform>()) {
+				entity.Mut<Transform>().MarkTeleported(S.CurrentTick);
+			}
 			var enabled = IsEnabled(body);
 			var bodyType = body.Type;
 			var bodyTransform = body.Transform;

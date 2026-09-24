@@ -127,6 +127,11 @@ public static partial class Program {
 		new(nameof(FxFullSyncClearsLogTest), "Fx", FxFullSyncClearsLogTest),
 		new(nameof(FxTickAfterHardResetTest), "Fx", FxTickAfterHardResetTest),
 		new(nameof(ProjectileOriginSurvivesRollbackTest), "Fx", ProjectileOriginSurvivesRollbackTest),
+		new(nameof(PrevWorldTracksEntitiesOneTickBehindTest), "Interpolation", PrevWorldTracksEntitiesOneTickBehindTest),
+		new(nameof(TeleportStampTest), "Interpolation", TeleportStampTest),
+		new(nameof(CorrectionProbeMeasuresMispredictionTest), "Interpolation", CorrectionProbeMeasuresMispredictionTest),
+		new(nameof(CorrectionProbeFullSyncTest), "Interpolation", CorrectionProbeFullSyncTest),
+		new(nameof(CorrectionSmootherTest), "Interpolation", CorrectionSmootherTest),
 	};
 
 	internal static void Bootstrap() {
@@ -159,6 +164,8 @@ public static partial class Program {
 
 	private static void CleanupResidualState() {
 		FxSink = null;
+		RollbackObserver = null;
+		DestroyPrevWorld();
 		if (_syncTargetSystemsCreated) {
 			Core<SyncTargetWorld>.Systems.Destroy();
 			_syncTargetSystemsCreated = false;

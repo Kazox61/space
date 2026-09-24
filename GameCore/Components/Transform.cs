@@ -7,6 +7,14 @@ namespace Space.GameCore;
 public struct Transform : IComponent, IComponentConfig<Transform>, ITrackableChanged {
 	public FVector3 Position;
 	public FQuaternion Rotation;
+	/// <summary>
+	/// Tick of the entity's last discontinuous move (respawn, warp, blink). Render interpolation
+	/// never blends between two ticks whose stamps differ, so a teleport snaps instead of sliding
+	/// through everything in between. Set it with <see cref="MarkTeleported"/> wherever the
+	/// simulation moves an entity discontinuously; <c>BodyOperations.SetTransform</c> does it for
+	/// bodies. Part of the snapshot, so re-simulation reproduces it.
+	/// </summary>
+	public int TeleportTick;
 
 	public ComponentTypeConfig<Transform> Config() => new(
 		defaultValue: new Transform { Rotation = FQuaternion.Identity }
@@ -17,6 +25,11 @@ public struct Transform : IComponent, IComponentConfig<Transform>, ITrackableCha
 		new FPos(Position.X, Position.Y, Position.Z),
 		new Fixed32.FQuaternion(Rotation.X.To32(), Rotation.Y.To32(), Rotation.Z.To32(), Rotation.W.To32())
 	);
+
+	/// <summary>Marks this tick's move as a teleport; pass the tick being simulated (<c>S.CurrentTick</c>).</summary>
+	public void MarkTeleported(int tick) {
+		TeleportTick = tick;
+	}
 
 	/// <summary>
 	/// Mirrors a physics-authoritative <see cref="Body"/>'s <see cref="Body.Transform"/> into this
