@@ -14,15 +14,19 @@ run two or more times, and an effect predicted on the first run may not happen a
 second. Rollback restores the last *saved* frame (every `SaveEachNthTick` = 5 ticks), so even
 ticks whose inputs did not change get re-simulated routinely.
 
-Today the client does not see ticks. `EntityViewUpdater.Reconcile`
-(`Client/synchronizer/EntityViewUpdater.cs`) runs once per rendered frame and compares the
-current world state against the views. It cannot tell a re-simulated tick from a new one, so both
-current sounds infer their trigger from state:
+Before the rollback-safe event flow was implemented, the client did not see ticks.
+`EntityViewUpdater.Reconcile` (`Client/synchronizer/EntityViewUpdater.cs`) ran once per rendered
+frame and compared the current world state against the views. It could not tell a re-simulated
+tick from a new one, so both sounds inferred their trigger from state:
 
-| Sound | Current trigger | Failure mode |
+| Sound | Pre-change trigger | Failure mode |
 |---|---|---|
 | `huntress_launch.wav` | `PlayerPresentationBehavior`: attack input is fresh on the rendered tick and `_lastAttackTick != S.CurrentTick` | Corrections to a remote player's input can play it at the wrong moment or twice |
 | `huntress_hit.wav` | `ProjectilePresentationBehavior`: view removed while `Lifetime` > 2 ticks | **Bug:** a rollback that re-creates the arrow under a new entity ID removes the old view, so a hit sound plays, and a second arrow view appears |
+
+Now `ShootSystem` and `ProjectileHitSystem` record simulation FX events, which `FxLog` deduplicates
+before `FxPlayer` plays the corresponding sounds. `PlayerPresentationBehavior` no longer triggers
+the launch sound, and `ProjectilePresentationBehavior` no longer exists or triggers the hit sound.
 
 Required behavior:
 

@@ -102,6 +102,16 @@ public static partial class Program {
 		Advance(60);
 		S.SetApprovedInput(RemoteChannel, new PlayerInput { Jump = true });
 		Advance(1);
+		var approvedJumpStarted = false;
+		foreach (var player in W.Query<All<PlayerInfo, Mover>>().Entities()) {
+			if (player.Read<PlayerInfo>().InputChannel == RemoteChannel) {
+				ref readonly var mover = ref player.Read<Mover>();
+				approvedJumpStarted = !mover.Grounded && mover.Velocity.Y > FP.Zero;
+				break;
+			}
+		}
+		Check("the approved remote jump starts airborne with upward velocity", approvedJumpStarted);
+
 		// The approved jump itself is airborne now; count only jumps that start from the ground again.
 		var jumps = 0;
 		var wasGrounded = false;
