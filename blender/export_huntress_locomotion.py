@@ -1,8 +1,9 @@
 """Export the generated locomotion rig from huntress_locomotion.blend.
 
 Run with Blender MCP or --background <blend> --python <this script>.
-Exports only the neutral rig and idle/run/jump/fall/land/tilt clips.
-Run promote_huntress_locomotion.py once before exporting a review file.
+Exports the production rig with idle/run/jump/fall/land/tilt, bow_hold, and
+attack clips. Run promote_huntress_weapon_actions.py before exporting if the
+runtime arm-parent settings differ from the source weapon rig.
 """
 
 from pathlib import Path
