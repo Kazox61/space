@@ -19,4 +19,5 @@ mesh = SubResource("BoxMesh_ry5bi")
 script = ExtResource("2_c1gtx")
 _targetNodePosition = NodePath("..")
 _targetNodeRotation = NodePath("..")
+_interpolate = false
 metadata/_custom_type_script = "uid://dgbo3w1kixhiy"

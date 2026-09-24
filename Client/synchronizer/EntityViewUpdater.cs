@@ -104,8 +104,8 @@ public partial class EntityViewUpdater : Node {
 			// view where its last entity died, a new one at the origin), and world-space particles and
 			// trails start from there before AssignEntity moves it. The updater is a plain Node, so
 			// the view's local transform is its global one.
-			if (entity.Has<Transform>()) {
-				view.Transform = TransformViewBehavior.ToGodot(entity.Read<Transform>());
+			if (TransformViewBehavior.TrySamplePose(gid, interpolate: true, out var pose)) {
+				view.Transform = pose;
 			}
 			AddChild(view);
 			view.AssignEntity(gid);

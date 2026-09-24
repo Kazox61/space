@@ -44,6 +44,7 @@ public partial class ClientGame : Node3D {
 		OfflineServer.Update(delta);
 		_clientTime += (float)delta;
 		CLNT.Update(_clientTime);
+		RenderInterpolation.Alpha = CLNT.CalculateInterpolation(_clientTime);
 		// After the update, so every tick it (re-)simulated has reported its effects and the head
 		// tick for the late check is known.
 		ClientSetup.FxLog.LocalChannel = CLNT.Channel;
