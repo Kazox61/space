@@ -137,6 +137,7 @@ public abstract partial class Core<TWorld> where TWorld : struct, ISessionType, 
 			var parents = runtime.IslandParents;
 			var indices = runtime.BodyIndices;
 			var minSleepTime = runtime.IslandSleepTimes;
+			var broadPhase = W.GetResource<BroadPhase>();
 			parents.Clear();
 			indices.Clear();
 			minSleepTime.Clear();
@@ -174,7 +175,9 @@ public abstract partial class Core<TWorld> where TWorld : struct, ISessionType, 
 				if (root == i) {
 					runtime.Pending.IslandsFellAsleep++;
 				}
+				// Finalization moved the body after the regular proxy pass; refresh once before it stops simulating.
 				ref var body = ref bodies[i].Ref<Body>()!; // The solver's body list comes from Query<All<Body>>.
+				ShapeProxySystem.RefreshBodyAABBs(bodies[i], body, broadPhase);
 				body.IsAwake = false;
 				body.IsEnabled = true;
 				body.EnableStateInitialized = true;

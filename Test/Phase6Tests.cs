@@ -428,9 +428,11 @@ public static partial class Program {
 			StepLoadMovers(broadPhase, movers, 600 + tick);
 			Step(1);
 		}
-		var perTick = (GC.GetAllocatedBytesForCurrentThread() - before) / sampleTicks;
-		Console.WriteLine($"  steady-state managed allocation: {perTick} bytes/tick ({PhysicsDiagnostics.LastStep})");
-		Check($"steady-state ticks allocate at most {SteadyTickAllocationBudgetBytes} bytes/tick (measured {perTick})", perTick <= SteadyTickAllocationBudgetBytes);
+		var total = GC.GetAllocatedBytesForCurrentThread() - before;
+		var average = (double)total / sampleTicks;
+		var budget = SteadyTickAllocationBudgetBytes * sampleTicks;
+		Console.WriteLine($"  steady-state managed allocation: {total} bytes total, {average:F2} bytes/tick ({PhysicsDiagnostics.LastStep})");
+		Check($"steady-state ticks allocate at most {budget} bytes total ({SteadyTickAllocationBudgetBytes} bytes/tick; measured {total} total, {average:F2}/tick)", total <= budget);
 		Shutdown();
 	}
 

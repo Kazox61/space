@@ -130,8 +130,9 @@ validated before each step:
 - `B3Config` length units must be selected before the first `PhysicsWorld` is
   created. Creation freezes the process-global scale; later attempts to change
   it fail.
-- `PhysicsWorld` and `BroadPhase` snapshots use explicit stable GUIDs and schema
-  version 1. Unknown versions are rejected.
+- `PhysicsWorld` and `BroadPhase` snapshots use explicit stable GUIDs.
+  `PhysicsWorld` uses schema version 2 and rejects version 1 snapshots;
+  `BroadPhase` remains at schema version 1. Unknown versions are rejected.
 - `PhysicsWorld` fields are serialized and validated during rollback and full
   synchronization. The saved length scale must match the initialized process.
 - Fixed64-to-Fixed32 physics boundaries use checked narrowing and throw rather

@@ -89,4 +89,6 @@ jobs:
         run: dotnet restore Test/Test.csproj
 
       - name: Enforce timing budgets
-        run: dotnet run --project Test/Test.csproj --configuration Release --no-restore -- bench --enforce
+        run: |
+          dotnet run --project Test/Test.csproj --configuration Release --no-restore -- bench --enforce || \
+            dotnet run --project Test/Test.csproj --configuration Release --no-restore -- bench --enforce

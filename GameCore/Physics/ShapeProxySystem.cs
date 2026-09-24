@@ -24,6 +24,19 @@ public abstract partial class Core<TWorld> where TWorld : struct, ISessionType, 
 	/// AABB outgrows the fat one, so the steady-state cost is just a transform + min/max per shape).
 	/// </summary>
 	public struct ShapeProxySystem : ISystem {
+		internal static void RefreshBodyAABBs(W.Entity bodyEntity, in Body body, BroadPhase broadPhase) {
+			if (!bodyEntity.Has<W.Links<Shapes>>()) {
+				return;
+			}
+
+			ref readonly var links = ref bodyEntity.Read<W.Links<Shapes>>();
+			for (var i = 0; i < links.Length; i++) {
+				if (links[i].Value.TryUnpack<TWorld>(out var shapeEntity) && shapeEntity.Has<Shape>()) {
+					ShapeBroadPhaseOps.UpdateAABBs(ref shapeEntity.Ref<Shape>(), body.Transform, broadPhase);
+				}
+			}
+		}
+
 		public void Update() {
 			var runtime = PhysicsRuntime.Get();
 			var timestamp = PhysicsRuntime.Timestamp();
