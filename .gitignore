@@ -7,3 +7,12 @@
 obj/
 bin/
 .DS_Store
+*.pyc
+
+# Blender working files and generated reviews
+/blender/__pycache__/
+/blender/previews/
+/blender/models/*.blend1
+/blender/models/huntress_anims.blend
+/blender/models/huntress_base_review.blend
+/blender/models/huntress_run_review.blend
