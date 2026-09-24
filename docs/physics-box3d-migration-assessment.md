@@ -535,7 +535,7 @@ Treat the physics implementation as game-ready when:
 
 At the time of this assessment:
 
-- `dotnet run --project Test/Test.csproj` completed with all current checks
+- `dotnet test tests/GameCore.Tests/GameCore.Tests.csproj` completed with all current checks
   passing.
 - `dotnet build Space.sln` compiled GameCore, client, server, and test projects,
   but the solution build failed during packaging because these files were
@@ -546,19 +546,18 @@ At the time of this assessment:
 The solution-build failure is unrelated to physics behavior, but it must be
 resolved before the solution build can serve as a CI release gate.
 
-The existing test harness is a console executable rather than a test-runner
-project. Its coverage includes useful collision, rollback, ray-cast, sensor,
-and character-mover regressions, but it does not yet cover lifecycle leaks,
-CCD, runtime filter mutation, large coordinates, cross-runtime determinism, or
-the full production system setup.
+The physics suite is an NUnit test project with independently discoverable,
+categorized scenarios. Its coverage includes collision, rollback, ray-cast,
+sensor, character-mover, lifecycle, CCD, runtime filter mutation, boundary,
+determinism, and production-system regressions.
 
 ## Phase 0 Implementation Status
 
 Phase 0 (safety baseline) is implemented:
 
-- CI: `.github/workflows/physics-tests.yml` runs the harness in Debug and
+- CI: `.github/workflows/physics-tests.yml` runs the NUnit suite in Debug and
   Release on pull requests, pushes to main, and manual dispatch. It is scoped
-  to `Test/Test.csproj` to stay independent of the solution packaging blocker
+  to `tests/GameCore.Tests/GameCore.Tests.csproj` to stay independent of the solution packaging blocker
   above.
 - Counters: `BroadPhase` exposes `ProxyCount`, `CachedPairCount`, and
   `MovedProxyCount`; `PhysicsDiagnostics.Capture()` returns the full counter
