@@ -33,7 +33,7 @@ jobs:
       # missing static-rollback/static-rollback-litenetlib CHANGELOG.md packaging files, which is
       # unrelated to physics (see docs/physics-box3d-migration-assessment.md, Verification Status).
       - name: Restore test project
-        run: dotnet restore tests/GameCore.Tests/GameCore.Tests.csproj
+        run: dotnet restore tests/GameCore.Tests/GameCore.Tests.csproj --property:Configuration=${{ matrix.configuration }}
 
       - name: Run physics tests
         run: dotnet test tests/GameCore.Tests/GameCore.Tests.csproj --configuration ${{ matrix.configuration }} --no-restore --logger "console;verbosity=normal"
@@ -55,15 +55,13 @@ jobs:
         with:
           dotnet-version: 10.0.x
 
-      - name: Restore test project
-        run: dotnet restore tests/GameCore.Tests/GameCore.Tests.csproj
-
       - name: Compare state hashes
         run: |
           set -euo pipefail
           for configuration in Debug Release; do
-            dotnet test tests/GameCore.Tests/GameCore.Tests.csproj --configuration "$configuration" --no-restore --logger "console;verbosity=normal" \
-              | grep '^STATE-HASH ' > "hashes-$configuration.txt"
+            dotnet restore tests/GameCore.Tests/GameCore.Tests.csproj --property:Configuration="$configuration"
+            dotnet test tests/GameCore.Tests/GameCore.Tests.csproj --configuration "$configuration" --no-restore --logger "console;verbosity=detailed" \
+              | grep -E '^[[:space:]]+STATE-HASH ' | sed -E 's/^[[:space:]]+//' > "hashes-$configuration.txt"
           done
           test -s hashes-Debug.txt
           diff hashes-Debug.txt hashes-Release.txt
@@ -86,7 +84,7 @@ jobs:
           dotnet-version: 10.0.x
 
       - name: Restore benchmark project
-        run: dotnet restore benchmarks/GameCore.Benchmarks/GameCore.Benchmarks.csproj
+        run: dotnet restore benchmarks/GameCore.Benchmarks/GameCore.Benchmarks.csproj --property:Configuration=Release
 
       - name: Enforce timing budgets
         run: |

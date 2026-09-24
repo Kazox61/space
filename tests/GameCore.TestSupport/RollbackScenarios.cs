@@ -309,6 +309,7 @@ public static partial class Program {
 		GameSessionSetup.Register();
 		S.Initialize();
 		GameWorldSetup.CreateAndInitialize();
+		_systemsCreated = true;
 		Systems.GetResource<CharacterRes>().AttackDelay = Space.GameCore.Const.DeltaTime * 3;
 
 		W.NewEntity(new Player { PlayerGuid = Guid.NewGuid(), InputChannel = 0 });
@@ -334,6 +335,7 @@ public static partial class Program {
 		Check("the retried flick spawns after its attack delay", W.Query<All<IsProjectile>>().EntitiesCount() == 1);
 
 		GameWorldSetup.Destroy();
+		_systemsCreated = false;
 		S.Destroy();
 	}
 
