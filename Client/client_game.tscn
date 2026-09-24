@@ -31,6 +31,7 @@ environment = SubResource("Environment_aq4fw")
 [node name="DirectionalLight3D" type="DirectionalLight3D" parent="." unique_id=1251768306]
 transform = Transform3D(0.42261824, 0.6408564, -0.6408564, 0, 0.70710677, 0.70710677, 0.9063078, -0.29883623, 0.29883623, 0, 0, 0)
 shadow_enabled = true
+shadow_bias = 0.04
 
 [connection signal="flicked" from="TouchscreenUi/HBoxContainer/Control/VirtualJoystick2" to="." method="OnAttack"]
 
