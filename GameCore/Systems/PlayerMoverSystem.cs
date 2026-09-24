@@ -27,6 +27,15 @@ public abstract partial class Core<TWorld> where TWorld : struct, ISessionType, 
 
 		public void Update() {
 			W.Query().For(static (ref PlayerInfo playerInfo, ref Transform transform, ref Mover mover) => {
+				// Past the physics escape line the mover's queries would leave the supported envelope, so the
+				// character stops simulating in place (the counterpart of OutOfPhysicsBounds for bodies).
+				if (!PhysicsValidation.IsInsideSimulationBounds(transform.ToWorldTransform().Position)) {
+					mover.Velocity = FVector3.Zero;
+					mover.PogoVelocity = FP.Zero;
+					mover.Grounded = false;
+					return;
+				}
+
 				var input = S.GetInput<PlayerInput>(channel: playerInfo.InputChannel);
 				var lastInput = input.LastFresh();
 				var moveInput = Fixed64.FVector2.NormalizeSafe(new Fixed64.FVector2(lastInput.MoveX, lastInput.MoveY));
@@ -51,6 +60,10 @@ public abstract partial class Core<TWorld> where TWorld : struct, ISessionType, 
 				// itself reduced by one tick immediately, same as every other tick.
 				mover.JumpCooldown = FP.Max(FP.Zero, mover.JumpCooldown - dt);
 
+				// TODO: fall speed is uncapped. After ~680 units of free fall (e.g. walking off the ground)
+				// Velocity.Y passes ~181 u/s, where squared lengths overflow Q16.16 and the mover misbehaves.
+				// If that matters, clamp Velocity.Y to a terminal speed (e.g. a MaxFallSpeed of ~40-50 in
+				// CharacterRes), in line with the 60 u/s cap bodies get. See docs/physics-limits.md.
 				mover.Velocity = new FVector3(
 					(moveInput.X * moveSpeed).To32(),
 					mover.Velocity.Y + gravity * dt,

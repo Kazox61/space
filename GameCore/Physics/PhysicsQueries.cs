@@ -50,7 +50,8 @@ public abstract partial class Core<TWorld> where TWorld : struct, ISessionType, 
 		}
 
 		public static void CastRay(BroadPhase broadPhase, FPos origin, FVector3 translation, Filter filter, QuerySensorMode sensors, WorldRayCastCallback callback) {
-			var treeOrigin = new FVector3(origin.X.To32(), origin.Y.To32(), origin.Z.To32());
+			PhysicsValidation.ValidateRayQuery(origin, translation);
+			var treeOrigin = new FVector3(origin.X.To32Checked(), origin.Y.To32Checked(), origin.Z.To32Checked());
 			var treeEnd = treeOrigin + translation;
 			var rayAabb = new FAABB(
 				FVector3.MinComponents(treeOrigin, treeEnd),
@@ -114,7 +115,7 @@ public abstract partial class Core<TWorld> where TWorld : struct, ISessionType, 
 
 		/// <summary>Reports shapes whose precise convex geometry overlaps the query proxy.</summary>
 		public static void OverlapShape(BroadPhase broadPhase, FWorldTransform transform, ShapeProxy proxy, Filter filter, QuerySensorMode sensors, WorldOverlapCallback callback) {
-			ValidateProxy(proxy);
+			PhysicsValidation.ValidateQuery(transform, proxy, FVector3.Zero);
 			var queryAabb = ComputeProxyAabb(transform, proxy);
 			var candidates = CollectCandidates(broadPhase, queryAabb, filter);
 
@@ -142,7 +143,7 @@ public abstract partial class Core<TWorld> where TWorld : struct, ISessionType, 
 		/// fraction zero; callback return values follow <see cref="BroadPhase.RayCastCallback"/>.
 		/// </summary>
 		public static void CastShape(BroadPhase broadPhase, FWorldTransform transform, ShapeProxy proxy, FVector3 translation, Filter filter, QuerySensorMode sensors, WorldShapeCastCallback callback) {
-			ValidateProxy(proxy);
+			PhysicsValidation.ValidateQuery(transform, proxy, translation);
 			var startAabb = ComputeProxyAabb(transform, proxy);
 			var endTransform = transform;
 			endTransform.Position += translation;
@@ -214,15 +215,6 @@ public abstract partial class Core<TWorld> where TWorld : struct, ISessionType, 
 			}
 			var radius = new FVector3(proxy.Radius, proxy.Radius, proxy.Radius);
 			return FWorldTransform.OffsetAABB(new FAABB(lower - radius, upper + radius), transform.Position);
-		}
-
-		private static void ValidateProxy(ShapeProxy proxy) {
-			if (proxy.Points is null || proxy.Points.Length == 0 || proxy.Points.Length > B3Config.MaxShapeCastPoints) {
-				throw new ArgumentException($"A shape query proxy must contain 1 to {B3Config.MaxShapeCastPoints} points.", nameof(proxy));
-			}
-			if (proxy.Radius < FP.Zero) {
-				throw new ArgumentOutOfRangeException(nameof(proxy), "A shape query proxy radius cannot be negative.");
-			}
 		}
 
 		private static bool TryGetShapeAndBodyTransform(EntityGID shapeGid, Filter filter, QuerySensorMode sensors, out Shape shape, out FWorldTransform transform) {

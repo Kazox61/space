@@ -760,3 +760,45 @@ The CCD stage deliberately remains narrower than Box3D's full continuous solver:
 does not create a contact island or solve friction, restitution, or reciprocal impact
 impulses at TOI. Sensors also remain excluded from CCD. Those behaviors should only be
 expanded if non-projectile gameplay requires physically persistent fast bodies.
+
+## Phase 5 Implementation Status
+
+Phase 5 (fixed-point and rollback hardening) is implemented:
+
+- Operating envelope: `PhysicsValidation` centralizes and enforces coordinate,
+  geometry, density, mass, inertia, linear/angular speed, material, query, and
+  solver bounds. Body and shape mutations validate prospective state before
+  invalidating contacts or proxies, so rejected mutations are transactional.
+- Safe defaults and arithmetic: shape density now defaults to `1` and maximum
+  linear speed to `60`. Body mass aggregation, parallel-axis terms, determinant,
+  and matrix inversion use Fixed64 intermediates before checked narrowing back
+  to Fixed32. Aggregate mass and inertia entries are capped at `1000`.
+- Checked boundaries: explicit checked Fixed64-to-Fixed32 conversions protect
+  broad-phase AABBs, rays, and swept-body centers. Body, shape, world-query, and
+  character-query positions must remain inside the documented +/-8192 envelope.
+- Configuration rollback: `PhysicsWorld` has a stable serialization GUID,
+  versioned field-by-field encoding, read/write validation, and length-scale
+  compatibility checks. Runtime solver configuration now restores through both
+  rollback and full synchronization.
+- Frozen globals and schemas: creating a `PhysicsWorld` freezes `B3Config`;
+  incompatible later scale changes fail. `PhysicsWorld` and `BroadPhase` use
+  explicit snapshot version 1 and reject unknown versions.
+- Cross-world synchronization: production systems use a stable snapshot GUID
+  independent of the generic client/server world marker. The harness full-syncs
+  a populated source world into a distinct world type, validates the restored
+  broad phase and configuration, then advances both worlds while comparing
+  canonical physics state.
+- Runtime escape: bodies crossing +/-8064 are disabled and tagged
+  `OutOfPhysicsBounds` at the end of the solver step instead of throwing
+  mid-step. The player mover stops simulating beyond the same line.
+- Velocity APIs clamp to the solver's own linear and angular limits rather than
+  rejecting, so any solver-reachable state is valid input. Impulse sums use
+  Fixed64 and saturate.
+- Minimum mass properties: inverse mass is bounded by 4096 (smaller bodies are
+  rejected), and an inertia floor bounds inverse inertia at 4096, so small and
+  thin dynamic shapes still rotate instead of overflowing or silently losing
+  rotation.
+- Regression coverage: boundary tests cover coordinates, dimensions, density,
+  mass/inertia limits, velocity clamping, runtime escape, checked narrowing,
+  solver input, configuration rollback, and distinct-world full synchronization.
+  CI runs the harness in Debug and Release and requires identical state hashes.

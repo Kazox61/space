@@ -38,6 +38,7 @@ public static class GameTypes {
 			.Component<Transform>()
 			.Component<ViewId>()
 			.Tag<IsProjectile>()
+			.Tag<OutOfPhysicsBounds>()
 			.Links<Shapes>()
 			.Link<BodyOwner>()
 			.Link<ShapeA>()
@@ -64,7 +65,7 @@ public static class GameTypes {
 	private static readonly HashSet<Type> s_registered = [
 		typeof(Body), typeof(Contact), typeof(Health), typeof(Lifetime), typeof(Mover), typeof(PatrolRail), typeof(PendingRespawn), typeof(PendingShot),
 		typeof(PlayerInfo), typeof(RailSlot), typeof(Shape), typeof(Transform), typeof(ViewId),
-		typeof(IsProjectile),
+		typeof(IsProjectile), typeof(OutOfPhysicsBounds),
 		typeof(Shapes), typeof(BodyOwner), typeof(ShapeA), typeof(ShapeB), typeof(Shooter),
 		typeof(ContactBeginTouchEvent), typeof(ContactEndTouchEvent), typeof(ContactHitEvent), typeof(ContinuousHitEvent),
 		typeof(SensorBeginTouchEvent), typeof(SensorEndTouchEvent), typeof(DamageEvent), typeof(DeadEvent),

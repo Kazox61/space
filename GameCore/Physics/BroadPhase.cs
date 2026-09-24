@@ -1,5 +1,6 @@
 using System;
 using System.Collections.Generic;
+using System.IO;
 using FFS.Libraries.StaticEcs;
 using FFS.Libraries.StaticPack;
 using Fixed;
@@ -321,6 +322,7 @@ public abstract partial class Core<TWorld> where TWorld : struct, ISessionType, 
 		// DynamicTrees and pair-dedup set must round-trip too -- otherwise Shape.ProxyKey (restored
 		// as ordinary component data) would index into stale/corrupted tree state after a rollback.
 		public Guid? Guid() => new("6f2f7f0a-6d0c-4f3e-9c2a-6e6b3d7c8a5b");
+		public byte Version() => 1;
 
 		public void Write(ref BinaryPackWriter writer) {
 			foreach (var tree in _trees) {
@@ -348,6 +350,9 @@ public abstract partial class Core<TWorld> where TWorld : struct, ISessionType, 
 		}
 
 		public void Read(ref BinaryPackReader reader, byte version) {
+			if (version != Version()) {
+				throw new InvalidDataException($"Unsupported BroadPhase snapshot version {version}.");
+			}
 			foreach (var tree in _trees) {
 				var nodesCapacity = reader.ReadInt();
 				var nodesCount = reader.ReadInt();

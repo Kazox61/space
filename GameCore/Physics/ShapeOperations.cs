@@ -53,16 +53,23 @@ public abstract partial class Core<TWorld> where TWorld : struct, ISessionType, 
 		}
 
 		public static void SetDensity(W.Entity shapeEntity, FP density) {
-			if (density < FP.Zero) {
-				throw new ArgumentOutOfRangeException(nameof(density), "Shape density cannot be negative.");
-			}
 			var bodyEntity = RequireOwner(shapeEntity);
+			var candidate = RequireShape(shapeEntity);
+			candidate.Density = density;
+			ValidateCandidate(candidate, bodyEntity, nameof(density));
+			ValidateBodyMassChange(shapeEntity, bodyEntity, candidate);
 			RequireShape(shapeEntity).Density = density;
 			BodyMassUpdate.Update(bodyEntity);
 			Wake(bodyEntity);
 		}
 
 		public static void SetSphere(W.Entity shapeEntity, Sphere sphere) {
+			var owner = RequireOwner(shapeEntity);
+			var candidate = RequireShape(shapeEntity);
+			candidate.Type = ShapeType.Sphere;
+			candidate.SphereShape = sphere;
+			ValidateCandidate(candidate, owner, nameof(sphere));
+			ValidateBodyMassChange(shapeEntity, owner, candidate);
 			var bodyEntity = PrepareGeometryChange(shapeEntity, out var broadPhase);
 			ref var shape = ref RequireShape(shapeEntity);
 			shape.Type = ShapeType.Sphere;
@@ -71,6 +78,12 @@ public abstract partial class Core<TWorld> where TWorld : struct, ISessionType, 
 		}
 
 		public static void SetCapsule(W.Entity shapeEntity, Capsule capsule) {
+			var owner = RequireOwner(shapeEntity);
+			var candidate = RequireShape(shapeEntity);
+			candidate.Type = ShapeType.Capsule;
+			candidate.CapsuleShape = capsule;
+			ValidateCandidate(candidate, owner, nameof(capsule));
+			ValidateBodyMassChange(shapeEntity, owner, candidate);
 			var bodyEntity = PrepareGeometryChange(shapeEntity, out var broadPhase);
 			ref var shape = ref RequireShape(shapeEntity);
 			shape.Type = ShapeType.Capsule;
@@ -79,6 +92,13 @@ public abstract partial class Core<TWorld> where TWorld : struct, ISessionType, 
 		}
 
 		public static void SetHull(W.Entity shapeEntity, Hull hull) {
+			hull.Rotation = FQuaternion.Normalize(hull.Rotation);
+			var owner = RequireOwner(shapeEntity);
+			var candidate = RequireShape(shapeEntity);
+			candidate.Type = ShapeType.Hull;
+			candidate.HullShape = hull;
+			ValidateCandidate(candidate, owner, nameof(hull));
+			ValidateBodyMassChange(shapeEntity, owner, candidate);
 			var bodyEntity = PrepareGeometryChange(shapeEntity, out var broadPhase);
 			ref var shape = ref RequireShape(shapeEntity);
 			shape.Type = ShapeType.Hull;
@@ -91,6 +111,15 @@ public abstract partial class Core<TWorld> where TWorld : struct, ISessionType, 
 
 		public static void SetBox(W.Entity shapeEntity, FVector3 center, FVector3 halfExtents, FQuaternion rotation) =>
 			SetHull(shapeEntity, Hull.MakeBox(halfExtents, center, rotation));
+
+		public static void SetMaterial(W.Entity shapeEntity, SurfaceMaterial material) {
+			var bodyEntity = RequireOwner(shapeEntity);
+			var candidate = RequireShape(shapeEntity);
+			candidate.Material = material;
+			ValidateCandidate(candidate, bodyEntity, nameof(material));
+			RequireShape(shapeEntity).Material = material;
+			Wake(bodyEntity);
+		}
 
 		private static W.Entity PrepareGeometryChange(W.Entity shapeEntity, out BroadPhase broadPhase) {
 			var bodyEntity = RequireOwner(shapeEntity);
@@ -118,6 +147,28 @@ public abstract partial class Core<TWorld> where TWorld : struct, ISessionType, 
 			ref readonly var body = ref RequireBody(bodyEntity);
 			if (BodyOperations.IsEnabled(body)) {
 				ShapeBroadPhaseOps.CreateProxy(ref shape, shapeEntity, broadPhase, body.Type, body.Transform, true);
+			}
+		}
+
+		private static void ValidateCandidate(in Shape candidate, W.Entity bodyEntity, string parameterName) {
+			ref readonly var body = ref RequireBody(bodyEntity);
+			PhysicsValidation.ValidateShape(candidate, body.Type, body.Transform, parameterName);
+		}
+
+		// Trial-runs the mass update with the candidate in place, then restores both structs verbatim.
+		// Re-running the update to restore would re-apply its center-shift velocity correction, which
+		// does not round-trip exactly in fixed point.
+		private static void ValidateBodyMassChange(W.Entity shapeEntity, W.Entity bodyEntity, in Shape candidate) {
+			ref var liveShape = ref RequireShape(shapeEntity);
+			ref var liveBody = ref RequireBody(bodyEntity);
+			var originalShape = liveShape;
+			var originalBody = liveBody;
+			try {
+				liveShape = candidate;
+				BodyMassUpdate.Update(bodyEntity);
+			} finally {
+				liveShape = originalShape;
+				liveBody = originalBody;
 			}
 		}
 
