@@ -2,7 +2,7 @@
 
 > Question: how do we play one-shot sounds and VFX from a rolled-back simulation without playing
 > them twice, and without cutting off a sound that already started?
-> Status: plan, not implemented. Claims about Space, static-ecs, static-rollback and Klotho are
+> Status: implemented (steps 1–6 of §7; step 7 still needs an in-game check). Claims about Space, static-ecs, static-rollback and Klotho are
 > checked against local source. §8 lists earlier ideas and why they were dropped.
 
 ## 1. Problem

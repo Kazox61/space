@@ -19,7 +19,6 @@ public partial class PlayerPresentationBehavior : EntityBehavior {
 	[Export] private PlayerSkin _skin;
 	[Export] private AudioStreamPlayer3D _footstepAudio;
 	[Export] private AudioStreamPlayer3D _impactAudio;
-	[Export] private AudioStream _attackSound;
 	[Export] private PackedScene _jumpParticlesScene;
 	[Export] private PackedScene _landParticlesScene;
 
@@ -98,10 +97,8 @@ public partial class PlayerPresentationBehavior : EntityBehavior {
 		}
 		if (isAttacking && _lastAttackTick != S.CurrentTick) {
 			_lastAttackTick = S.CurrentTick;
+			// Visual state only: the attack sound comes from FxPlayer, deduplicated across rollbacks.
 			_skin.PlayAttack();
-			if (_attackSound is not null) {
-				Audio.PlaySfx(_attackSound);
-			}
 		}
 
 		if (playTransitions && _hasPreviousState) {

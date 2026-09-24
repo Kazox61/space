@@ -10,7 +10,6 @@
 [ext_resource type="AudioStream" path="res://assets/player/audio/footstep_concrete_002.ogg" id="9_step2"]
 [ext_resource type="PackedScene" path="res://assets/player/vfx/jump_particles.tscn" id="10_jump"]
 [ext_resource type="PackedScene" path="res://assets/player/vfx/land_particles.tscn" id="11_land"]
-[ext_resource type="AudioStream" uid="uid://beel4bseu55ic" path="res://assets/player/audio/huntress_launch.wav" id="12_launch"]
 
 [sub_resource type="AudioStreamRandomizer" id="AudioStreamRandomizer_footstep"]
 random_pitch = 1.2
@@ -60,6 +59,5 @@ _visualRoot = NodePath("../VisualRoot")
 _skin = NodePath("../VisualRoot/Skin")
 _footstepAudio = NodePath("../FootstepAudio")
 _impactAudio = NodePath("../ImpactAudio")
-_attackSound = ExtResource("12_launch")
 _jumpParticlesScene = ExtResource("10_jump")
 _landParticlesScene = ExtResource("11_land")

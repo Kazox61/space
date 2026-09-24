@@ -8,14 +8,24 @@ using static Space.GameCore.Core<Space.Client.ClientWorld>;
 namespace Space.Client;
 
 public partial class EntityViewUpdater : Node {
-	private sealed class ActiveView(ViewAsset asset, EntityView view) {
+	private sealed class ActiveView(ViewAsset asset, EntityView view, EntityGID gid) {
 		public ViewAsset Asset { get; } = asset;
 		public EntityView View { get; } = view;
+		public EntityGID Gid { get; set; } = gid;
 	}
 
-	private readonly Dictionary<EntityGID, ActiveView> _activeViews = [];
-	private readonly HashSet<EntityGID> _presentEntities = [];
-	private readonly List<EntityGID> _staleEntities = [];
+	/// <summary>
+	/// What a view is bound to. Usually the entity's GID, but a GID is not stable across rollbacks:
+	/// restoring a snapshot bumps the version of every entity slot in a segment that was empty when
+	/// the snapshot was saved, so a re-simulated projectile comes back under a new GID. Projectiles
+	/// are keyed by their <see cref="ProjectileOrigin"/> instead, which re-simulation reproduces, so
+	/// they keep their view (and its trail) through a rollback.
+	/// </summary>
+	private readonly record struct ViewKey(EntityGID Gid, ushort Channel, int SpawnTick);
+
+	private readonly Dictionary<ViewKey, ActiveView> _activeViews = [];
+	private readonly HashSet<ViewKey> _presentEntities = [];
+	private readonly List<ViewKey> _staleEntities = [];
 	private EntityViewPool _pool;
 	private EntityViewFactory _factory;
 	private bool _initialized;
@@ -66,42 +76,66 @@ public partial class EntityViewUpdater : Node {
 		foreach (var entity in W.Query<All<ViewId>>().Entities()) {
 			var gid = entity.GID;
 			var asset = entity.Read<ViewId>().Value;
-			_presentEntities.Add(gid);
+			var key = KeyOf(entity);
+			if (!_presentEntities.Add(key)) {
+				// Two entities claim the same origin; don't let them fight over one view.
+				key = new ViewKey(gid, 0, 0);
+				_presentEntities.Add(key);
+			}
 
-			if (_activeViews.TryGetValue(gid, out var activeView)) {
+			if (_activeViews.TryGetValue(key, out var activeView)) {
 				if (!IsUsable(activeView.View)) {
 					_factory.Forget(activeView.View);
-					_activeViews.Remove(gid);
+					_activeViews.Remove(key);
 				} else if (activeView.Asset == asset) {
+					if (activeView.Gid != gid) {
+						activeView.Gid = gid;
+						activeView.View.RebindEntity(gid);
+					}
 					continue;
 				} else {
 					Release(activeView.View);
-					_activeViews.Remove(gid);
+					_activeViews.Remove(key);
 				}
 			}
 
 			var view = _factory.Create(asset);
+			// Place the view before it enters the tree. Otherwise it enters at a stale transform (a pooled
+			// view where its last entity died, a new one at the origin), and world-space particles and
+			// trails start from there before AssignEntity moves it. The updater is a plain Node, so
+			// the view's local transform is its global one.
+			if (entity.Has<Transform>()) {
+				view.Transform = TransformViewBehavior.ToGodot(entity.Read<Transform>());
+			}
 			AddChild(view);
 			view.AssignEntity(gid);
-			_activeViews.Add(gid, new ActiveView(asset, view));
+			_activeViews.Add(key, new ActiveView(asset, view, gid));
 		}
 
 		_staleEntities.Clear();
-		foreach (var (gid, activeView) in _activeViews) {
-			if (!_presentEntities.Contains(gid)) {
+		foreach (var (key, activeView) in _activeViews) {
+			if (!_presentEntities.Contains(key)) {
 				Release(activeView.View);
-				_staleEntities.Add(gid);
+				_staleEntities.Add(key);
 			}
 		}
-		foreach (var gid in _staleEntities) {
-			_activeViews.Remove(gid);
+		foreach (var key in _staleEntities) {
+			_activeViews.Remove(key);
 		}
 
-		foreach (var (gid, activeView) in _activeViews) {
+		foreach (var activeView in _activeViews.Values) {
 			if (IsUsable(activeView.View)) {
-				activeView.View.UpdateEntity(gid);
+				activeView.View.UpdateEntity(activeView.Gid);
 			}
 		}
+	}
+
+	private static ViewKey KeyOf(W.Entity entity) {
+		if (entity.Has<ProjectileOrigin>()) {
+			ref readonly var origin = ref entity.Read<ProjectileOrigin>();
+			return new ViewKey(default, origin.Channel, origin.SpawnTick);
+		}
+		return new ViewKey(entity.GID, 0, 0);
 	}
 
 	private void Release(EntityView view) {

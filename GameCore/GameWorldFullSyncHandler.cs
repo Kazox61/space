@@ -12,6 +12,8 @@ public abstract partial class Core<TWorld> where TWorld : struct, ISessionType, 
 
 		public void ReadFullSync(ref BinaryPackReader reader) {
 			W.Serializer.LoadWorldSnapshot(ref reader, hardReset: true);
+			// A full sync starts a new timeline; keys recorded on the old one mean nothing on it.
+			FxSink?.Clear();
 		}
 	}
 }

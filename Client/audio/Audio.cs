@@ -50,7 +50,8 @@ public partial class Audio : Node {
 		}
 	}
 
-	public static void PlaySfx(AudioStream stream) => Instance._sfx.Play(stream);
+	/// <param name="fromPosition">Seconds into the stream to start at, for a sound that is already late.</param>
+	public static void PlaySfx(AudioStream stream, float fromPosition = 0f) => Instance._sfx.Play(stream, fromPosition);
 
 	public static void PlayUi(AudioStream stream) => Instance._ui.Play(stream);
 
@@ -90,8 +91,8 @@ public partial class Audio : Node {
 			}
 		}
 
-		public void Play(AudioStream stream) {
-			Rent(stream).Play();
+		public void Play(AudioStream stream, float fromPosition = 0f) {
+			Rent(stream).Play(fromPosition);
 		}
 
 		public void Crossfade(AudioStream stream, float duration) {

@@ -18,6 +18,14 @@ public partial class EntityView : Node3D {
 		}
 	}
 
+	/// <summary>
+	/// The same logical entity came back under a new GID (a rollback re-created it). Keeps every
+	/// behavior's presentation state; the next <see cref="UpdateEntity"/> reads the new GID.
+	/// </summary>
+	public void RebindEntity(EntityGID entityGid) {
+		EntityGid = entityGid;
+	}
+
 	public void RemoveEntity() {
 		foreach (var viewBehaviour in _entityBehaviours) {
 			viewBehaviour.OnEntityRemoved(EntityGid);
