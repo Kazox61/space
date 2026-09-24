@@ -219,10 +219,9 @@ public struct Manifold {
 		var edgeB = segmentB / lengthB;
 		var alphaTolerance = FP.FromRatio(5, 100);
 		if (FVector3.LengthSqr(FVector3.Cross(edgeA, edgeB)) < alphaTolerance * alphaTolerance) {
-			var segment = new[] {
-				new ClipVertex { Position = b1, Pair = ContactFeaturePair.Make(0, 0, 0, 0) },
-				new ClipVertex { Position = b2, Pair = ContactFeaturePair.Make(0, 1, 0, 1) },
-			};
+			Span<ClipVertex> segment = stackalloc ClipVertex[2];
+			segment[0] = new ClipVertex { Position = b1, Pair = ContactFeaturePair.Make(0, 0, 0, 0) };
+			segment[1] = new ClipVertex { Position = b2, Pair = ContactFeaturePair.Make(0, 1, 0, 1) };
 			var plane1 = new FPlane(-edgeA, -FVector3.Dot(edgeA, a.Center1));
 			var plane2 = new FPlane(edgeA, FVector3.Dot(edgeA, a.Center2));
 			if (ClipSegment(segment, plane1) == 2 && ClipSegment(segment, plane2) == 2) {
@@ -770,7 +769,7 @@ public struct Manifold {
 	}
 
 	/// <summary>Clips a 2-point segment against a single plane, keeping the side with separation &lt;= 0. Ported from box3d's b3ClipSegment.</summary>
-	private static int ClipSegment(ClipVertex[] segment, FPlane plane) {
+	private static int ClipSegment(Span<ClipVertex> segment, FPlane plane) {
 		var vertex1 = segment[0];
 		var vertex2 = segment[1];
 		var distance1 = FPlane.Separation(plane, vertex1.Position);
@@ -798,7 +797,7 @@ public struct Manifold {
 	}
 
 	/// <summary>Clips a 2-point segment against all 4 side planes of a box face. Ported from box3d's b3ClipSegmentToHullFace.</summary>
-	private static int ClipSegmentToBoxFace(ClipVertex[] segment, FVector3 heA, int faceIndex) {
+	private static int ClipSegmentToBoxFace(Span<ClipVertex> segment, FVector3 heA, int faceIndex) {
 		var face = Hull.Faces[faceIndex];
 		Span<int> loop = stackalloc int[4] { face.V0, face.V1, face.V2, face.V3 };
 
@@ -818,7 +817,7 @@ public struct Manifold {
 	}
 
 	/// <summary>Sutherland-Hodgman clip of a convex polygon against a single plane, tracking each surviving/new vertex's separation from <paramref name="refPlane"/>. Ported from box3d's b3ClipPolygon.</summary>
-	private static int ClipPolygon(ClipVertex[] output, ClipVertex[] input, int count, FPlane clipPlane, int edgeIndex, FPlane refPlane) {
+	private static int ClipPolygon(Span<ClipVertex> output, ReadOnlySpan<ClipVertex> input, int count, FPlane clipPlane, int edgeIndex, FPlane refPlane) {
 		var vertex1 = input[count - 1];
 		var distance1 = FPlane.Separation(clipPlane, vertex1.Position);
 		var outCount = 0;
@@ -881,8 +880,8 @@ public struct Manifold {
 		var incFace = Hull.Faces[incFaceIndex];
 		Span<int> incLoop = stackalloc int[4] { incFace.V0, incFace.V1, incFace.V2, incFace.V3 };
 
-		var buffer1 = new ClipVertex[8];
-		var buffer2 = new ClipVertex[8];
+		Span<ClipVertex> buffer1 = stackalloc ClipVertex[8];
+		Span<ClipVertex> buffer2 = stackalloc ClipVertex[8];
 		var count = 4;
 		for (var i = 0; i < 4; i++) {
 			var world = centerInc + rotationInc * Hull.LocalCorner(heInc, incLoop[i]);
@@ -906,14 +905,16 @@ public struct Manifold {
 			var clipPlane = FPlane.FromNormalAndPoint(binormal, v1);
 
 			count = ClipPolygon(output, input, count, clipPlane, FindBoxEdge(refLoop[i], refLoop[(i + 1) % 4]), refPlane);
-			(input, output) = (output, input);
+			var swap = input;
+			input = output;
+			output = swap;
 
 			if (count < 3) {
 				return false;
 			}
 		}
 
-		var points = new ManifoldPoint[count];
+		Span<ManifoldPoint> points = stackalloc ManifoldPoint[count];
 		var minSeparation = FP.MaxValue;
 		for (var i = 0; i < count; i++) {
 			var clipPoint = input[i];
@@ -938,10 +939,9 @@ public struct Manifold {
 		var refOffset = FVector3.Dot(FVector3.AbsComponents(refNormal), heA);
 		var refPlane = new FPlane(refNormal, refOffset);
 
-		var segment = new[] {
-			new ClipVertex { Position = c1, Pair = ContactFeaturePair.Make(0, 0, 0, 0) },
-			new ClipVertex { Position = c2, Pair = ContactFeaturePair.Make(0, 1, 0, 1) },
-		};
+		Span<ClipVertex> segment = stackalloc ClipVertex[2];
+		segment[0] = new ClipVertex { Position = c1, Pair = ContactFeaturePair.Make(0, 0, 0, 0) };
+		segment[1] = new ClipVertex { Position = c2, Pair = ContactFeaturePair.Make(0, 1, 0, 1) };
 		if (ClipSegmentToBoxFace(segment, heA, refFaceIndex) < 2) {
 			return false;
 		}
@@ -1032,7 +1032,7 @@ public struct Manifold {
 	/// a stable rest contact rather than clustering. Mutates <paramref name="points"/> (swap-remove)
 	/// as it selects. Ported from box3d's b3ReduceManifoldPoints.
 	/// </summary>
-	private static void ReduceManifoldPoints(ManifoldPoint[] points, int count, FVector3 normal, ref Manifold manifold) {
+	private static void ReduceManifoldPoints(Span<ManifoldPoint> points, int count, FVector3 normal, ref Manifold manifold) {
 		manifold.Normal = normal;
 		manifold.PointCount = 0;
 

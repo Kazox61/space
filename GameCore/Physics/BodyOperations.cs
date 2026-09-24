@@ -31,6 +31,7 @@ public abstract partial class Core<TWorld> where TWorld : struct, ISessionType, 
 				GravityScale = FP.One,
 				EnableSleep = true,
 				IsAwake = true,
+				SleepThreshold = Body.DefaultSleepThreshold,
 				IsEnabled = true,
 				EnableStateInitialized = true,
 				EnableContactRecycling = true,
@@ -147,6 +148,33 @@ public abstract partial class Core<TWorld> where TWorld : struct, ISessionType, 
 				ref var shape = ref shapeEntity.Ref<Shape>();
 				ShapeBroadPhaseOps.CreateProxy(ref shape, shapeEntity, broadPhase, bodyType, bodyTransform, true);
 			});
+		}
+
+		/// <summary>Wakes a body; the rest of its island wakes before the next solver step.</summary>
+		public static void Wake(W.Entity entity) {
+			ref var body = ref RequireBody(entity);
+			Wake(ref body);
+		}
+
+		/// <summary>Whether the body is enabled, non-static, and currently asleep.</summary>
+		public static bool IsSleeping(W.Entity entity) => PhysicsSleep.IsSleeping(RequireBody(entity));
+
+		/// <summary>Allows or forbids this body to fall asleep. Forbidding sleep wakes it.</summary>
+		public static void SetSleepEnabled(W.Entity entity, bool enableSleep) {
+			ref var body = ref RequireBody(entity);
+			body.EnableSleep = enableSleep;
+			if (!enableSleep) {
+				Wake(ref body);
+			}
+		}
+
+		/// <summary>Sets the resting surface speed below which the body accumulates sleep time.</summary>
+		public static void SetSleepThreshold(W.Entity entity, FP sleepThreshold) {
+			ref var body = ref RequireBody(entity);
+			if (sleepThreshold < FP.Zero || sleepThreshold > PhysicsValidation.MaximumLinearSpeed) {
+				throw new ArgumentOutOfRangeException(nameof(sleepThreshold), "Sleep threshold must be between zero and the maximum linear speed.");
+			}
+			body.SleepThreshold = sleepThreshold;
 		}
 
 		public static void Enable(W.Entity entity) => SetEnabled(entity, true);
@@ -295,11 +323,7 @@ public abstract partial class Core<TWorld> where TWorld : struct, ISessionType, 
 			body.InvInertiaWorld = rotation * body.InvInertiaLocal * FMatrix3.Transpose(rotation);
 		}
 
-		private static void Wake(ref Body body) {
-			if (body.Type != BodyType.Static) {
-				body.IsAwake = true;
-			}
-		}
+		private static void Wake(ref Body body) => PhysicsSleep.WakeBody(ref body);
 
 		// Velocity writes clamp to the same limits the solver applies in IntegratePositions, so any state
 		// the solver can produce stays acceptable input here. Sums are formed in Fixed64 so a large impulse

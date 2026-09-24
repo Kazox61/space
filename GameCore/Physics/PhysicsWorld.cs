@@ -25,11 +25,17 @@ public abstract partial class Core<TWorld> where TWorld : struct, ISessionType, 
 			FP.Min(metersPerSecond * B3Config.GetLengthUnitsPerMeter(), PhysicsValidation.MaximumLinearSpeed);
 		public bool EnableWarmStarting = true;
 
+		/// <summary>
+		/// Lets resting islands fall asleep (box3d's enableSleep). Clearing it wakes every sleeping body
+		/// on the next solver step.
+		/// </summary>
+		public bool EnableSleep = true;
+
 		/// <summary>Number of solver sub-steps per full step. Box3d's usual default is 4.</summary>
 		public int SubStepCount = 4;
 
 		public Guid? Guid() => new("74401a12-82f2-4a68-9f03-f4e70640cbe7");
-		public byte Version() => 1;
+		public byte Version() => 2;
 
 		public void Write(ref BinaryPackWriter writer) {
 			PhysicsValidation.ValidateWorld(this);
@@ -43,6 +49,7 @@ public abstract partial class Core<TWorld> where TWorld : struct, ISessionType, 
 			writer.WriteInt(HitEventThreshold.RawValue);
 			writer.WriteInt(MaximumLinearSpeed.RawValue);
 			writer.WriteBool(EnableWarmStarting);
+			writer.WriteBool(EnableSleep);
 			writer.WriteInt(SubStepCount);
 			writer.WriteInt(B3Config.GetLengthUnitsPerMeter().RawValue);
 		}
@@ -61,6 +68,7 @@ public abstract partial class Core<TWorld> where TWorld : struct, ISessionType, 
 				HitEventThreshold = FP.FromRaw(reader.ReadInt()),
 				MaximumLinearSpeed = FP.FromRaw(reader.ReadInt()),
 				EnableWarmStarting = reader.ReadBool(),
+				EnableSleep = reader.ReadBool(),
 				SubStepCount = reader.ReadInt(),
 			};
 			var lengthUnits = FP.FromRaw(reader.ReadInt());
@@ -76,6 +84,7 @@ public abstract partial class Core<TWorld> where TWorld : struct, ISessionType, 
 			HitEventThreshold = restored.HitEventThreshold;
 			MaximumLinearSpeed = restored.MaximumLinearSpeed;
 			EnableWarmStarting = restored.EnableWarmStarting;
+			EnableSleep = restored.EnableSleep;
 			SubStepCount = restored.SubStepCount;
 		}
 	}

@@ -56,7 +56,16 @@ public abstract partial class Core<TWorld> where TWorld : struct, ISessionType, 
 			var rayAabb = new FAABB(
 				FVector3.MinComponents(treeOrigin, treeEnd),
 				FVector3.MaxComponents(treeOrigin, treeEnd));
-			var candidates = CollectCandidates(broadPhase, rayAabb, filter);
+			var runtime = PhysicsRuntime.Get();
+			var candidates = CollectCandidates(runtime, broadPhase, rayAabb, filter);
+			try {
+				CastRayCandidates(candidates, origin, translation, filter, sensors, callback);
+			} finally {
+				runtime.Return(candidates);
+			}
+		}
+
+		private static void CastRayCandidates(List<EntityGID> candidates, FPos origin, FVector3 translation, Filter filter, QuerySensorMode sensors, WorldRayCastCallback callback) {
 			var maxFraction = FP.One;
 
 			for (var i = 0; i < candidates.Count; i++) {
@@ -117,24 +126,28 @@ public abstract partial class Core<TWorld> where TWorld : struct, ISessionType, 
 		public static void OverlapShape(BroadPhase broadPhase, FWorldTransform transform, ShapeProxy proxy, Filter filter, QuerySensorMode sensors, WorldOverlapCallback callback) {
 			PhysicsValidation.ValidateQuery(transform, proxy, FVector3.Zero);
 			var queryAabb = ComputeProxyAabb(transform, proxy);
-			var candidates = CollectCandidates(broadPhase, queryAabb, filter);
+			var runtime = PhysicsRuntime.Get();
+			var candidates = CollectCandidates(runtime, broadPhase, queryAabb, filter);
+			try {
+				for (var i = 0; i < candidates.Count; i++) {
+					var shapeGid = candidates[i];
+					if (!TryGetShapeAndBodyTransform(shapeGid, filter, sensors, out var shape, out var bodyXf)) {
+						continue;
+					}
 
-			for (var i = 0; i < candidates.Count; i++) {
-				var shapeGid = candidates[i];
-				if (!TryGetShapeAndBodyTransform(shapeGid, filter, sensors, out var shape, out var bodyXf)) {
-					continue;
+					var input = new DistanceInput {
+						ProxyA = shape.MakeProxy(),
+						ProxyB = proxy,
+						Transform = FWorldTransform.InvMul(bodyXf, transform),
+						UseRadii = true,
+					};
+					var cache = SimplexCache.Empty;
+					if (Distance.ShapeDistance(input, ref cache).Distance < B3Config.OverlapSlop && !callback(shapeGid)) {
+						break;
+					}
 				}
-
-				var input = new DistanceInput {
-					ProxyA = shape.MakeProxy(),
-					ProxyB = proxy,
-					Transform = FWorldTransform.InvMul(bodyXf, transform),
-					UseRadii = true,
-				};
-				var cache = SimplexCache.Empty;
-				if (Distance.ShapeDistance(input, ref cache).Distance < B3Config.OverlapSlop && !callback(shapeGid)) {
-					break;
-				}
+			} finally {
+				runtime.Return(candidates);
 			}
 		}
 
@@ -151,8 +164,16 @@ public abstract partial class Core<TWorld> where TWorld : struct, ISessionType, 
 			var sweptAabb = new FAABB(
 				FVector3.MinComponents(startAabb.LowerBound, endAabb.LowerBound),
 				FVector3.MaxComponents(startAabb.UpperBound, endAabb.UpperBound));
-			var candidates = CollectCandidates(broadPhase, sweptAabb, filter);
+			var runtime = PhysicsRuntime.Get();
+			var candidates = CollectCandidates(runtime, broadPhase, sweptAabb, filter);
+			try {
+				CastShapeCandidates(candidates, transform, proxy, translation, filter, sensors, callback);
+			} finally {
+				runtime.Return(candidates);
+			}
+		}
 
+		private static void CastShapeCandidates(List<EntityGID> candidates, FWorldTransform transform, in ShapeProxy proxy, FVector3 translation, Filter filter, QuerySensorMode sensors, WorldShapeCastCallback callback) {
 			var maxFraction = FP.One;
 			for (var i = 0; i < candidates.Count; i++) {
 				var shapeGid = candidates[i];
@@ -196,20 +217,20 @@ public abstract partial class Core<TWorld> where TWorld : struct, ISessionType, 
 			return found;
 		}
 
-		private static List<EntityGID> CollectCandidates(BroadPhase broadPhase, FAABB aabb, Filter filter) {
-			var candidates = new List<EntityGID>();
+		/// <summary>Rents a GID-sorted candidate list; the caller returns it to <paramref name="runtime"/>.</summary>
+		private static List<EntityGID> CollectCandidates(PhysicsRuntime runtime, BroadPhase broadPhase, FAABB aabb, Filter filter) {
+			var candidates = runtime.RentGidList();
 			broadPhase.Query(aabb, QueryMask(filter), candidates);
 			candidates.Sort(static (a, b) => a.Raw.CompareTo(b.Raw));
 			return candidates;
 		}
 
-		private static FAABB ComputeProxyAabb(FWorldTransform transform, ShapeProxy proxy) {
-			var points = proxy.Points!;
-			var first = transform.Rotation * points[0];
+		private static FAABB ComputeProxyAabb(FWorldTransform transform, in ShapeProxy proxy) {
+			var first = transform.Rotation * proxy.Points[0];
 			var lower = first;
 			var upper = first;
-			for (var i = 1; i < points.Length; i++) {
-				var point = transform.Rotation * points[i];
+			for (var i = 1; i < proxy.Count; i++) {
+				var point = transform.Rotation * proxy.Points[i];
 				lower = FVector3.MinComponents(lower, point);
 				upper = FVector3.MaxComponents(upper, point);
 			}

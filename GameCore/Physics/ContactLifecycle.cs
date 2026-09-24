@@ -8,7 +8,8 @@ namespace Space.GameCore;
 public abstract partial class Core<TWorld> where TWorld : struct, ISessionType, IWorldType {
 	public static class ContactLifecycle {
 		public static void DestroyContactsForShape(EntityGID shape, BroadPhase broadPhase) {
-			var contacts = new List<W.Entity>();
+			var runtime = PhysicsRuntime.Get();
+			var contacts = runtime.RentEntityList();
 			foreach (var contactEntity in W.Query<All<Contact>>().Entities()) {
 				ref readonly var contact = ref contactEntity.Read<Contact>();
 				if (contact.ShapeA == shape || contact.ShapeB == shape) {
@@ -16,9 +17,14 @@ public abstract partial class Core<TWorld> where TWorld : struct, ISessionType, 
 				}
 			}
 
+			DestroyAll(runtime, contacts, broadPhase);
+		}
+
+		private static void DestroyAll(PhysicsRuntime runtime, List<W.Entity> contacts, BroadPhase broadPhase) {
 			foreach (var contactEntity in contacts) {
 				DestroyContact(contactEntity, broadPhase);
 			}
+			runtime.Return(contacts);
 		}
 
 		public static void ReevaluateContactsForShape(W.Entity shapeEntity, BroadPhase broadPhase) {
@@ -26,7 +32,8 @@ public abstract partial class Core<TWorld> where TWorld : struct, ISessionType, 
 				throw new InvalidOperationException("Contact reevaluation requires a shape entity.");
 			}
 			ref readonly var shape = ref shapeEntity.Read<Shape>();
-			var contacts = new List<W.Entity>();
+			var runtime = PhysicsRuntime.Get();
+			var contacts = runtime.RentEntityList();
 			foreach (var contactEntity in W.Query<All<Contact>>().Entities()) {
 				ref readonly var contact = ref contactEntity.Read<Contact>();
 				var otherGid = contact.ShapeA == shapeEntity.GID ? contact.ShapeB
@@ -39,13 +46,12 @@ public abstract partial class Core<TWorld> where TWorld : struct, ISessionType, 
 				}
 			}
 
-			foreach (var contactEntity in contacts) {
-				DestroyContact(contactEntity, broadPhase);
-			}
+			DestroyAll(runtime, contacts, broadPhase);
 		}
 
 		public static void ReevaluateEventFlagsForShape(W.Entity shapeEntity, BroadPhase broadPhase) {
-			var contactsToDestroy = new List<W.Entity>();
+			var runtime = PhysicsRuntime.Get();
+			var contactsToDestroy = runtime.RentEntityList();
 			foreach (var contactEntity in W.Query<All<Contact>>().Entities()) {
 				ref var contact = ref contactEntity.Ref<Contact>();
 				if (contact.ShapeA != shapeEntity.GID && contact.ShapeB != shapeEntity.GID) {
@@ -75,9 +81,7 @@ public abstract partial class Core<TWorld> where TWorld : struct, ISessionType, 
 					contactsToDestroy.Add(contactEntity);
 				}
 			}
-			foreach (var contactEntity in contactsToDestroy) {
-				DestroyContact(contactEntity, broadPhase);
-			}
+			DestroyAll(runtime, contactsToDestroy, broadPhase);
 		}
 
 		public static void DestroyContactsForBody(W.Entity bodyEntity, BroadPhase broadPhase) {
@@ -85,23 +89,21 @@ public abstract partial class Core<TWorld> where TWorld : struct, ISessionType, 
 				return;
 			}
 
-			var shapes = new HashSet<EntityGID>();
-			ref readonly var links = ref bodyEntity.Read<W.Links<Shapes>>();
-			for (var i = 0; i < links.Length; i++) {
-				shapes.Add(links[i].Value);
-			}
-
-			var contacts = new List<W.Entity>();
+			var runtime = PhysicsRuntime.Get();
+			var contacts = runtime.RentEntityList();
 			foreach (var contactEntity in W.Query<All<Contact>>().Entities()) {
 				ref readonly var contact = ref contactEntity.Read<Contact>();
-				if (shapes.Contains(contact.ShapeA) || shapes.Contains(contact.ShapeB)) {
-					contacts.Add(contactEntity);
+				ref readonly var links = ref bodyEntity.Read<W.Links<Shapes>>();
+				for (var i = 0; i < links.Length; i++) {
+					var shape = links[i].Value;
+					if (contact.ShapeA == shape || contact.ShapeB == shape) {
+						contacts.Add(contactEntity);
+						break;
+					}
 				}
 			}
 
-			foreach (var contactEntity in contacts) {
-				DestroyContact(contactEntity, broadPhase);
-			}
+			DestroyAll(runtime, contacts, broadPhase);
 		}
 
 		public static void DestroyContact(W.Entity contactEntity, BroadPhase broadPhase) {
@@ -114,6 +116,17 @@ public abstract partial class Core<TWorld> where TWorld : struct, ISessionType, 
 
 			if (contact.Touching) {
 				ContactSystem.SendEndEvent(contact, contact.ShapeA, contact.ShapeB);
+			}
+
+			// Removing support from a sleeping island must wake it (box3d's b3DestroyContact with
+			// wakeBodies): otherwise a stack resting on a destroyed or moved body would hang in the air.
+			if (PhysicsSleep.LinksIsland(contact)) {
+				if (PhysicsSleep.TryGetBodyOfShape(contact.ShapeA, out var bodyA)) {
+					PhysicsSleep.WakeBody(bodyA);
+				}
+				if (PhysicsSleep.TryGetBodyOfShape(contact.ShapeB, out var bodyB)) {
+					PhysicsSleep.WakeBody(bodyB);
+				}
 			}
 
 			contactEntity.Destroy();

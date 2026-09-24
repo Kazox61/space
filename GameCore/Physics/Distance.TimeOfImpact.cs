@@ -140,9 +140,8 @@ public static partial class Distance {
 		var deltaLength = FP.Sqrt(
 			delta.X * delta.X + delta.Y * delta.Y + delta.Z * delta.Z + delta.W * delta.W);
 		var radius = FP.Zero;
-		var points = proxy.Points!;
-		for (var i = 0; i < points.Length; i++) {
-			radius = FP.Max(radius, L1Norm(points[i] - localCenter));
+		for (var i = 0; i < proxy.Count; i++) {
+			radius = FP.Max(radius, L1Norm(proxy.Points[i] - localCenter));
 		}
 
 		// For shortest-path NLerp, |q'(t)| <= sqrt(2) * |end-start|. A rotated point moves

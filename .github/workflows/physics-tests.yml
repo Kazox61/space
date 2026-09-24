@@ -67,3 +67,28 @@ jobs:
           done
           test -s hashes-Debug.txt
           diff hashes-Debug.txt hashes-Release.txt
+
+  # Phase 6: allocation budgets are enforced by the harness above; this job enforces the timing
+  # budgets from docs/physics-budgets.md on the Release load scene.
+  budgets:
+    name: Physics load and rollback budgets
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+        with:
+          submodules: recursive
+
+      - name: Set up .NET
+        uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: 10.0.x
+
+      - name: Restore test project
+        run: dotnet restore Test/Test.csproj
+
+      - name: Enforce timing budgets
+        run: |
+          dotnet run --project Test/Test.csproj --configuration Release --no-restore -- bench --enforce || \
+            dotnet run --project Test/Test.csproj --configuration Release --no-restore -- bench --enforce

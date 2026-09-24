@@ -197,11 +197,6 @@ public abstract partial class Core<TWorld> where TWorld : struct, ISessionType, 
 			return ref bodyEntity.Ref<Body>();
 		}
 
-		private static void Wake(W.Entity bodyEntity) {
-			ref var body = ref RequireBody(bodyEntity);
-			if (body.Type != BodyType.Static) {
-				body.IsAwake = true;
-			}
-		}
+		private static void Wake(W.Entity bodyEntity) => PhysicsSleep.WakeBody(ref RequireBody(bodyEntity));
 	}
 }

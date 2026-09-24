@@ -26,7 +26,7 @@ public static partial class Distance {
 	/// <param name="input">The distance query input.</param>
 	/// <param name="cache">Warm-start cache, updated in place.</param>
 	/// <param name="debugSimplexes">Optional buffer to record each GJK iteration's simplex, for debugging.</param>
-	public static DistanceOutput ShapeDistance(DistanceInput input, ref SimplexCache cache, Simplex[]? debugSimplexes = null) {
+	public static DistanceOutput ShapeDistance(in DistanceInput input, ref SimplexCache cache, Simplex[]? debugSimplexes = null) {
 		// The query runs in frame A using the relative pose of B in A.
 		var xf = input.Transform;
 
@@ -34,10 +34,10 @@ public static partial class Distance {
 		var m = FMatrix3.FromQuaternion(xf.Rotation);
 		var mt = FMatrix3.Transpose(m);
 
-		var proxyA = input.ProxyA;
-		var proxyB = input.ProxyB;
-		var pointsA = proxyA.Points!;
-		var pointsB = proxyB.Points!;
+		ref readonly var proxyA = ref input.ProxyA;
+		ref readonly var proxyB = ref input.ProxyB;
+		ref readonly var pointsA = ref proxyA.Points;
+		ref readonly var pointsB = ref proxyB.Points;
 
 		// Compute the initial simplex from the cache.
 		var simplex = Simplex.Empty;
@@ -329,7 +329,7 @@ public static partial class Distance {
 	/// normal, and translation fraction. The query runs in frame A, so the hit point and normal are
 	/// returned in frame A. Initially touching shapes are a miss unless <see cref="ShapeCastPairInput.CanEncroach"/> is set.
 	/// </summary>
-	public static CastOutput ShapeCast(ShapeCastPairInput input) {
+	public static CastOutput ShapeCast(in ShapeCastPairInput input) {
 		var linearSlop = B3Config.LinearSlop;
 		var totalRadius = input.ProxyA.Radius + input.ProxyB.Radius;
 		var target = FP.Max(linearSlop, totalRadius - linearSlop);

@@ -129,14 +129,14 @@ public abstract partial class Core<TWorld> {
 
 		public static void ValidateQuery(FWorldTransform transform, ShapeProxy proxy, FVector3 translation) {
 			ValidateTransform(transform, nameof(transform));
-			if (proxy.Points is null || proxy.Points.Length == 0 || proxy.Points.Length > B3Config.MaxShapeCastPoints)
+			if (proxy.Count <= 0 || proxy.Count > B3Config.MaxShapeCastPoints)
 				throw new ArgumentException($"A shape query proxy must contain 1 to {B3Config.MaxShapeCastPoints} points.", nameof(proxy));
 			if (proxy.Radius < FP.Zero || proxy.Radius > MaximumStaticExtent)
 				throw new ArgumentOutOfRangeException(nameof(proxy), "Shape query radius is outside the supported range.");
 			var first = transform.Rotation * proxy.Points[0];
 			var lower = first;
 			var upper = first;
-			for (var i = 0; i < proxy.Points.Length; i++) {
+			for (var i = 0; i < proxy.Count; i++) {
 				ValidateLocalBounds(proxy.Points[i], proxy.Radius, MaximumStaticExtent, nameof(proxy));
 				var point = transform.Rotation * proxy.Points[i];
 				lower = FVector3.MinComponents(lower, point);

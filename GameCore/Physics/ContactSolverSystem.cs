@@ -1,5 +1,6 @@
 using System;
 using System.Collections.Generic;
+using System.Runtime.InteropServices;
 using FFS.Libraries.StaticEcs;
 using Fixed;
 using Fixed32;
@@ -10,16 +11,17 @@ namespace Space.GameCore;
 public abstract partial class Core<TWorld> where TWorld : struct, ISessionType, IWorldType {
 	/// <summary>
 	/// Box3d's sub-stepped "soft" contact solver (solver.c/contact_solver.c), ported single-threaded
-	/// and without islands/solver-sets/sleeping — every awake body and touching contact is iterated
-	/// directly each tick instead of being grouped for multithreading or memory locality. Also out of
-	/// scope for this pass: joints, external forces/torques (no ApplyForce API yet), gyroscopic torque
-	/// correction (box3d calls it "optional polish"), twist friction, rolling resistance, and
-	/// conveyor-belt tangent velocity. Runs after <see cref="ContactSystem"/> each tick, so it always
-	/// solves against that tick's freshly recomputed manifolds.
+	/// without solver sets or graph coloring — every awake body and touching contact is iterated
+	/// directly each tick. Sleeping islands (see <see cref="PhysicsSleep"/>) are excluded entirely.
+	/// Also out of scope for this pass: joints, gyroscopic torque correction (box3d calls it
+	/// "optional polish"), and conveyor-belt tangent velocity. Runs after
+	/// <see cref="ContactSystem"/> each tick, so it always solves against that tick's freshly
+	/// recomputed manifolds. Body and constraint buffers live in the world's
+	/// <see cref="PhysicsRuntime"/> and are reused every tick.
 	/// </summary>
 	public struct ContactSolverSystem : ISystem {
 		/// <summary>Per-manifold-point normal constraint row; friction stays manifold-level (see <see cref="ContactConstraint.FrictionAnchorRA"/>), matching box3d's single friction anchor per manifold.</summary>
-		private struct ContactConstraintPoint {
+		internal struct ContactConstraintPoint {
 			/// <summary>World-frame anchor (center-of-mass relative), fixed at prepare time; rotated
 			/// live by each body's accumulated <see cref="Body.DeltaRotation"/> during solving.</summary>
 			public FVector3 RA;
@@ -32,9 +34,12 @@ public abstract partial class Core<TWorld> where TWorld : struct, ISessionType, 
 
 			public FP NormalImpulse;
 			public FP TotalNormalImpulse;
+
+			/// <summary>Distance from the friction anchor, weighting this point's share of the twist-friction limit.</summary>
+			public FP LeverArm;
 		}
 
-		private struct ContactConstraint {
+		internal struct ContactConstraint {
 			public W.Entity ContactEntity;
 			public W.Entity BodyA;
 			public W.Entity BodyB;
@@ -66,6 +71,14 @@ public abstract partial class Core<TWorld> where TWorld : struct, ISessionType, 
 
 			public FP FrictionImpulseX;
 			public FP FrictionImpulseY;
+
+			/// <summary>
+			/// Central twist friction (box3d's contact_solver.c): an angular constraint about the normal,
+			/// Coulomb-limited by friction times the lever-arm-weighted normal impulse. Single-anchor
+			/// friction cannot resist spin about the normal, so without it resting bodies keep yawing.
+			/// </summary>
+			public FP TwistMass;
+			public FP TwistImpulse;
 			public Softness Softness;
 
 			/// <summary>
@@ -111,6 +124,8 @@ public abstract partial class Core<TWorld> where TWorld : struct, ISessionType, 
 		public void Update() {
 			var world = W.GetResource<PhysicsWorld>();
 			PhysicsValidation.ValidateWorld(world);
+			var runtime = PhysicsRuntime.Get();
+			var timestamp = PhysicsRuntime.Timestamp();
 
 			var dt = Const.DeltaTime.To32();
 			var subStepCount = world.SubStepCount;
@@ -122,13 +137,30 @@ public abstract partial class Core<TWorld> where TWorld : struct, ISessionType, 
 			var contactSoftness = Softness.Make(contactHertz, world.ContactDampingRatio, h);
 			var staticSoftness = Softness.Make(2 * contactHertz, FP.Half * world.ContactDampingRatio, h);
 
-			var bodies = new List<W.Entity>();
+			// Wake islands touched by awake bodies (including bodies woken by gameplay since the last
+			// solve) before choosing what to simulate, so no constraint ever joins an awake body to a
+			// sleeping one.
+			PhysicsSleep.PropagateWake(runtime);
+
+			var bodies = runtime.SolverBodies;
+			bodies.Clear();
+			var sleepingBodies = 0;
 			foreach (var entity in W.Query<All<Body>>().Entities()) {
-				ref readonly var body = ref entity.Read<Body>();
-				if (body.Type != BodyType.Static && BodyOperations.IsEnabled(body)) {
-					bodies.Add(entity);
+				ref var body = ref entity.Ref<Body>();
+				if (body.Type == BodyType.Static || !BodyOperations.IsEnabled(body)) {
+					continue;
 				}
+				if (!PhysicsSleep.IsAwake(body)) {
+					if (world.EnableSleep) {
+						sleepingBodies++;
+						continue;
+					}
+					PhysicsSleep.WakeBody(ref body);
+				}
+				bodies.Add(entity);
 			}
+			runtime.Pending.AwakeBodies = bodies.Count;
+			runtime.Pending.SleepingBodies = sleepingBodies;
 
 			// Every broad-phase-overlapping Contact is solved, not just ones flagged Touching:
 			// Touching is a gameplay/event concern (begin/end-touch events), while the solver also
@@ -138,7 +170,8 @@ public abstract partial class Core<TWorld> where TWorld : struct, ISessionType, 
 			// Require both links in the filter itself (not just Contact) -- ContactSystem self-heals
 			// any Contact entity missing a link, but since it runs earlier in the same tick's
 			// pipeline rather than relying on that ordering, guard here too.
-			var constraints = new List<ContactConstraint>();
+			var constraints = runtime.SolverConstraints;
+			constraints.Clear();
 #pragma warning disable FFSECS0050 // Link<ShapeA> and Link<ShapeB> are distinct relation types; the analyzer's duplicate check compares by open-generic definition and can't tell them apart.
 			foreach (var contactEntity in W.Query<All<Contact, W.Link<ShapeA>, W.Link<ShapeB>>>().Entities()) {
 #pragma warning restore FFSECS0050
@@ -146,30 +179,47 @@ public abstract partial class Core<TWorld> where TWorld : struct, ISessionType, 
 					constraints.Add(constraint);
 				}
 			}
+			runtime.Pending.Constraints = constraints.Count;
 
 			foreach (var entity in bodies) {
 				ref var body = ref entity.Ref<Body>()!; // bodies is built from a Query<All<Body>> filter.
 				body.DeltaPosition = FVector3.Zero;
 				body.DeltaRotation = FQuaternion.Identity;
 			}
+			runtime.AddTime(PhysicsPhase.SolverPrepare, timestamp);
 
+			timestamp = PhysicsRuntime.Timestamp();
+			var constraintSpan = CollectionsMarshal.AsSpan(constraints);
 			for (var substep = 0; substep < subStepCount; substep++) {
 				IntegrateVelocities(bodies, h, world.Gravity);
-				WarmStart(constraints);
-				Solve(constraints, h, invH, world.ContactSpeed, useBias: true);
+				WarmStart(constraintSpan);
+				Solve(constraintSpan, h, invH, world.ContactSpeed, useBias: true);
 				IntegratePositions(bodies, h, world.MaximumLinearSpeed, invDt);
-				Solve(constraints, h, invH, world.ContactSpeed, useBias: false);
+				Solve(constraintSpan, h, invH, world.ContactSpeed, useBias: false);
 			}
 
-			ApplyRestitution(constraints, world.RestitutionThreshold);
-			SolveContinuousCollisions(bodies, W.GetResource<BroadPhase>());
-			StoreImpulses(constraints, world.HitEventThreshold);
-			FinalizeBodies(bodies);
+			ApplyRestitution(constraintSpan, world.RestitutionThreshold);
+			runtime.AddTime(PhysicsPhase.Solve, timestamp);
+
+			timestamp = PhysicsRuntime.Timestamp();
+			SolveContinuousCollisions(runtime, bodies, W.GetResource<BroadPhase>());
+			runtime.AddTime(PhysicsPhase.Continuous, timestamp);
+
+			timestamp = PhysicsRuntime.Timestamp();
+			StoreImpulses(constraintSpan, world.HitEventThreshold);
+			FinalizeBodies(runtime, bodies, world.EnableSleep, dt, invDt);
+			runtime.AddTime(PhysicsPhase.Finalize, timestamp);
+			runtime.CompleteTick();
 		}
 
-		private static void SolveContinuousCollisions(List<W.Entity> bodies, BroadPhase broadPhase) {
+		private static void SolveContinuousCollisions(PhysicsRuntime runtime, List<W.Entity> bodies, BroadPhase broadPhase) {
 			bodies.Sort(static (a, b) => a.GID.Raw.CompareTo(b.GID.Raw));
-			var candidates = new List<EntityGID>();
+			// Every proxy, GID-sorted, gathered once on the first continuous body of the tick: proxies do
+			// not change during this stage, and targets may move this tick, so their fat AABBs cannot
+			// prune the candidate set before the swept-AABB test below.
+			var candidates = runtime.ContinuousCandidates;
+			candidates.Clear();
+			var candidatesCollected = false;
 			for (var bodyIndex = 0; bodyIndex < bodies.Count; bodyIndex++) {
 				var bodyEntity = bodies[bodyIndex];
 				if (!bodyEntity.Has<Body>()) {
@@ -187,6 +237,12 @@ public abstract partial class Core<TWorld> where TWorld : struct, ISessionType, 
 				var bestPoint = FPos.Zero;
 				var bestTargetBody = default(W.Entity);
 				var bestEnablesEvents = false;
+				runtime.Pending.ContinuousBodies++;
+				if (!candidatesCollected) {
+					broadPhase.CollectProxies(candidates);
+					candidates.Sort(static (a, b) => a.Raw.CompareTo(b.Raw));
+					candidatesCollected = true;
+				}
 				var bodyEndTransform = GetSweepEnd(body);
 				ref readonly var shapeLinks = ref bodyEntity.Read<W.Links<Shapes>>();
 				for (var shapeIndex = 0; shapeIndex < shapeLinks.Length; shapeIndex++) {
@@ -199,10 +255,6 @@ public abstract partial class Core<TWorld> where TWorld : struct, ISessionType, 
 					}
 
 					var sweptAabb = ComputeSweptAabb(body, bulletShape);
-
-					candidates.Clear();
-					broadPhase.CollectProxies(candidates);
-					candidates.Sort(static (a, b) => a.Raw.CompareTo(b.Raw));
 					for (var candidateIndex = 0; candidateIndex < candidates.Count; candidateIndex++) {
 						var targetGid = candidates[candidateIndex];
 						if (targetGid == bulletShapeEntity.GID || !targetGid.TryUnpack<TWorld>(out var targetShapeEntity)
@@ -255,6 +307,7 @@ public abstract partial class Core<TWorld> where TWorld : struct, ISessionType, 
 				}
 
 				if (bestFraction < FP.One) {
+					runtime.Pending.ContinuousHits++;
 					body.DeltaPosition *= bestFraction;
 					body.DeltaRotation = FQuaternion.Nlerp(FQuaternion.Identity, body.DeltaRotation, bestFraction);
 					if (!bestTargetBody.Has<Body>()) {
@@ -380,6 +433,15 @@ public abstract partial class Core<TWorld> where TWorld : struct, ISessionType, 
 			if (!BodyOperations.IsEnabled(bodyA) || !BodyOperations.IsEnabled(bodyB)) {
 				return false;
 			}
+			// Only solve between simulated bodies and static ones: a sleeping island's contacts keep
+			// their manifolds and impulses untouched until it wakes.
+			var simulatedA = PhysicsSleep.IsSimulated(bodyA);
+			var simulatedB = PhysicsSleep.IsSimulated(bodyB);
+			if ((!simulatedA && !simulatedB)
+				|| (!simulatedA && bodyA.Type != BodyType.Static)
+				|| (!simulatedB && bodyB.Type != BodyType.Static)) {
+				return false;
+			}
 
 			// Manifold.Normal/points are in shape A's local frame (Distance.ShapeDistance's
 			// contract) — rotate/transform into world using bodyA's transform now, before this tick's
@@ -440,6 +502,14 @@ public abstract partial class Core<TWorld> where TWorld : struct, ISessionType, 
 			frictionAnchorRB /= manifold.PointCount;
 			constraint.FrictionAnchorRA = frictionAnchorRA;
 			constraint.FrictionAnchorRB = frictionAnchorRB;
+			for (var i = 0; i < manifold.PointCount; i++) {
+				var point = constraint.GetPoint(i);
+				point.LeverArm = FVector3.Distance(point.RA, frictionAnchorRA);
+				constraint.SetPoint(i, point);
+			}
+
+			var twistK = FVector3.Dot(worldNormal, (invIA + invIB) * worldNormal);
+			constraint.TwistMass = twistK > FP.Zero ? FP.One / twistK : FP.Zero;
 
 			var tangent1 = FVector3.Perp(worldNormal);
 			var tangent2 = FVector3.Cross(tangent1, worldNormal);
@@ -485,6 +555,7 @@ public abstract partial class Core<TWorld> where TWorld : struct, ISessionType, 
 				* FP.Max(shapeDataA.RollingRadius(), shapeDataB.RollingRadius());
 			constraint.RollingMass = FMatrix3.Invert(invIA + invIB);
 			constraint.RollingImpulse = enableWarmStarting && hasPersistedPoint ? contact.RollingImpulse : FVector3.Zero;
+			constraint.TwistImpulse = enableWarmStarting && hasPersistedPoint ? contact.TwistImpulse : FP.Zero;
 			constraint.Softness = bodyA.Type == BodyType.Static || bodyB.Type == BodyType.Static ? staticSoftness : contactSoftness;
 
 			return true;
@@ -558,8 +629,8 @@ public abstract partial class Core<TWorld> where TWorld : struct, ISessionType, 
 			}
 		}
 
-		private static void WarmStart(List<ContactConstraint> constraints) {
-			foreach (var c in constraints) {
+		private static void WarmStart(Span<ContactConstraint> constraints) {
+			foreach (ref readonly var c in constraints) {
 				for (var k = 0; k < c.PointCount; k++) {
 					var pt = c.GetPoint(k);
 					ApplyImpulse(c.BodyA, c.BodyB, pt.RA, pt.RB, pt.NormalImpulse * c.Normal);
@@ -568,19 +639,20 @@ public abstract partial class Core<TWorld> where TWorld : struct, ISessionType, 
 				var friction = c.FrictionImpulseX * c.Tangent1 + c.FrictionImpulseY * c.Tangent2;
 				ApplyImpulse(c.BodyA, c.BodyB, c.FrictionAnchorRA, c.FrictionAnchorRB, friction);
 
-				ApplyAngularImpulse(c.BodyA, c.BodyB, c.RollingImpulse);
+				ApplyAngularImpulse(c.BodyA, c.BodyB, c.RollingImpulse + c.TwistImpulse * c.Normal);
 			}
 		}
 
-		private static void Solve(List<ContactConstraint> constraints, FP h, FP invH, FP contactSpeed, bool useBias) {
-			for (var i = 0; i < constraints.Count; i++) {
-				var c = constraints[i];
+		private static void Solve(Span<ContactConstraint> constraints, FP h, FP invH, FP contactSpeed, bool useBias) {
+			for (var i = 0; i < constraints.Length; i++) {
+				ref var c = ref constraints[i];
 
 				ref var bodyA = ref c.BodyA.Ref<Body>()!; // TryPrepare only stores entities with Body.
 				ref var bodyB = ref c.BodyB.Ref<Body>()!;
 
 				var dp = bodyB.DeltaPosition - bodyA.DeltaPosition;
 				var totalNormalImpulse = FP.Zero;
+				var totalTwistLimit = FP.Zero;
 
 				for (var k = 0; k < c.PointCount; k++) {
 					var pt = c.GetPoint(k);
@@ -608,6 +680,7 @@ public abstract partial class Core<TWorld> where TWorld : struct, ISessionType, 
 					pt.NormalImpulse = newImpulse;
 					pt.TotalNormalImpulse += newImpulse;
 					totalNormalImpulse += pt.TotalNormalImpulse;
+					totalTwistLimit += pt.LeverArm * pt.NormalImpulse;
 
 					var p = deltaImpulse * c.Normal;
 					bodyA.LinearVelocity -= bodyA.InvMass * p;
@@ -621,6 +694,17 @@ public abstract partial class Core<TWorld> where TWorld : struct, ISessionType, 
 				// Friction only during the unbiased "relax" pass, matching box3d. Solved once per
 				// manifold through the friction anchor (RA/RB averaged across points), not per point.
 				if (!useBias) {
+					// Central twist friction, before rolling resistance and tangent friction (box3d order).
+					if (c.TwistMass > FP.Zero) {
+						var twistSpeed = FVector3.Dot(c.Normal, bodyB.AngularVelocity - bodyA.AngularVelocity);
+						var maxTwistImpulse = FP.Abs(c.Friction * totalTwistLimit);
+						var oldTwistImpulse = c.TwistImpulse;
+						c.TwistImpulse = FP.Clamp(oldTwistImpulse - c.TwistMass * twistSpeed, -maxTwistImpulse, maxTwistImpulse);
+						var twist = (c.TwistImpulse - oldTwistImpulse) * c.Normal;
+						bodyA.AngularVelocity -= bodyA.InvInertiaWorld * twist;
+						bodyB.AngularVelocity += bodyB.InvInertiaWorld * twist;
+					}
+
 					// Rolling resistance, right before friction (matches box3d's ordering). A
 					// Coulomb-limited torque driving the bodies' relative angular velocity toward
 					// zero -- see ContactConstraint.RollingResistance's remarks. Skipped entirely
@@ -679,14 +763,12 @@ public abstract partial class Core<TWorld> where TWorld : struct, ISessionType, 
 					bodyB.LinearVelocity += bodyB.InvMass * p2;
 					bodyB.AngularVelocity += bodyB.InvInertiaWorld * FVector3.Cross(c.FrictionAnchorRB, p2);
 				}
-
-				constraints[i] = c;
 			}
 		}
 
-		private static void ApplyRestitution(List<ContactConstraint> constraints, FP restitutionThreshold) {
-			for (var i = 0; i < constraints.Count; i++) {
-				var c = constraints[i];
+		private static void ApplyRestitution(Span<ContactConstraint> constraints, FP restitutionThreshold) {
+			for (var i = 0; i < constraints.Length; i++) {
+				ref var c = ref constraints[i];
 
 				if (c.Restitution == FP.Zero) {
 					continue;
@@ -720,12 +802,10 @@ public abstract partial class Core<TWorld> where TWorld : struct, ISessionType, 
 
 					c.SetPoint(k, pt);
 				}
-
-				constraints[i] = c;
 			}
 		}
 
-		private static void FinalizeBodies(List<W.Entity> bodies) {
+		private static void FinalizeBodies(PhysicsRuntime runtime, List<W.Entity> bodies, bool worldEnablesSleep, FP dt, FP invDt) {
 			List<W.Entity>? escaped = null;
 			foreach (var entity in bodies) {
 				// Mut, not Ref: this is the one place Transform actually changes, and
@@ -741,6 +821,7 @@ public abstract partial class Core<TWorld> where TWorld : struct, ISessionType, 
 					escaped.Add(entity);
 				}
 
+				PhysicsSleep.UpdateSleepTime(ref body, worldEnablesSleep, dt, invDt);
 				body.DeltaPosition = FVector3.Zero;
 				body.DeltaRotation = FQuaternion.Identity;
 				body.Force = FVector3.Zero;
@@ -750,6 +831,8 @@ public abstract partial class Core<TWorld> where TWorld : struct, ISessionType, 
 				var rotationMatrix = FMatrix3.FromQuaternion(body.Transform.Rotation);
 				body.InvInertiaWorld = rotationMatrix * body.InvInertiaLocal * FMatrix3.Transpose(rotationMatrix);
 			}
+
+			PhysicsSleep.UpdateIslands(runtime, bodies);
 
 			// Escaping bodies leave the simulation instead of throwing mid-step: EscapeMargin keeps all of
 			// their geometry inside the Q16.16 envelope, and disabling drops their proxies and contacts
@@ -762,8 +845,8 @@ public abstract partial class Core<TWorld> where TWorld : struct, ISessionType, 
 			}
 		}
 
-		private static void StoreImpulses(List<ContactConstraint> constraints, FP hitEventThreshold) {
-			foreach (var c in constraints) {
+		private static void StoreImpulses(Span<ContactConstraint> constraints, FP hitEventThreshold) {
+			foreach (ref readonly var c in constraints) {
 				ref var contact = ref c.ContactEntity.Ref<Contact>()!; // TryPrepare only stores entities with Contact.
 				for (var k = 0; k < c.PointCount; k++) {
 					var manifoldPoint = contact.Manifold.GetPoint(k);
@@ -773,6 +856,7 @@ public abstract partial class Core<TWorld> where TWorld : struct, ISessionType, 
 
 				contact.FrictionImpulse = c.FrictionImpulseX * c.Tangent1 + c.FrictionImpulseY * c.Tangent2;
 				contact.RollingImpulse = c.RollingImpulse;
+				contact.TwistImpulse = c.TwistImpulse;
 
 				if (!c.EnableHitEvents) {
 					continue;

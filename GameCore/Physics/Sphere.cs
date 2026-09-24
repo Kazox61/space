@@ -37,7 +37,7 @@ public struct Sphere {
 	/// <summary>Overlap test between this sphere and a generic shape proxy.</summary>
 	public static bool Overlap(Sphere shape, FTransform shapeTransform, ShapeProxy proxy) {
 		var input = new DistanceInput {
-			ProxyA = new ShapeProxy { Points = new[] { shape.Center }, Radius = shape.Radius },
+			ProxyA = ShapeProxy.MakePoint(shape.Center, shape.Radius),
 			ProxyB = proxy,
 			Transform = FTransform.Invert(shapeTransform),
 			UseRadii = true,
@@ -51,7 +51,7 @@ public struct Sphere {
 	/// <summary>Shape cast versus a sphere. Initial overlap is treated as a hit; see <see cref="Distance.ShapeCast"/>.</summary>
 	public static CastOutput ShapeCast(Sphere shape, ShapeCastInput input) {
 		var pairInput = new ShapeCastPairInput {
-			ProxyA = new ShapeProxy { Points = new[] { shape.Center }, Radius = shape.Radius },
+			ProxyA = ShapeProxy.MakePoint(shape.Center, shape.Radius),
 			ProxyB = input.Proxy,
 			Transform = FTransform.Identity,
 			TranslationB = input.Translation,
