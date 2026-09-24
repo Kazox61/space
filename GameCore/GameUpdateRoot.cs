@@ -8,6 +8,7 @@ public abstract partial class Core<TWorld> where TWorld : struct, ISessionType, 
 	public class GameUpdateRoot : IUpdateRoot {
 		public void Update(int tick) {
 			Systems.Update();
+			RollbackObserver?.OnTickSimulated(tick);
 		}
 	}
 }

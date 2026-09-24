@@ -1,4 +1,5 @@
 using System;
+using System.Collections.Generic;
 using FFS.Libraries.StaticEcs;
 using Fixed;
 using Fixed32;
@@ -121,5 +122,91 @@ public static partial class Program {
 			}
 			throw new InvalidOperationException("The test ball is missing.");
 		}
+	}
+
+	/// <summary>
+	/// A late remote input moves the remote player on the corrected timeline; the probe reports that
+	/// move for the remote player only, as "old minus corrected" position.
+	/// </summary>
+	private static void CorrectionProbeMeasuresMispredictionTest() {
+		Console.WriteLine("--- CorrectionProbeMeasuresMispredictionTest ---");
+		StartFxSession(SimulationType.AutomaticRollbacks);
+		var probe = new PlayerCorrectionProbe();
+		RollbackObserver = probe;
+		var corrections = new List<PositionCorrection>();
+
+		Advance(30);
+		probe.BeginUpdate();
+		Advance(1);
+		Check("an update without a misprediction reports no corrections", probe.EndUpdate(corrections) && corrections.Count == 0);
+
+		// The remote player started walking right ten ticks ago; we predicted them standing still.
+		S.SetApprovedInputAt(21, RemoteChannel, new PlayerInput { MoveX = Fixed64.FP.One });
+		probe.BeginUpdate();
+		Advance(1);
+		probe.EndUpdate(corrections);
+
+		Check("only the mispredicted player is corrected", corrections.Count == 1 && corrections[0].Channel == RemoteChannel);
+		if (corrections.Count == 1) {
+			var error = corrections[0].Error;
+			Console.WriteLine($"correction error: {Fixed64.FConversions.ToFloat(error.X)}, {Fixed64.FConversions.ToFloat(error.Y)}, {Fixed64.FConversions.ToFloat(error.Z)}");
+			// About ten ticks of walking at MoveSpeed, pointing back to where the player was drawn.
+			Check("the error points from the corrected position back to the old one", error.X < Fixed64.FP.Zero);
+			Check("the error is about ten ticks of walking", Fixed64.FConversions.ToFloat(error.X) is < -1f and > -1.5f);
+			Check("a walk is not a teleport", !corrections[0].Teleported);
+		}
+
+		RollbackObserver = null;
+	}
+
+	/// <summary>A full sync makes the probe report "drop everything" instead of an error across timelines.</summary>
+	private static void CorrectionProbeFullSyncTest() {
+		Console.WriteLine("--- CorrectionProbeFullSyncTest ---");
+		StartFxSession(SimulationType.ForwardOnly);
+		var probe = new PlayerCorrectionProbe();
+		RollbackObserver = probe;
+		var corrections = new List<PositionCorrection>();
+
+		Advance(5);
+		probe.BeginUpdate();
+		var buffer = FFS.Libraries.StaticPack.BinaryPackWriter.Create(new byte[GameWorldRollback.WorldSnapshotLength]);
+		var handler = new GameWorldFullSyncHandler();
+		handler.WriteFullSync(ref buffer);
+		var reader = buffer.AsReader();
+		handler.ReadFullSync(ref reader);
+		Advance(1);
+
+		Check("a full sync during the update is reported", !probe.EndUpdate(corrections) && corrections.Count == 0);
+		RollbackObserver = null;
+	}
+
+	/// <summary>Offsets accumulate, fade to zero, and are cut on a teleport or when too long.</summary>
+	private static void CorrectionSmootherTest() {
+		Console.WriteLine("--- CorrectionSmootherTest ---");
+		var smoother = new CorrectionSmoother();
+		var corrections = new List<PositionCorrection> {
+			new() { Channel = RemoteChannel, Error = new Fixed64.FVector3(-Fixed64.FP.One, Fixed64.FP.Zero, Fixed64.FP.Zero) },
+		};
+
+		smoother.Apply(corrections);
+		Check("a correction starts as the full offset", MathF.Abs(smoother.Offset(RemoteChannel).X + 1f) < 1e-4f);
+		Check("other players have no offset", smoother.Offset(LocalChannel) == System.Numerics.Vector3.Zero);
+
+		smoother.Advance(CorrectionSmoother.HalfLifeSeconds);
+		Check("the offset halves every half-life", MathF.Abs(smoother.Offset(RemoteChannel).X + 0.5f) < 1e-3f);
+
+		smoother.Apply(corrections);
+		Check("a second correction adds to the remaining offset", MathF.Abs(smoother.Offset(RemoteChannel).X + 1.5f) < 1e-3f);
+
+		smoother.Apply(corrections);
+		Check("an offset longer than the cut distance is dropped", smoother.Offset(RemoteChannel) == System.Numerics.Vector3.Zero);
+
+		smoother.Apply(corrections);
+		smoother.Apply(new List<PositionCorrection> { new() { Channel = RemoteChannel, Teleported = true } });
+		Check("a teleport drops the offset", smoother.Offset(RemoteChannel) == System.Numerics.Vector3.Zero);
+
+		smoother.Apply(corrections);
+		smoother.Advance(1f);
+		Check("offsets fade out completely", smoother.ActiveCount == 0);
 	}
 }

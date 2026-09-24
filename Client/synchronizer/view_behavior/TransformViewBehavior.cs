@@ -38,6 +38,8 @@ public partial class TransformViewBehavior : EntityBehavior {
 	/// the entity's pose in the previous-tick world (<see cref="WP"/>) toward the current one by
 	/// <see cref="RenderInterpolation.Alpha"/>. Falls back to the current pose when the entity did
 	/// not exist a tick ago, or teleported in between (<see cref="Transform.TeleportTick"/> differs).
+	/// Players also get their fading rollback-correction offset (<see cref="ClientSetup.Corrections"/>),
+	/// so a correction glides instead of popping.
 	/// </summary>
 	public static bool TrySamplePose(EntityGID entityGid, bool interpolate, out Transform3D pose) {
 		pose = default;
@@ -55,6 +57,11 @@ public partial class TransformViewBehavior : EntityBehavior {
 			if (previous.TeleportTick == current.TeleportTick) {
 				pose = ToGodot(previous).InterpolateWith(pose, RenderInterpolation.Alpha);
 			}
+		}
+
+		if (ClientSetup.Corrections is { ActiveCount: > 0 } corrections && entity.Has<PlayerInfo>()) {
+			var offset = corrections.Offset(entity.Read<PlayerInfo>().InputChannel);
+			pose.Origin += new Vector3(offset.X, offset.Y, offset.Z);
 		}
 
 		return true;

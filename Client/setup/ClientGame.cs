@@ -1,3 +1,4 @@
+using System.Collections.Generic;
 using Fixed64;
 using Godot;
 using Shenanicode.Rollback;
@@ -16,6 +17,7 @@ public partial class ClientGame : Node3D {
 	private bool _inputConsumed;
 	private EntityViewUpdater _viewUpdater;
 	private bool _pendingJump;
+	private readonly List<PositionCorrection> _corrections = [];
 
 	public override void _EnterTree() {
 		var (host, port, offline) = ParseLaunchArgs();
@@ -43,8 +45,15 @@ public partial class ClientGame : Node3D {
 	public override void _Process(double delta) {
 		OfflineServer.Update(delta);
 		_clientTime += (float)delta;
+		ClientSetup.CorrectionProbe.BeginUpdate();
 		CLNT.Update(_clientTime);
 		RenderInterpolation.Alpha = CLNT.CalculateInterpolation(_clientTime);
+		if (ClientSetup.CorrectionProbe.EndUpdate(_corrections)) {
+			ClientSetup.Corrections.Apply(_corrections);
+		} else {
+			ClientSetup.Corrections.Clear();
+		}
+		ClientSetup.Corrections.Advance((float)delta);
 		// After the update, so every tick it (re-)simulated has reported its effects and the head
 		// tick for the late check is known.
 		ClientSetup.FxLog.LocalChannel = CLNT.Channel;
