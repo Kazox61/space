@@ -2713,6 +2713,7 @@ public static class Program {
 		GameSessionSetup.Register();
 		S.Initialize();
 		GameWorldSetup.CreateAndInitialize();
+		Systems.GetResource<CharacterRes>().AttackDelay = Space.GameCore.Const.DeltaTime * 3;
 
 		W.NewEntity(new Player { PlayerGuid = Guid.NewGuid(), InputChannel = 0 });
 		S.FastForwardToTick(2);
@@ -2730,7 +2731,11 @@ public static class Program {
 		Check("retrying the flick at the next tick applies", retry == SetResult.Applied);
 
 		S.FastForwardToTick(S.CurrentTick + 1);
-		Check("the retried flick spawns a projectile through ShootSystem", W.Query<All<IsProjectile>>().EntitiesCount() == 1);
+		Check("the retried flick does not spawn before its attack delay", W.Query<All<IsProjectile>>().EntitiesCount() == 0);
+		S.FastForwardToTick(S.CurrentTick + 1);
+		Check("the projectile remains queued until the final delay tick", W.Query<All<IsProjectile>>().EntitiesCount() == 0);
+		S.FastForwardToTick(S.CurrentTick + 1);
+		Check("the retried flick spawns after its attack delay", W.Query<All<IsProjectile>>().EntitiesCount() == 1);
 
 		GameWorldSetup.Destroy();
 		S.Destroy();

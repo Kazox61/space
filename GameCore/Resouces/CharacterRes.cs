@@ -11,6 +11,9 @@ public class CharacterRes : IResource {
 	/// <summary>Muzzle velocity for <c>Core&lt;TWorld&gt;.ShootSystem</c>'s spawned projectiles.</summary>
 	public FP ProjectileSpeed = 12.ToFP();
 
+	/// <summary>Seconds between attack input and projectile release, synchronized to the firing animation.</summary>
+	public FP AttackDelay = FP.FromRatio(19, 30);
+
 	/// <summary>
 	/// Seconds a projectile lives before <c>Core&lt;TWorld&gt;.ProjectileDespawnSystem</c> despawns it,
 	/// misses included -- without this they accumulate forever (each carrying a physics body, shape,

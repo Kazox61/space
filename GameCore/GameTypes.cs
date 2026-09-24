@@ -31,6 +31,7 @@ public static class GameTypes {
 			.Component<Mover>()
 			.Component<PatrolRail>()
 			.Component<PendingRespawn>()
+			.Component<PendingShot>()
 			.Component<PlayerInfo>()
 			.Component<RailSlot>()
 			.Component<Shape>()
@@ -61,7 +62,7 @@ public static class GameTypes {
 
 	// Mirrors the list above; only consulted by the debug-time coverage check.
 	private static readonly HashSet<Type> s_registered = [
-		typeof(Body), typeof(Contact), typeof(Health), typeof(Lifetime), typeof(Mover), typeof(PatrolRail), typeof(PendingRespawn),
+		typeof(Body), typeof(Contact), typeof(Health), typeof(Lifetime), typeof(Mover), typeof(PatrolRail), typeof(PendingRespawn), typeof(PendingShot),
 		typeof(PlayerInfo), typeof(RailSlot), typeof(Shape), typeof(Transform), typeof(ViewId),
 		typeof(IsProjectile),
 		typeof(Shapes), typeof(BodyOwner), typeof(ShapeA), typeof(ShapeB), typeof(Shooter),
