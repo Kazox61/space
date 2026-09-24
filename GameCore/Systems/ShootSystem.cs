@@ -52,7 +52,8 @@ public abstract partial class Core<TWorld> where TWorld : struct, ISessionType, 
 
 				// Spawn a bit ahead of the player's own center so the muzzle isn't buried in their capsule.
 				var spawnPosition = transform.Position + direction * Fixed64.FP.FromRatio(3, 4);
-				var worldTransform = new FWorldTransform(new FPos(spawnPosition.X, spawnPosition.Y, spawnPosition.Z), FQuaternion.Identity);
+				var rotation = Fixed64.FQuaternion.LookRotation(direction, Fixed64.FVector3.Up);
+				var worldTransform = new FWorldTransform(new FPos(spawnPosition.X, spawnPosition.Y, spawnPosition.Z), rotation.To32());
 
 				var projectileTransform = new Transform();
 				projectileTransform.SetFromWorldTransform(worldTransform);

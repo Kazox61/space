@@ -1,0 +1,73 @@
+[gd_scene format=3 uid="uid://xgimm50snub8"]
+
+[ext_resource type="Texture2D" uid="uid://b38g5s7eeix0i" path="res://assets/arrow/vfx/huntress_ball.png" id="1_ufv75"]
+[ext_resource type="Shader" uid="uid://dfqmkv08ejchu" path="res://addons/GPUTrail/shaders/trail.gdshader" id="2_khyq7"]
+[ext_resource type="Shader" uid="uid://10bbqfdqk1wl" path="res://addons/GPUTrail/shaders/trail_draw_pass.gdshader" id="3_nd4mj"]
+[ext_resource type="Texture2D" uid="uid://dnfpvhqebexfw" path="res://addons/GPUTrail/defaults/texture.tres" id="4_1y88f"]
+[ext_resource type="Script" uid="uid://bergawdplwcbu" path="res://addons/GPUTrail/GPUTrail3D.gd" id="6_coybv"]
+[ext_resource type="Texture2D" uid="uid://dvonl38r2tnvm" path="res://assets/arrow/vfx/huntress_trail.png" id="7_pm4n6"]
+
+[sub_resource type="StandardMaterial3D" id="StandardMaterial3D_75e6k"]
+render_priority = 1
+transparency = 1
+shading_mode = 0
+albedo_color = Color(1, 1, 1, 0.24313726)
+albedo_texture = ExtResource("1_ufv75")
+billboard_mode = 1
+billboard_keep_scale = true
+grow_amount = 1.616
+
+[sub_resource type="QuadMesh" id="QuadMesh_gtt3y"]
+size = Vector2(0.4, 0.4)
+
+[sub_resource type="ShaderMaterial" id="ShaderMaterial_8lkrh"]
+shader = ExtResource("2_khyq7")
+
+[sub_resource type="Curve" id="Curve_pb84a"]
+_data = [Vector2(0, 0.25), 0.0, 0.0, 0, 0]
+point_count = 1
+
+[sub_resource type="CurveTexture" id="CurveTexture_gtt3y"]
+curve = SubResource("Curve_pb84a")
+
+[sub_resource type="ShaderMaterial" id="ShaderMaterial_lpma1"]
+resource_local_to_scene = true
+render_priority = 0
+shader = ExtResource("3_nd4mj")
+shader_parameter/tex = ExtResource("7_pm4n6")
+shader_parameter/mask_strength = 1.0
+shader_parameter/uv_offset = Vector2(0, 0)
+shader_parameter/color_ramp = ExtResource("4_1y88f")
+shader_parameter/curve = SubResource("CurveTexture_gtt3y")
+shader_parameter/emmission_transform = Projection(1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1)
+shader_parameter/flags = 45
+
+[sub_resource type="QuadMesh" id="QuadMesh_u7p27"]
+material = SubResource("ShaderMaterial_lpma1")
+
+[node name="HuntressEffect" type="Node3D" unique_id=1842947285]
+transform = Transform3D(1.3, 0, 0, 0, 1.3, 0, 0, 0, 1.3, 0, 0, 0)
+
+[node name="HuntressMagic" type="MeshInstance3D" parent="." unique_id=815577259]
+transform = Transform3D(1.4990623, -0.0530295, 0, 0.0530295, 1.4990623, 0, 0, 0, 1.5, 0, 0, 0)
+material_override = SubResource("StandardMaterial3D_75e6k")
+mesh = SubResource("QuadMesh_gtt3y")
+skeleton = NodePath("../..")
+
+[node name="GPUTrail3D" type="GPUParticles3D" parent="." unique_id=1713494033]
+transform = Transform3D(1.2, 0, 0, 0, 1.2, 0, 0, 0, 1.2, 0, 0, 0.021252701)
+amount = 40
+lifetime = 40.0
+explosiveness = 1.0
+fixed_fps = 144
+process_material = SubResource("ShaderMaterial_8lkrh")
+draw_pass_1 = SubResource("QuadMesh_u7p27")
+script = ExtResource("6_coybv")
+length = 40
+length_seconds = 0.2777777777777778
+texture = ExtResource("7_pm4n6")
+color_ramp = ExtResource("4_1y88f")
+curve = SubResource("CurveTexture_gtt3y")
+vertical_texture = true
+billboard = true
+_defaults_have_been_set = true

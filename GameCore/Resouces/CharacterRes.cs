@@ -12,7 +12,7 @@ public class CharacterRes : IResource {
 	public FP ProjectileSpeed = 12.ToFP();
 
 	/// <summary>Seconds between attack input and projectile release, synchronized to the firing animation.</summary>
-	public FP AttackDelay = FP.FromRatio(19, 30);
+	public FP AttackDelay = FP.FromRatio(14, 30);
 
 	/// <summary>
 	/// Seconds a projectile lives before <c>Core&lt;TWorld&gt;.ProjectileDespawnSystem</c> despawns it,
