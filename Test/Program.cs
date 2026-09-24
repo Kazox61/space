@@ -19,7 +19,7 @@ public struct TestWorldPrev : IWorldType { }
 
 public abstract class WPrev : World<TestWorldPrev> { }
 
-public static class Program {
+public static partial class Program {
 	private static int _failures;
 	private const int TickRate = 60;
 
@@ -30,8 +30,15 @@ public static class Program {
 		}
 
 		if (args.Length > 0 && args[0] == "bench") {
-			BenchResimulationCost();
-			BenchInterpolationSnapshotCost();
+			var enforce = Array.IndexOf(args, "--enforce") >= 0;
+			if (!enforce) {
+				BenchResimulationCost();
+				BenchInterpolationSnapshotCost();
+			}
+			if (!BenchPhysicsBudgets() && enforce) {
+				Console.WriteLine("PHYSICS BUDGET EXCEEDED");
+				Environment.Exit(1);
+			}
 			return;
 		}
 
@@ -88,6 +95,7 @@ public static class Program {
 		EscapingBodyIsDisabledTest();
 		PhysicsConfigurationRollbackTest();
 		CrossWorldFullSyncTest();
+		RunPhase6Tests();
 
 		if (_failures == 0) {
 			Console.WriteLine("ALL CHECKS PASSED");
@@ -1693,7 +1701,7 @@ public static class Program {
 		W.Tick();
 		Systems.Update();
 		var broadPhase = W.GetResource<BroadPhase>();
-		var sphereProxy = new ShapeProxy { Points = new[] { FVector3.Zero }, Radius = FP.Half };
+		var sphereProxy = new ShapeProxy(new[] { FVector3.Zero }, FP.Half);
 		var queryXf = new FWorldTransform(FPos.Zero, FQuaternion.Identity);
 		Check("world shape cast hits a thin box", PhysicsQueries.CastShapeClosest(broadPhase, queryXf, sphereProxy, new FVector3(8.ToFP(), FP.Zero, FP.Zero), Filter.Default, QuerySensorMode.Exclude, out var castHit)
 			&& castHit.Shape == solidShapeGid && castHit.Fraction > FP.Zero && castHit.Fraction < FP.One);
@@ -1786,7 +1794,7 @@ public static class Program {
 		Check("negative ray callback values ignore without clipping", ignoredCount == 3);
 
 		var shapeCastOrder = new List<EntityGID>();
-		var proxy = new ShapeProxy { Points = new[] { FVector3.Zero }, Radius = FP.FromRatio(1, 10) };
+		var proxy = new ShapeProxy(new[] { FVector3.Zero }, FP.FromRatio(1, 10));
 		PhysicsQueries.CastShape(broadPhase, FWorldTransform.Identity, proxy, translation, Filter.Default, QuerySensorMode.Exclude,
 			(EntityGID gid, in FPos _, in FVector3 _, FP _) => { shapeCastOrder.Add(gid); return FP.One; });
 		Check("shape-cast callbacks use stable shape GID order", shapeCastOrder.Count == 3 && shapeCastOrder[0] == farShape.GID && shapeCastOrder[1] == nearShape.GID);
@@ -1806,7 +1814,7 @@ public static class Program {
 		var overlapTerminatedCount = 0;
 		PhysicsQueries.OverlapShape(broadPhase,
 			new FWorldTransform(new FPos(Fixed64.FP.FromRatio(5, 1), Fixed64.FP.Zero, Fixed64.FP.Zero), FQuaternion.Identity),
-			new ShapeProxy { Points = new[] { FVector3.Zero }, Radius = 5.ToFP() }, Filter.Default, QuerySensorMode.Exclude,
+			new ShapeProxy(new[] { FVector3.Zero }, 5.ToFP()), Filter.Default, QuerySensorMode.Exclude,
 			_ => { overlapTerminatedCount++; return false; });
 		Check("overlap callback false terminates traversal", overlapTerminatedCount == 1);
 		Shutdown();
@@ -1816,8 +1824,8 @@ public static class Program {
 		Console.WriteLine("--- RotatingTimeOfImpactTest ---");
 		var endRotation = FQuaternion.AxisAngleRadians(FVector3.Forward, FP.Pi);
 		var midpoint = FQuaternion.Nlerp(FQuaternion.Identity, endRotation, FP.Half) * new FVector3(3.ToFP(), FP.Zero, FP.Zero);
-		var obstacle = new ShapeProxy { Points = new[] { FVector3.Zero }, Radius = FP.FromRatio(1, 5) };
-		var rotatingCapsule = new ShapeProxy { Points = new[] { FVector3.Zero, new FVector3(3.ToFP(), FP.Zero, FP.Zero) }, Radius = FP.FromRatio(1, 10) };
+		var obstacle = new ShapeProxy(new[] { FVector3.Zero }, FP.FromRatio(1, 5));
+		var rotatingCapsule = new ShapeProxy(new[] { FVector3.Zero, new FVector3(3.ToFP(), FP.Zero, FP.Zero) }, FP.FromRatio(1, 10));
 		var output = Distance.TimeOfImpact(new TimeOfImpactInput {
 			ProxyA = obstacle,
 			ProxyB = rotatingCapsule,
@@ -1834,7 +1842,7 @@ public static class Program {
 		var incorrectMidpoint = FP.Half * endOrigin + FQuaternion.Nlerp(FQuaternion.Identity, endRotation, FP.Half) * localCenter;
 		var centeredOutput = Distance.TimeOfImpact(new TimeOfImpactInput {
 			ProxyA = obstacle,
-			ProxyB = new ShapeProxy { Points = new[] { localCenter }, Radius = FP.FromRatio(1, 10) },
+			ProxyB = new ShapeProxy(new[] { localCenter }, FP.FromRatio(1, 10)),
 			TransformAStart = new FWorldTransform(FPos.FromLocal(incorrectMidpoint), FQuaternion.Identity),
 			TransformAEnd = new FWorldTransform(FPos.FromLocal(incorrectMidpoint), FQuaternion.Identity),
 			TransformBStart = FWorldTransform.Identity,

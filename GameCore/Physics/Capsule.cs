@@ -76,7 +76,7 @@ public struct Capsule {
 	/// <summary>Overlap test between this capsule and a generic shape proxy.</summary>
 	public static bool Overlap(Capsule shape, FTransform shapeTransform, ShapeProxy proxy) {
 		var input = new DistanceInput {
-			ProxyA = new ShapeProxy { Points = new[] { shape.Center1, shape.Center2 }, Radius = shape.Radius },
+			ProxyA = ShapeProxy.MakeSegment(shape.Center1, shape.Center2, shape.Radius),
 			ProxyB = proxy,
 			Transform = FTransform.Invert(shapeTransform),
 			UseRadii = true,
@@ -90,7 +90,7 @@ public struct Capsule {
 	/// <summary>Shape cast versus a capsule. Initial overlap is treated as a hit; see <see cref="Distance.ShapeCast"/>.</summary>
 	public static CastOutput ShapeCast(Capsule shape, ShapeCastInput input) {
 		var pairInput = new ShapeCastPairInput {
-			ProxyA = new ShapeProxy { Points = new[] { shape.Center1, shape.Center2 }, Radius = shape.Radius },
+			ProxyA = ShapeProxy.MakeSegment(shape.Center1, shape.Center2, shape.Radius),
 			ProxyB = input.Proxy,
 			Transform = FTransform.Identity,
 			TranslationB = input.Translation,

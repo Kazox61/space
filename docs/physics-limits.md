@@ -30,7 +30,9 @@ headroom.
 World ray-cast origins (`PhysicsQueries.CastRay`) also narrow the absolute
 origin to Fixed32 for tree traversal, so the envelope applies to queries too.
 Query translations (rays, shape casts, mover casts) are limited to a magnitude
-of 100 so their squared length stays inside Q16.16.
+of 100 so their squared length stays inside Q16.16. Query proxies hold at most
+`B3Config.MaxShapeCastPoints` (8) points, stored inline so queries never
+allocate.
 
 ### Runtime escape
 

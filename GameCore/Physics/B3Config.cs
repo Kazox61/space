@@ -52,9 +52,12 @@ public static class B3Config {
 	public const int MaxManifoldPoints = 4;
 
 	/// <summary>
-	/// The maximum number of points to use for shape cast proxies (swept point cloud).
+	/// The maximum number of points to use for shape cast proxies (swept point cloud). Box3D uses its
+	/// hull vertex limit (64); GameCore hulls are boxes (8 corners), and proxies store their points
+	/// inline, so the limit matches the largest supported shape instead. Raise it together with
+	/// general convex hull support.
 	/// </summary>
-	public const int MaxShapeCastPoints = 64;
+	public const int MaxShapeCastPoints = 8;
 
 	/// <summary>
 	/// These generous limits allow for easy hashing. See the shape pair key used by the broad phase.

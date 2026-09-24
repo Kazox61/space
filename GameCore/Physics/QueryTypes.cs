@@ -1,3 +1,5 @@
+using System;
+using System.Runtime.CompilerServices;
 using Fixed;
 using Fixed32;
 
@@ -9,15 +11,51 @@ public enum QuerySensorMode : byte {
 	Include,
 }
 
+/// <summary>Inline point storage for <see cref="ShapeProxy"/>; only the first <see cref="ShapeProxy.Count"/> entries are valid.</summary>
+[InlineArray(B3Config.MaxShapeCastPoints)]
+public struct ShapeProxyPoints {
+	private FVector3 _element0;
+}
+
 /// <summary>
 /// A shape proxy used by the GJK algorithm. Can represent a convex shape as a point cloud with a radius.
+/// Box3D's b3ShapeProxy points into shape-owned memory; this port stores the points inline instead so
+/// building a proxy never allocates, which keeps queries and rollback resimulation free of GC pressure.
 /// </summary>
 public struct ShapeProxy {
-	/// <summary>The point cloud. Do not exceed <see cref="B3Config.MaxShapeCastPoints"/> points.</summary>
-	public FVector3[]? Points;
+	/// <summary>The point cloud. Only the first <see cref="Count"/> points are valid.</summary>
+	public ShapeProxyPoints Points;
+
+	/// <summary>The number of valid points, 1 to <see cref="B3Config.MaxShapeCastPoints"/>.</summary>
+	public int Count;
 
 	/// <summary>The external radius of the point cloud.</summary>
 	public FP Radius;
+
+	public ShapeProxy(ReadOnlySpan<FVector3> points, FP radius) {
+		if (points.Length > B3Config.MaxShapeCastPoints) {
+			throw new ArgumentException($"A shape proxy supports at most {B3Config.MaxShapeCastPoints} points.", nameof(points));
+		}
+		Points = default;
+		for (var i = 0; i < points.Length; i++) {
+			Points[i] = points[i];
+		}
+		Count = points.Length;
+		Radius = radius;
+	}
+
+	public static ShapeProxy MakePoint(FVector3 point, FP radius) {
+		var proxy = new ShapeProxy { Count = 1, Radius = radius };
+		proxy.Points[0] = point;
+		return proxy;
+	}
+
+	public static ShapeProxy MakeSegment(FVector3 point1, FVector3 point2, FP radius) {
+		var proxy = new ShapeProxy { Count = 2, Radius = radius };
+		proxy.Points[0] = point1;
+		proxy.Points[1] = point2;
+		return proxy;
+	}
 }
 
 /// <summary>Outcome of a continuous, rotating convex time-of-impact query.</summary>
@@ -167,12 +205,18 @@ public struct SimplexCache {
 	public ushort Count;
 
 	/// <summary>The cached simplex indices on shape A.</summary>
-	public byte[] IndexA;
+	public SimplexIndices IndexA;
 
 	/// <summary>The cached simplex indices on shape B.</summary>
-	public byte[] IndexB;
+	public SimplexIndices IndexB;
 
-	public static SimplexCache Empty => new() { IndexA = new byte[4], IndexB = new byte[4] };
+	public static SimplexCache Empty => default;
+}
+
+/// <summary>Inline storage for the four cached simplex vertex indices of one shape.</summary>
+[InlineArray(4)]
+public struct SimplexIndices {
+	private byte _element0;
 }
 
 /// <summary>

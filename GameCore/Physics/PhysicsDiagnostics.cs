@@ -1,4 +1,6 @@
+using System;
 using FFS.Libraries.StaticEcs;
+using Fixed32;
 using Shenanicode.Rollback;
 
 namespace Space.GameCore;
@@ -28,6 +30,57 @@ public abstract partial class Core<TWorld> where TWorld : struct, ISessionType, 
 				broadPhase.CachedPairCount,
 				broadPhase.MovedProxyCount
 			);
+		}
+
+		/// <summary>Counters and per-phase timings of the most recently completed physics step.</summary>
+		public static PhysicsStepStats LastStep => PhysicsRuntime.Get().Stats;
+
+		/// <summary>Structural health of the static, kinematic, and dynamic broad-phase trees.</summary>
+		public static (BroadPhaseTreeStats Static, BroadPhaseTreeStats Kinematic, BroadPhaseTreeStats Dynamic) CaptureBroadPhase() {
+			var broadPhase = W.GetResource<BroadPhase>();
+			return (broadPhase.GetTreeStats(BodyType.Static), broadPhase.GetTreeStats(BodyType.Kinematic), broadPhase.GetTreeStats(BodyType.Dynamic));
+		}
+
+		/// <summary>
+		/// Throws when physics state is stale or inconsistent: everything
+		/// <see cref="BroadPhase.Validate"/> checks (proxy ownership, proxy AABBs, pairs, contacts),
+		/// plus proxies that no longer bound a static or sleeping shape, and sleeping bodies carrying
+		/// velocity, forces, or solver deltas -- the signature of state written directly instead of
+		/// through <see cref="BodyOperations"/>, which would never be simulated.
+		/// </summary>
+		public static void Validate() {
+			W.GetResource<BroadPhase>().Validate();
+
+			foreach (var bodyEntity in W.Query<All<Body>>().Entities()) {
+				ref readonly var body = ref bodyEntity.Read<Body>();
+				if (!PhysicsSleep.IsSleeping(body)) {
+					continue;
+				}
+				if (body.LinearVelocity != FVector3.Zero || body.AngularVelocity != FVector3.Zero
+					|| body.Force != FVector3.Zero || body.Torque != FVector3.Zero
+					|| body.DeltaPosition != FVector3.Zero || body.DeltaRotation != FQuaternion.Identity) {
+					throw new InvalidOperationException($"Sleeping body {bodyEntity.GID.Raw} carries motion; wake it through BodyOperations before changing its state.");
+				}
+			}
+
+			foreach (var shapeEntity in W.Query<All<Shape, W.Link<BodyOwner>>>().Entities()) {
+				ref readonly var shape = ref shapeEntity.Read<Shape>();
+				if (shape.ProxyKey == Shape.NullProxyKey
+					|| !shapeEntity.Read<W.Link<BodyOwner>>().Value.TryUnpack<TWorld>(out var bodyEntity)
+					|| !bodyEntity.Has<Body>()) {
+					continue;
+				}
+				ref readonly var body = ref bodyEntity.Read<Body>();
+				// Awake shapes legitimately lag their body by one solver step; static and sleeping ones
+				// never move, so their proxy must still enclose their geometry.
+				if (PhysicsSleep.IsAwake(body)) {
+					continue;
+				}
+				var bounds = shape.ComputeFatAABB(body.Transform, B3Config.SpeculativeDistance);
+				if (!shape.FatAabb.Contains(bounds)) {
+					throw new InvalidOperationException($"Shape {shapeEntity.GID.Raw} has a stale broad-phase proxy that no longer encloses it.");
+				}
+			}
 		}
 	}
 }

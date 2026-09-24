@@ -1,4 +1,4 @@
-using System.Collections.Generic;
+using System;
 using FFS.Libraries.StaticEcs;
 using Fixed;
 using Fixed32;
@@ -15,23 +15,12 @@ public abstract partial class Core<TWorld> where TWorld : struct, ISessionType, 
 	/// exactly as box3d's docs describe ("exists outside the rigid body simulation").
 	///
 	/// Called up to 10x/tick (2 queries x up to 5 SolveMove iterations) and, during rollback
-	/// resimulation, potentially dozens of times in one frame, so unlike most of this codebase's
-	/// per-tick `List&lt;T&gt;`/array allocations, this file avoids allocating anything in its hot
-	/// path: candidate lists and shape-proxy point arrays are static, reused scratch buffers
-	/// (box3d's own b3ShapeProxy is just a pointer into shape-owned memory, never rebuilt per
-	/// query -- this is the closest C# equivalent without changing Shape's array-free,
-	/// rollback-serializable field layout).
+	/// resimulation, potentially dozens of times in one frame, so the hot path allocates nothing:
+	/// shape proxies store their points inline, and candidate lists are rented from the world's
+	/// <see cref="PhysicsRuntime"/> rather than held in static fields, so concurrent worlds and nested
+	/// queries never share scratch state.
 	/// </summary>
 	public static class CharacterMover {
-		private static readonly List<EntityGID> CastCandidates = new();
-		private static readonly List<EntityGID> CollideCandidates = new();
-
-		private static readonly FVector3[] MoverCapsuleProxyPoints = new FVector3[2];
-		private static readonly FVector3[] CandidateSphereProxyPoints = new FVector3[1];
-		private static readonly FVector3[] CandidateCapsuleProxyPoints = new FVector3[2];
-		private static readonly FVector3[] CandidateHullProxyPoints = new FVector3[8];
-		private static readonly FVector3[] GroundProbeProxyPoints = new FVector3[8];
-		private static readonly List<EntityGID> GroundProbeCandidates = new();
 
 		/// <summary>
 		/// Sweeps <paramref name="capsule"/> from <paramref name="moverXf"/> by
@@ -52,17 +41,16 @@ public abstract partial class Core<TWorld> where TWorld : struct, ISessionType, 
 			var localAabb = Capsule.ComputeSweptAABB(capsule, FTransform.Identity, new FTransform(translation, FQuaternion.Identity));
 			var queryAabb = FWorldTransform.OffsetAABB(localAabb, moverXf.Position);
 
-			MoverCapsuleProxyPoints[0] = capsule.Center1;
-			MoverCapsuleProxyPoints[1] = capsule.Center2;
-			var moverProxy = new ShapeProxy { Points = MoverCapsuleProxyPoints, Radius = capsule.Radius };
+			var moverProxy = ShapeProxy.MakeSegment(capsule.Center1, capsule.Center2, capsule.Radius);
 
-			CastCandidates.Clear();
-			broadPhase.Query(queryAabb, QueryMask(filter), CastCandidates);
-			CastCandidates.Sort(static (a, b) => a.Raw.CompareTo(b.Raw));
+			var runtime = PhysicsRuntime.Get();
+			var candidates = runtime.RentGidList();
+			broadPhase.Query(queryAabb, QueryMask(filter), candidates);
+			candidates.Sort(CompareGid);
 
 			var bestFraction = maxFraction;
-			for (var i = 0; i < CastCandidates.Count; i++) {
-				if (!CastCandidates[i].TryUnpack<TWorld>(out var shapeEntity) || !TryGetShapeAndTransform(shapeEntity, out var shape, out var candidateXf)) {
+			for (var i = 0; i < candidates.Count; i++) {
+				if (!candidates[i].TryUnpack<TWorld>(out var shapeEntity) || !TryGetShapeAndTransform(shapeEntity, out var shape, out var candidateXf)) {
 					continue;
 				}
 
@@ -71,7 +59,7 @@ public abstract partial class Core<TWorld> where TWorld : struct, ISessionType, 
 				}
 
 				var pairInput = new ShapeCastPairInput {
-					ProxyA = MakeCandidateProxy(shape),
+					ProxyA = shape.MakeProxy(),
 					ProxyB = moverProxy,
 					Transform = FWorldTransform.InvMul(candidateXf, moverXf),
 					TranslationB = FQuaternion.Inverse(candidateXf.Rotation) * translation,
@@ -85,6 +73,7 @@ public abstract partial class Core<TWorld> where TWorld : struct, ISessionType, 
 				}
 			}
 
+			runtime.Return(candidates);
 			return bestFraction;
 		}
 
@@ -109,12 +98,13 @@ public abstract partial class Core<TWorld> where TWorld : struct, ISessionType, 
 
 			var moverShape = Shape.MakeCapsule(capsule.Center1, capsule.Center2, capsule.Radius);
 
-			CollideCandidates.Clear();
-			broadPhase.Query(queryAabb, QueryMask(filter), CollideCandidates);
-			CollideCandidates.Sort(static (a, b) => a.Raw.CompareTo(b.Raw));
+			var runtime = PhysicsRuntime.Get();
+			var candidates = runtime.RentGidList();
+			broadPhase.Query(queryAabb, QueryMask(filter), candidates);
+			candidates.Sort(CompareGid);
 
-			for (var i = 0; i < CollideCandidates.Count; i++) {
-				var candidateGid = CollideCandidates[i];
+			for (var i = 0; i < candidates.Count; i++) {
+				var candidateGid = candidates[i];
 				if (!candidateGid.TryUnpack<TWorld>(out var shapeEntity) || !TryGetShapeAndTransform(shapeEntity, out var shape, out var candidateXf)) {
 					continue;
 				}
@@ -145,6 +135,8 @@ public abstract partial class Core<TWorld> where TWorld : struct, ISessionType, 
 					});
 				}
 			}
+
+			runtime.Return(candidates);
 		}
 
 		/// <summary>
@@ -167,7 +159,7 @@ public abstract partial class Core<TWorld> where TWorld : struct, ISessionType, 
 				}
 
 				ref var body = ref bodyEntity.Ref<Body>()!;
-				if (body.Type != BodyType.Dynamic) {
+				if (body.Type != BodyType.Dynamic || !BodyOperations.IsEnabled(body)) {
 					continue;
 				}
 
@@ -183,35 +175,13 @@ public abstract partial class Core<TWorld> where TWorld : struct, ISessionType, 
 				var vn = FVector3.Dot(vrB - moverVelocity, normal);
 				var impulse = FP.Max(-normalMass * vn, FP.Zero) * normal;
 
+				if (impulse == FVector3.Zero) {
+					continue;
+				}
+
 				body.LinearVelocity += body.InvMass * impulse;
 				body.AngularVelocity += body.InvInertiaWorld * FVector3.Cross(rB, impulse);
-			}
-		}
-
-		/// <summary>
-		/// Builds a <see cref="ShapeProxy"/> for a candidate shape into a reused static buffer sized
-		/// exactly for its type (1/2/8 points for sphere/capsule/hull), instead of
-		/// <see cref="Shape.MakeProxy"/>'s fresh-array-per-call. Kept local to this file rather than
-		/// added to <see cref="Shape"/> itself, since <c>MakeProxy</c> is a general-purpose API other
-		/// callers may reasonably expect to return an independent, non-aliased array.
-		/// </summary>
-		private static ShapeProxy MakeCandidateProxy(in Shape shape) {
-			switch (shape.Type) {
-				case ShapeType.Sphere:
-					CandidateSphereProxyPoints[0] = shape.SphereShape.Center;
-					return new ShapeProxy { Points = CandidateSphereProxyPoints, Radius = shape.SphereShape.Radius };
-
-				case ShapeType.Capsule:
-					CandidateCapsuleProxyPoints[0] = shape.CapsuleShape.Center1;
-					CandidateCapsuleProxyPoints[1] = shape.CapsuleShape.Center2;
-					return new ShapeProxy { Points = CandidateCapsuleProxyPoints, Radius = shape.CapsuleShape.Radius };
-
-				case ShapeType.Hull:
-					shape.HullShape.WriteCorners(CandidateHullProxyPoints);
-					return new ShapeProxy { Points = CandidateHullProxyPoints, Radius = FP.Zero };
-
-				default:
-					return new ShapeProxy { Points = System.Array.Empty<FVector3>(), Radius = FP.Zero };
+				PhysicsSleep.WakeBody(ref body);
 			}
 		}
 
@@ -233,14 +203,14 @@ public abstract partial class Core<TWorld> where TWorld : struct, ISessionType, 
 		/// mover's own capsule, and reporting hit/normal/deep-overlap instead of only a fraction.
 		/// </summary>
 		private static GroundTraceResult TraceBody(BroadPhase broadPhase, FPos origin, FVector3 translation, FP halfWidth, FP halfDepth, FP halfHeight, Filter filter) {
+			var proxy = new ShapeProxy { Count = 8, Radius = FP.Zero };
 			for (var i = 0; i < 8; i++) {
 				var sx = (i & 1) != 0 ? halfWidth : -halfWidth;
 				var sy = (i & 2) != 0 ? halfHeight : -halfHeight;
 				var sz = (i & 4) != 0 ? halfDepth : -halfDepth;
-				GroundProbeProxyPoints[i] = new FVector3(sx, sy, sz);
+				proxy.Points[i] = new FVector3(sx, sy, sz);
 			}
 
-			var proxy = new ShapeProxy { Points = GroundProbeProxyPoints, Radius = FP.Zero };
 			var probeXf = new FWorldTransform(origin, FQuaternion.Identity);
 
 			var treeOrigin = new FVector3(origin.X.To32(), origin.Y.To32(), origin.Z.To32());
@@ -249,15 +219,16 @@ public abstract partial class Core<TWorld> where TWorld : struct, ISessionType, 
 			var sweptMax = FVector3.MaxComponents(localExtent, localExtent + translation);
 			var queryAabb = new FAABB(treeOrigin + sweptMin, treeOrigin + sweptMax);
 
-			GroundProbeCandidates.Clear();
-			broadPhase.Query(queryAabb, QueryMask(filter), GroundProbeCandidates);
-			GroundProbeCandidates.Sort(static (a, b) => a.Raw.CompareTo(b.Raw));
+			var runtime = PhysicsRuntime.Get();
+			var candidates = runtime.RentGidList();
+			broadPhase.Query(queryAabb, QueryMask(filter), candidates);
+			candidates.Sort(CompareGid);
 
 			var result = new GroundTraceResult();
 			var bestFraction = FP.One;
 
-			for (var i = 0; i < GroundProbeCandidates.Count; i++) {
-				if (!GroundProbeCandidates[i].TryUnpack<TWorld>(out var shapeEntity) || !TryGetShapeAndTransform(shapeEntity, out var shape, out var candidateXf)) {
+			for (var i = 0; i < candidates.Count; i++) {
+				if (!candidates[i].TryUnpack<TWorld>(out var shapeEntity) || !TryGetShapeAndTransform(shapeEntity, out var shape, out var candidateXf)) {
 					continue;
 				}
 
@@ -266,7 +237,7 @@ public abstract partial class Core<TWorld> where TWorld : struct, ISessionType, 
 				}
 
 				var pairInput = new ShapeCastPairInput {
-					ProxyA = MakeCandidateProxy(shape),
+					ProxyA = shape.MakeProxy(),
 					ProxyB = proxy,
 					Transform = FWorldTransform.InvMul(candidateXf, probeXf),
 					TranslationB = FQuaternion.Inverse(candidateXf.Rotation) * translation,
@@ -295,6 +266,7 @@ public abstract partial class Core<TWorld> where TWorld : struct, ISessionType, 
 				}
 			}
 
+			runtime.Return(candidates);
 			return result;
 		}
 
@@ -394,6 +366,8 @@ public abstract partial class Core<TWorld> where TWorld : struct, ISessionType, 
 			transform = bodyEntity.Read<Body>()!.Transform; // BodyOwner always links to an entity with Body.
 			return true;
 		}
+
+		private static readonly Comparison<EntityGID> CompareGid = static (a, b) => a.Raw.CompareTo(b.Raw);
 
 		private static ulong QueryMask(Filter filter) => filter.GroupIndex > 0 ? ulong.MaxValue : filter.MaskBits;
 	}

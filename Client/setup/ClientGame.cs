@@ -29,6 +29,8 @@ public partial class ClientGame : Node3D {
 		_viewUpdater = new EntityViewUpdater();
 		AddChild(_viewUpdater);
 		_viewUpdater.Initialize(_viewCatalog);
+
+		AddChild(new PhysicsDebugView());
 	}
 
 	public override void _ExitTree() {

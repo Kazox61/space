@@ -1,3 +1,4 @@
+using System;
 using Fixed32;
 
 namespace Space.GameCore;
@@ -97,7 +98,7 @@ public struct Hull {
 	}
 
 	/// <summary>Non-allocating variant of <see cref="GetCorners"/> for hot paths that reuse a scratch buffer (<paramref name="dest"/> must have length &gt;= 8).</summary>
-	public void WriteCorners(FVector3[] dest) {
+	public void WriteCorners(Span<FVector3> dest) {
 		for (var i = 0; i < 8; i++) {
 			dest[i] = Center + Rotation * LocalCorner(HalfExtents, i);
 		}

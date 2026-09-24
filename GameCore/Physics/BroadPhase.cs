@@ -9,6 +9,27 @@ using Shenanicode.Rollback;
 
 namespace Space.GameCore;
 
+/// <summary>Structural statistics for one broad-phase dynamic tree (see <c>BroadPhase.GetTreeStats</c>).</summary>
+public struct BroadPhaseTreeStats {
+	public BodyType Type;
+	public int Proxies;
+	public int Nodes;
+	public int Height;
+	public double AreaRatio;
+
+	/// <summary>Height of a perfectly balanced tree over <see cref="Proxies"/> leaves.</summary>
+	public readonly int BalancedHeight => Proxies <= 1 ? 0 : (int)Math.Ceiling(Math.Log2(Proxies));
+
+	/// <summary>
+	/// True when the tree is more than twice as deep as a balanced one (plus slack for tiny trees).
+	/// The rotating insertion keeps real trees well under this; exceeding it means queries degrade.
+	/// </summary>
+	public readonly bool IsDegraded => Height > 2 * BalancedHeight + 4;
+
+	public override readonly string ToString() =>
+		$"{Type}: proxies={Proxies} nodes={Nodes} height={Height} (balanced {BalancedHeight}) areaRatio={AreaRatio:F2}{(IsDegraded ? " DEGRADED" : "")}";
+}
+
 public abstract partial class Core<TWorld> where TWorld : struct, ISessionType, IWorldType {
 	/// <summary>
 	/// Spatial index for shape proxies, backed by one <see cref="DynamicTree"/> per <see cref="BodyType"/>
@@ -39,7 +60,11 @@ public abstract partial class Core<TWorld> where TWorld : struct, ISessionType, 
 		public void DestroyProxy(int proxyKey) {
 			UnpackProxyKey(proxyKey, out var nodeIndex, out var type);
 			_trees[(int)type].DestroyProxy(nodeIndex);
-			_movedProxies.RemoveAll(key => key == proxyKey);
+			for (var i = _movedProxies.Count - 1; i >= 0; i--) {
+				if (_movedProxies[i] == proxyKey) {
+					_movedProxies.RemoveAt(i);
+				}
+			}
 		}
 
 		public void MoveProxy(int proxyKey, FAABB aabb) {
@@ -63,37 +88,49 @@ public abstract partial class Core<TWorld> where TWorld : struct, ISessionType, 
 		/// shapes) is the caller's job once it has entity access to both shapes.
 		/// </summary>
 		public void UpdatePairs(Func<EntityGID, EntityGID, bool> tryAcceptPair) {
-			foreach (var proxyKey in _movedProxies) {
-				UnpackProxyKey(proxyKey, out var nodeIndex, out var type);
-				var moverNode = _trees[(int)type].Nodes[nodeIndex];
-				var moverGid = new EntityGID(moverNode.UserData);
-				var fatAabb = moverNode.AABB;
+			_pairCallback = tryAcceptPair;
+			try {
+				foreach (var proxyKey in _movedProxies) {
+					UnpackProxyKey(proxyKey, out var nodeIndex, out var type);
+					var moverNode = _trees[(int)type].Nodes[nodeIndex];
+					_pairMoverGid = new EntityGID(moverNode.UserData);
+					_pairMoverNode = nodeIndex;
+					_pairMoverType = (int)type;
 
-				for (var otherType = 0; otherType < TypeCount; otherType++) {
-					var capturedType = type;
-					var capturedNodeIndex = nodeIndex;
-					var capturedMoverGid = moverGid;
-
-					_trees[otherType].Query(fatAabb, ulong.MaxValue, (otherNodeIndex, otherUserData, _) => {
-						if (otherType == (int)capturedType && otherNodeIndex == capturedNodeIndex) {
-							return true;
-						}
-
-						var otherGid = new EntityGID(otherUserData);
-						var pairKey = capturedMoverGid.Raw < otherGid.Raw
-							? (capturedMoverGid.Raw, otherGid.Raw)
-							: (otherGid.Raw, capturedMoverGid.Raw);
-
-						if (_pairSet.Add(pairKey) && !tryAcceptPair(capturedMoverGid, otherGid)) {
-							_pairSet.Remove(pairKey);
-						}
-
-						return true;
-					});
+					for (var otherType = 0; otherType < TypeCount; otherType++) {
+						_pairQueryType = otherType;
+						_trees[otherType].Query(moverNode.AABB, ulong.MaxValue, PairQueryCallback, this);
+					}
 				}
+			} finally {
+				_pairCallback = null;
 			}
 
 			_movedProxies.Clear();
+		}
+
+		// Pair-query state: the tree callback is a cached static delegate that reads the current mover
+		// from these fields (via the context argument), so UpdatePairs allocates no closures per proxy.
+		private static readonly DynamicTree.TreeQueryCallback PairQueryCallback = static (otherNodeIndex, otherUserData, context) =>
+			((BroadPhase)context).AcceptPairCandidate(otherNodeIndex, otherUserData);
+		private Func<EntityGID, EntityGID, bool>? _pairCallback;
+		private EntityGID _pairMoverGid;
+		private int _pairMoverNode;
+		private int _pairMoverType;
+		private int _pairQueryType;
+
+		private bool AcceptPairCandidate(int otherNodeIndex, ulong otherUserData) {
+			if (_pairQueryType == _pairMoverType && otherNodeIndex == _pairMoverNode) {
+				return true;
+			}
+
+			var otherGid = new EntityGID(otherUserData);
+			var pairKey = PairKey(_pairMoverGid, otherGid);
+			if (_pairSet.Add(pairKey) && !_pairCallback!(_pairMoverGid, otherGid)) {
+				_pairSet.Remove(pairKey);
+			}
+
+			return true;
 		}
 
 		/// <summary>
@@ -211,6 +248,10 @@ public abstract partial class Core<TWorld> where TWorld : struct, ISessionType, 
 						throw new InvalidOperationException($"Shape {gid.Raw} does not point back to broad-phase proxy {treeIndex}:{nodeIndex}.");
 					}
 
+					if (node.AABB.LowerBound != shape.FatAabb.LowerBound || node.AABB.UpperBound != shape.FatAabb.UpperBound) {
+						throw new InvalidOperationException($"Shape {gid.Raw} has a stale broad-phase proxy AABB.");
+					}
+
 					if (!shapeEntity.Has<W.Link<BodyOwner>>()) {
 						throw new InvalidOperationException($"Shape {gid.Raw} has a proxy but no body owner.");
 					}
@@ -261,6 +302,36 @@ public abstract partial class Core<TWorld> where TWorld : struct, ISessionType, 
 					throw new InvalidOperationException($"Cached pair ({pair.Item1}, {pair.Item2}) has no contact entity.");
 				}
 			}
+		}
+
+		/// <summary>
+		/// Structural health of one body-type tree. A height far above log2(proxies) or a growing area
+		/// ratio (summed internal-node perimeters over the root's) indicates a degraded tree whose
+		/// queries visit many more nodes than necessary.
+		/// </summary>
+		public BroadPhaseTreeStats GetTreeStats(BodyType type) {
+			var tree = _trees[(int)type];
+			var stats = new BroadPhaseTreeStats { Type = type, Proxies = tree.ProxyCount, Nodes = tree.NodesCount };
+			if (tree.Root == DynamicTree.NullIndex) {
+				return stats;
+			}
+
+			stats.Height = tree.Nodes[tree.Root].Height;
+			var rootPerimeter = Perimeter(tree.Nodes[tree.Root].AABB);
+			var internalPerimeter = 0.0;
+			for (var nodeIndex = 0; nodeIndex < tree.NodesCapacity; nodeIndex++) {
+				ref readonly var node = ref tree.Nodes[nodeIndex];
+				if ((node.Flags & DynamicTree.AllocatedNode) != 0 && (node.Flags & DynamicTree.LeafNode) == 0) {
+					internalPerimeter += Perimeter(node.AABB);
+				}
+			}
+			stats.AreaRatio = rootPerimeter > 0.0 ? internalPerimeter / rootPerimeter : 0.0;
+			return stats;
+		}
+
+		private static double Perimeter(FAABB aabb) {
+			var extent = aabb.UpperBound - aabb.LowerBound;
+			return 2.0 * ((double)extent.X.RawValue + extent.Y.RawValue + extent.Z.RawValue) / 65536.0;
 		}
 
 		/// <summary>Total proxies across all three body-type trees (Phase 0 diagnostics counter).</summary>

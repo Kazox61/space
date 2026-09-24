@@ -25,6 +25,8 @@ public abstract partial class Core<TWorld> where TWorld : struct, ISessionType, 
 	/// </summary>
 	public struct ShapeProxySystem : ISystem {
 		public void Update() {
+			var runtime = PhysicsRuntime.Get();
+			var timestamp = PhysicsRuntime.Timestamp();
 			var broadPhase = W.GetResource<BroadPhase>();
 			var dt = Const.DeltaTime.To32();
 
@@ -48,7 +50,8 @@ public abstract partial class Core<TWorld> where TWorld : struct, ISessionType, 
 					ShapeBroadPhaseOps.CreateProxy(ref shape, shapeEntity, broadPhase, body.Type, body.Transform, forcePairCreation);
 				}
 
-				if (body.Type != BodyType.Static) {
+				// Sleeping bodies do not move, so their proxies stay valid until they wake.
+				if (PhysicsSleep.IsSimulated(body)) {
 					var predictedTranslation = dt * body.LinearVelocity;
 					var predictedRotation = FQuaternion.IntegrateRotation(FQuaternion.Identity, dt * body.AngularVelocity);
 					var angularMotion = FQuaternion.GetAngle(predictedRotation) * shape.ComputeSweepRadius(body.LocalCenter);
@@ -61,6 +64,7 @@ public abstract partial class Core<TWorld> where TWorld : struct, ISessionType, 
 					}
 				}
 			}
+			runtime.AddTime(PhysicsPhase.ProxyUpdate, timestamp);
 		}
 	}
 }

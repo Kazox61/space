@@ -40,4 +40,7 @@ public struct Contact : IComponent {
 	/// <c>ContactSolverSystem</c>'s rolling-resistance block, ported from box3d's contact_solver.c.
 	/// </summary>
 	public FVector3 RollingImpulse;
+
+	/// <summary>Warm-start twist-friction impulse about the contact normal.</summary>
+	public FP TwistImpulse;
 }

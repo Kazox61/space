@@ -12,8 +12,8 @@ namespace Space.GameCore;
 public abstract partial class Core<TWorld> where TWorld : struct, ISessionType, IWorldType {
 	/// <summary>
 	/// Recomputes a body's mass, center of mass, and inertia from its shapes. Ported from box3d's
-	/// b3UpdateBodyMassData (body.c). Skips the minExtent/maxExtent bookkeeping box3d also does
-	/// here — that only feeds sleeping/CCD, both out of scope for this pass.
+	/// b3UpdateBodyMassData (body.c), including the maxExtent bookkeeping sleeping uses to turn
+	/// angular velocity into a surface speed. (CCD computes its own per-shape extents on demand.)
 	/// </summary>
 	public static class BodyMassUpdate {
 		public static void Update(W.Entity bodyEntity) {
@@ -28,6 +28,7 @@ public abstract partial class Core<TWorld> where TWorld : struct, ISessionType, 
 				body.InvInertiaWorld = FMatrix3.Zero;
 				body.LocalCenter = FVector3.Zero;
 				body.Center = body.Transform.Position;
+				body.MaxExtent = ComputeMaxExtent(bodyEntity, FVector3.Zero);
 				return;
 			}
 
@@ -129,6 +130,23 @@ public abstract partial class Core<TWorld> where TWorld : struct, ISessionType, 
 				body.InvInertiaLocal = FMatrix3.Zero;
 				body.InvInertiaWorld = FMatrix3.Zero;
 			}
+
+			body.MaxExtent = ComputeMaxExtent(bodyEntity, localCenter);
+		}
+
+		/// <summary>Largest distance from the center of mass to any owned shape's surface (box3d's maxExtent).</summary>
+		private static FP ComputeMaxExtent(W.Entity bodyEntity, FVector3 localCenter) {
+			if (!bodyEntity.Has<W.Links<Shapes>>()) {
+				return FP.Zero;
+			}
+			var maxExtent = FP.Zero;
+			ref readonly var links = ref bodyEntity.Read<W.Links<Shapes>>();
+			for (var i = 0; i < links.Length; i++) {
+				if (links[i].Value.TryUnpack<TWorld>(out var shapeEntity) && shapeEntity.Has<Shape>()) {
+					maxExtent = FP.Max(maxExtent, shapeEntity.Read<Shape>().ComputeSweepRadius(localCenter));
+				}
+			}
+			return maxExtent;
 		}
 
 		private static FP64 GershgorinLowerBound(Matrix64 m) {

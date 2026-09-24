@@ -802,3 +802,82 @@ Phase 5 (fixed-point and rollback hardening) is implemented:
   mass/inertia limits, velocity clamping, runtime escape, checked narrowing,
   solver input, configuration rollback, and distinct-world full synchronization.
   CI runs the harness in Debug and Release and requires identical state hashes.
+
+## Phase 6 Implementation Status
+
+Phase 6 (scale and observability) is implemented:
+
+- Allocation-free hot paths: `ShapeProxy` stores up to 8 points inline and
+  `SimplexCache` stores its indices inline. `B3Config.MaxShapeCastPoints` is
+  now 8, the largest supported shape, and should be raised with general hulls.
+  Box clipping and manifold reduction use `stackalloc` buffers.
+  `BroadPhase.UpdatePairs` uses a cached static tree callback instead of
+  per-proxy closures. Contact lifecycle, world queries, and the character mover
+  rent scratch lists instead of allocating them. Steady-state ticks of the load
+  scene allocate 0 bytes (`SteadyStateAllocationTest`).
+- World-scoped, reentrant scratch: `PhysicsRuntime` is a per-world resource
+  with no snapshot GUID. It owns the reused solver body and constraint buffers,
+  CCD candidates, island buffers, and rented query lists. The character mover's
+  static scratch fields are gone, and a query callback may issue another query
+  (`NestedQueryReentrancyTest`). CCD now gathers its candidate proxies once per
+  tick instead of once per fast shape.
+- Sleeping and islands (`PhysicsSleep`): Box3D's rules on ECS-resident state.
+  Bodies accumulate `SleepTime` from Box3D's sleep velocity: surface speed from
+  linear and angular velocity via `MaxExtent`, plus half the position-correction
+  speed. Rigid contacts with manifold points link bodies into islands, and
+  static bodies never join one. Each tick, before solving, sleeping bodies
+  linked to awake ones are woken to a fixed point. After solving, union-find
+  groups the simulated bodies, and islands whose bodies have all rested for
+  `B3Config.TimeToSleep` fall asleep with zeroed velocity. Box3D stores islands
+  persistently; this port derives them every tick instead. All sleep state
+  (`IsAwake`, `SleepTime`) lives on `Body`, so rollback and full sync restore it
+  with no extra resource. Sleeping bodies are skipped by proxy refresh,
+  narrowphase, solving, and CCD. Their contacts keep manifolds and warm-start
+  impulses, which stay exact because sleeping bodies never move.
+- Wake triggers: every `BodyOperations` mutation (transform, type, enable,
+  velocity, impulses, forces), shape mutations, character-mover pushes,
+  `BodyOperations.Wake`, and destroying a touching contact. The last covers
+  body destruction, teleports, and filter changes, and matches Box3D's
+  `b3DestroyContact(wakeBodies)`, so removed support never leaves a stack
+  hanging. `PhysicsWorld.EnableSleep` is serialized; the snapshot version is
+  now 2. Clearing it wakes everything. `BodyOperations.SetSleepEnabled` and
+  `SetSleepThreshold` control individual bodies, and the default threshold is
+  Box3D's 0.05 m/s. Bodies created with object initializers keep their old
+  never-sleep behavior.
+- Twist friction: ported from Box3D's contact solver. It is a central angular
+  constraint about the contact normal, limited by friction times the
+  lever-arm-weighted normal impulse, and warm-started through
+  `Contact.TwistImpulse`. Single-anchor tangent friction cannot resist spin
+  about the normal, so without it resting bodies kept yawing and never reached
+  sleep.
+- Counters and timings: `PhysicsDiagnostics.LastStep` (`PhysicsStepStats`)
+  reports per-phase wall-clock timings and per-step counters.
+  `PhysicsDiagnostics.CaptureBroadPhase()` reports per-tree proxy and node
+  counts, height against a balanced tree, area ratio, and an `IsDegraded` flag.
+- Stale-state diagnostics: `BroadPhase.Validate` now also requires every tree
+  leaf's AABB to equal its shape's fat AABB. `PhysicsDiagnostics.Validate` adds
+  two checks: static and sleeping shapes must still be enclosed by their proxies,
+  and sleeping bodies must carry no velocity, force, or solver deltas. That is
+  the signature of state written around `BodyOperations`.
+- Debug drawing: `PhysicsDebugDraw.Draw` walks shapes, tight AABBs, broad-phase
+  proxies, contact points, and normals into an engine-agnostic
+  `IPhysicsDebugDraw`. Shapes are colored by body type and by awake, sleeping,
+  disabled, or sensor state. The Godot client's `PhysicsDebugView` renders it
+  with `ImmediateMesh` lines. F3 toggles it and F4 switches between the default
+  set and everything. A label shows the step counters and tree health.
+- Budgets: `docs/physics-budgets.md` defines the reference load scene and its
+  budgets: zero steady-state allocation, 1 ms regular tick, 8 ms for a 30-tick
+  rollback burst, and 33.3 ms for the full 125-tick rollback capacity. The
+  harness enforces the allocation budget on every run. The new CI `budgets` job
+  runs `bench --enforce` in Release.
+- Regression coverage: stack sleep and wake, whole-island wake propagation,
+  independent islands, support destruction, moving kinematic platforms, mover
+  pushes, world and per-body sleep toggles, and rollback replay through falling
+  asleep and waking. The last one emits a `STATE-HASH` line for the Debug/Release
+  parity job. Also covered: stale-state detection, broad-phase health and
+  statistics, nested queries, and the allocation budget.
+
+Remaining gaps, deliberately out of scope: islands are rebuilt each tick
+rather than persisted (cost is linear in awake bodies plus contacts). CCD still
+scans every proxy once per tick while any fast body exists. The solver is
+single-threaded, with no graph coloring (Phase 7).

@@ -174,12 +174,19 @@ public struct Shape : IComponent, IComponentConfig<Shape> {
 
 	/// <summary>Build a generic point-cloud proxy for this shape, for GJK-based queries.</summary>
 	public ShapeProxy MakeProxy() {
-		return Type switch {
-			ShapeType.Sphere => new ShapeProxy { Points = new[] { SphereShape.Center }, Radius = SphereShape.Radius },
-			ShapeType.Capsule => new ShapeProxy { Points = new[] { CapsuleShape.Center1, CapsuleShape.Center2 }, Radius = CapsuleShape.Radius },
-			ShapeType.Hull => new ShapeProxy { Points = HullShape.GetCorners(), Radius = FP.Zero },
-			_ => new ShapeProxy { Points = Array.Empty<FVector3>(), Radius = FP.Zero },
-		};
+		switch (Type) {
+			case ShapeType.Sphere:
+				return ShapeProxy.MakePoint(SphereShape.Center, SphereShape.Radius);
+			case ShapeType.Capsule:
+				return ShapeProxy.MakeSegment(CapsuleShape.Center1, CapsuleShape.Center2, CapsuleShape.Radius);
+			case ShapeType.Hull: {
+				var proxy = new ShapeProxy { Count = 8, Radius = FP.Zero };
+				HullShape.WriteCorners(proxy.Points);
+				return proxy;
+			}
+			default:
+				return default;
+		}
 	}
 
 	/// <summary>The smallest solid extent used to decide when discrete motion is unsafe.</summary>
@@ -196,7 +203,7 @@ public struct Shape : IComponent, IComponentConfig<Shape> {
 	public FP ComputeSweepRadius(FVector3 localCenter) {
 		var proxy = MakeProxy();
 		var radius = FP.Zero;
-		for (var i = 0; i < proxy.Points!.Length; i++) {
+		for (var i = 0; i < proxy.Count; i++) {
 			radius = FP.Max(radius, FVector3.Length(proxy.Points[i] - localCenter));
 		}
 		return radius + proxy.Radius;

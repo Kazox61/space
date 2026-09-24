@@ -45,9 +45,9 @@ internal static class GJK {
 	/// Find the index of the proxy point farthest along axis. Shifts to the first vertex as the
 	/// origin first, for precision, since proxy points can be far from the origin.
 	/// </summary>
-	internal static int GetProxySupport(ShapeProxy proxy, FVector3 axis) {
-		var points = proxy.Points!;
-		var count = points.Length;
+	internal static int GetProxySupport(in ShapeProxy proxy, FVector3 axis) {
+		ref readonly var points = ref proxy.Points;
+		var count = proxy.Count;
 
 		var origin = points[0];
 		var maxIndex = 0;
