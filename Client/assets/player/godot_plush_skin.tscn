@@ -1500,8 +1500,11 @@ nodes/WaveOneShot/position = Vector2(-200, 120)
 nodes/output/position = Vector2(520, 140)
 node_connections = [&"AddBlink", 0, &"AddTilt", &"AddBlink", 1, &"BlinkAnimation", &"AddTilt", 0, &"WaveOneShot", &"AddTilt", 1, &"TiltAmount", &"WaveOneShot", 0, &"StateMachine", &"WaveOneShot", 1, &"Animation", &"output", 0, &"AddBlink"]
 
-[node name="GodotPlushSkin" type="Node3D"]
+[node name="GodotPlushSkin" type="Node3D" node_paths=PackedStringArray("_animationPlayer", "_animationTree", "_squashTarget")]
 script = ExtResource("1_3jn4j")
+_animationPlayer = NodePath("GodotPlushModel/AnimationPlayer")
+_animationTree = NodePath("AnimationTree")
+_squashTarget = NodePath("GodotPlushModel/Rig/Skeleton3D/GodotPlushMesh")
 
 [node name="GodotPlushModel" parent="." instance=ExtResource("1_u1eck")]
 

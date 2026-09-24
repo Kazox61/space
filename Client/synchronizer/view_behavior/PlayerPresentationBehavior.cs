@@ -16,7 +16,7 @@ public partial class PlayerPresentationBehavior : EntityBehavior {
 	private static readonly StringName s_fallState = "fall";
 
 	[Export] private Node3D _visualRoot;
-	[Export] private GodotPlushSkin _skin;
+	[Export] private PlayerSkin _skin;
 	[Export] private AudioStreamPlayer3D _footstepAudio;
 	[Export] private AudioStreamPlayer3D _impactAudio;
 	[Export] private PackedScene _jumpParticlesScene;
@@ -25,6 +25,8 @@ public partial class PlayerPresentationBehavior : EntityBehavior {
 	private bool _hasPreviousState;
 	private bool _isAssigned;
 	private bool _wasGrounded;
+	private float _attackFacingTimeRemaining;
+	private int _lastAttackTick = -1;
 	private float _previousVerticalVelocity;
 	private float _targetYaw;
 	private float _tilt;
@@ -56,20 +58,28 @@ public partial class PlayerPresentationBehavior : EntityBehavior {
 
 		ref readonly var mover = ref entity.Read<Mover>();
 		ref readonly var playerInfo = ref entity.Read<PlayerInfo>();
-		var input = S.GetInput<PlayerInput>(channel: playerInfo.InputChannel).LastFresh();
+		var inputState = S.GetInput<PlayerInput>(channel: playerInfo.InputChannel);
+		var input = inputState.LastFresh();
 		var velocity = new Vector3(
 			mover.Velocity.X.ToFloat(),
 			mover.Velocity.Y.ToFloat(),
 			mover.Velocity.Z.ToFloat()
 		);
 		var movementInput = new Vector2(input.MoveX.ToFloat(), input.MoveY.ToFloat());
+		var attackInput = new Vector2(input.AttackX.ToFloat(), input.AttackY.ToFloat());
 		var isMoving = movementInput.LengthSquared() > 0.01f;
+		var isAttacking = inputState.IsFresh && attackInput.LengthSquared() > 0.01f;
+		var delta = (float)GetProcessDeltaTime();
 
-		if (isMoving) {
+		if (isAttacking) {
+			_targetYaw = -attackInput.Orthogonal().Angle() + _skin.AimYawOffsetRadians;
+			_attackFacingTimeRemaining = Systems.GetResource<CharacterRes>().AttackDelay.ToFloat();
+		} else if (_attackFacingTimeRemaining > 0.0f) {
+			_attackFacingTimeRemaining = Mathf.Max(0.0f, _attackFacingTimeRemaining - delta);
+		} else if (isMoving) {
 			_targetYaw = -movementInput.Orthogonal().Angle();
 		}
 
-		var delta = (float)GetProcessDeltaTime();
 		var rotation = _visualRoot.Rotation;
 		rotation.Y = Mathf.LerpAngle(rotation.Y, _targetYaw, Mathf.Clamp(6.0f * delta, 0.0f, 1.0f));
 		_visualRoot.Rotation = rotation;
@@ -84,6 +94,10 @@ public partial class PlayerPresentationBehavior : EntityBehavior {
 		if (_currentState != state) {
 			_currentState = state;
 			_skin.SetState(state);
+		}
+		if (isAttacking && _lastAttackTick != S.CurrentTick) {
+			_lastAttackTick = S.CurrentTick;
+			_skin.PlayAttack();
 		}
 
 		if (playTransitions && _hasPreviousState) {
@@ -135,6 +149,8 @@ public partial class PlayerPresentationBehavior : EntityBehavior {
 	private void ResetPresentation() {
 		_hasPreviousState = false;
 		_wasGrounded = false;
+		_attackFacingTimeRemaining = 0.0f;
+		_lastAttackTick = -1;
 		_previousVerticalVelocity = 0.0f;
 		_targetYaw = 0.0f;
 		_tilt = 0.0f;
