@@ -46,6 +46,9 @@ public abstract partial class Core<TWorld> where TWorld : struct, ISessionType, 
 		}
 
 		public static FP CastMover(BroadPhase broadPhase, FWorldTransform moverXf, Capsule capsule, FVector3 translation, FP maxFraction, Filter filter) {
+			PhysicsValidation.ValidateCapsuleQuery(moverXf, capsule, translation);
+			if (maxFraction < FP.Zero || maxFraction > FP.One)
+				throw new ArgumentOutOfRangeException(nameof(maxFraction), "Mover cast fraction must be in [0, 1].");
 			var localAabb = Capsule.ComputeSweptAABB(capsule, FTransform.Identity, new FTransform(translation, FQuaternion.Identity));
 			var queryAabb = FWorldTransform.OffsetAABB(localAabb, moverXf.Position);
 
@@ -98,6 +101,7 @@ public abstract partial class Core<TWorld> where TWorld : struct, ISessionType, 
 		}
 
 		public static void CollideMover(BroadPhase broadPhase, FWorldTransform moverXf, Capsule capsule, Filter filter, ref MoverPlaneBuffer outPlanes) {
+			PhysicsValidation.ValidateCapsuleQuery(moverXf, capsule, FVector3.Zero);
 			var localAabb = Capsule.ComputeAABB(capsule, FTransform.Identity);
 			var margin = new FVector3(B3Config.SpeculativeDistance, B3Config.SpeculativeDistance, B3Config.SpeculativeDistance);
 			localAabb = new FAABB(localAabb.LowerBound - margin, localAabb.UpperBound + margin);
@@ -323,6 +327,7 @@ public abstract partial class Core<TWorld> where TWorld : struct, ISessionType, 
 		}
 
 		public static bool UpdatePogoGrounding(BroadPhase broadPhase, FWorldTransform moverXf, Capsule capsule, FP dt, FP hertz, FP dampingRatio, FP jumpCooldown, FP maxSlopeNormalThreshold, Filter filter, ref FP pogoVelocity) {
+			PhysicsValidation.ValidateCapsuleQuery(moverXf, capsule, FVector3.Zero);
 			// See Mover.JumpCooldown's remarks: skip the trace entirely while a jump is still in its
 			// cooldown window, matching box3d's CategorizeGround gating re-grounding on m_jumpCooldown.
 			if (jumpCooldown > FP.Zero) {

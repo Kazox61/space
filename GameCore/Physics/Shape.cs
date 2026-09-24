@@ -24,7 +24,7 @@ public struct Shape : IComponent, IComponentConfig<Shape> {
 	/// <summary>Valid when <see cref="Type"/> is <see cref="ShapeType.Hull"/>.</summary>
 	public Hull HullShape;
 
-	/// <summary>The density, usually in kg/m^3. Defaults to the density of water.</summary>
+	/// <summary>Dimensionless simulation density. Defaults to one, the validated fixed-point value.</summary>
 	public FP Density;
 
 	/// <summary>Explosion scale for explosions, non-dimensional.</summary>
@@ -212,11 +212,9 @@ public struct Shape : IComponent, IComponentConfig<Shape> {
 	/// <summary>Should the body update its mass properties when this shape is created.</summary>
 	public bool UpdateBodyMass;
 
-	private static FP Cube(FP value) => value * value * value;
-
 	private static Shape DefaultTemplate => new() {
 		Material = SurfaceMaterial.Default,
-		Density = FP.FromRatio(1000, 1) / Cube(B3Config.GetLengthUnitsPerMeter()),
+		Density = FP.One,
 		ExplosionScale = FP.One,
 		Filter = Filter.Default,
 		InvokeContactCreation = true,

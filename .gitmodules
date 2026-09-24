@@ -1,6 +1,7 @@
 [submodule "FixedPoint"]
 	path = FixedPoint
 	url = https://github.com/Kazox61/fixed-point.git
+	branch = space
 [submodule "StaticRollbackLitenetlib"]
 	path = StaticRollbackLitenetlib
 	url = https://github.com/nilpunch/static-rollback-litenetlib.git

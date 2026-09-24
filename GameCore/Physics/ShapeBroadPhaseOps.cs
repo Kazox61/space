@@ -53,7 +53,7 @@ public abstract partial class Core<TWorld> where TWorld : struct, ISessionType, 
 		public static void UpdateSweptAABBs(ref Shape shape, in Body body, FVector3 predictedTranslation, BroadPhase broadPhase) {
 			var sweepRadius = shape.ComputeSweepRadius(body.LocalCenter) + B3Config.SpeculativeDistance;
 			var radius = new FVector3(sweepRadius, sweepRadius, sweepRadius);
-			var start = new FVector3(body.Center.X.To32(), body.Center.Y.To32(), body.Center.Z.To32());
+			var start = new FVector3(body.Center.X.To32Checked(), body.Center.Y.To32Checked(), body.Center.Z.To32Checked());
 			var end = start + predictedTranslation;
 			SetAabb(ref shape, broadPhase, new FAABB(
 				FVector3.MinComponents(start, end) - radius,

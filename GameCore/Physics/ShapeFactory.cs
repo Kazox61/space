@@ -1,4 +1,6 @@
+using System;
 using FFS.Libraries.StaticEcs;
+using Fixed32;
 using Shenanicode.Rollback;
 
 namespace Space.GameCore;
@@ -12,6 +14,14 @@ public abstract partial class Core<TWorld> where TWorld : struct, ISessionType, 
 		/// resource exists, so this factory has no dependency on it.
 		/// </summary>
 		public static W.Entity CreateShape(W.Entity body, Shape shapeData) {
+			if (!body.Has<Body>()) {
+				throw new InvalidOperationException("ShapeFactory.CreateShape requires a body owner.");
+			}
+			if (shapeData.Type == ShapeType.Hull) {
+				shapeData.HullShape.Rotation = FQuaternion.Normalize(shapeData.HullShape.Rotation);
+			}
+			ref readonly var bodyData = ref body.Read<Body>();
+			PhysicsValidation.ValidateShape(shapeData, bodyData.Type, bodyData.Transform, nameof(shapeData));
 			var shapeEntity = W.NewEntity<Default>();
 
 			shapeData.LocalCentroid = shapeData.ComputeCentroid();
@@ -22,7 +32,12 @@ public abstract partial class Core<TWorld> where TWorld : struct, ISessionType, 
 			shapeEntity.Set(new W.Link<BodyOwner>(body));
 
 			if (shapeData.UpdateBodyMass) {
-				BodyMassUpdate.Update(body);
+				try {
+					BodyMassUpdate.Update(body);
+				} catch {
+					shapeEntity.Destroy();
+					throw;
+				}
 			}
 
 			return shapeEntity;

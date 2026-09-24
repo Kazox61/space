@@ -110,9 +110,10 @@ public abstract partial class Core<TWorld> where TWorld : struct, ISessionType, 
 
 		public void Update() {
 			var world = W.GetResource<PhysicsWorld>();
+			PhysicsValidation.ValidateWorld(world);
 
 			var dt = Const.DeltaTime.To32();
-			var subStepCount = Math.Max(1, world.SubStepCount);
+			var subStepCount = world.SubStepCount;
 			var h = dt / subStepCount.ToFP();
 			var invH = h > FP.Zero ? FP.One / h : FP.Zero;
 			var invDt = Const.InvDeltaTime.To32();
@@ -725,6 +726,7 @@ public abstract partial class Core<TWorld> where TWorld : struct, ISessionType, 
 		}
 
 		private static void FinalizeBodies(List<W.Entity> bodies) {
+			List<W.Entity>? escaped = null;
 			foreach (var entity in bodies) {
 				// Mut, not Ref: this is the one place Transform actually changes, and
 				// ShapeProxySystem's AABB-refresh pass only reacts to AllChanged<Body>.
@@ -734,6 +736,10 @@ public abstract partial class Core<TWorld> where TWorld : struct, ISessionType, 
 				body.Center += body.DeltaPosition;
 				body.Transform.Rotation = FQuaternion.Normalize(body.DeltaRotation * body.Transform.Rotation);
 				body.Transform.Position = body.Center + -(body.Transform.Rotation * body.LocalCenter);
+				if (!PhysicsValidation.IsInsideSimulationBounds(body.Transform.Position)) {
+					escaped ??= new List<W.Entity>();
+					escaped.Add(entity);
+				}
 
 				body.DeltaPosition = FVector3.Zero;
 				body.DeltaRotation = FQuaternion.Identity;
@@ -743,6 +749,16 @@ public abstract partial class Core<TWorld> where TWorld : struct, ISessionType, 
 				// Rotation changed — refresh the world-frame inverse inertia for next tick's solve.
 				var rotationMatrix = FMatrix3.FromQuaternion(body.Transform.Rotation);
 				body.InvInertiaWorld = rotationMatrix * body.InvInertiaLocal * FMatrix3.Transpose(rotationMatrix);
+			}
+
+			// Escaping bodies leave the simulation instead of throwing mid-step: EscapeMargin keeps all of
+			// their geometry inside the Q16.16 envelope, and disabling drops their proxies and contacts
+			// before the next broad-phase update narrows anything. bodies is GID-sorted, so this is deterministic.
+			if (escaped != null) {
+				foreach (var entity in escaped) {
+					BodyOperations.Disable(entity);
+					entity.Set<OutOfPhysicsBounds>();
+				}
 			}
 		}
 

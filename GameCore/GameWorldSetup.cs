@@ -12,7 +12,7 @@ public abstract partial class Core<TWorld> where TWorld : struct, ISessionType, 
 
 		public static void CreateAndInitialize() {
 			W.Create(WorldConfig);
-			Systems.Create();
+			Systems.Create(snapshotGuid: GameSystemsSnapshotGuid);
 
 			GameTypes.Register<TWorld>();
 			SimulationSetup.Register();

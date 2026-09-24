@@ -1,3 +1,4 @@
+using System;
 using Fixed32;
 
 namespace Space.GameCore;
@@ -70,16 +71,26 @@ public static class B3Config {
 	public static readonly FP TimeToSleep = FP.Half;
 
 	private static FP _lengthUnitsPerMeter = FP.One;
+	private static bool _frozen;
 
 	/// <summary>
 	/// Box3D bases all length units on meters, but you may need different units for your game.
 	/// This should be set at application startup and only modified once, before any world is created.
 	/// </summary>
 	public static void SetLengthUnitsPerMeter(FP lengthUnits) {
+		if (lengthUnits <= FP.Zero) {
+			throw new ArgumentOutOfRangeException(nameof(lengthUnits), "Length units per meter must be positive.");
+		}
+		if (_frozen && lengthUnits != _lengthUnitsPerMeter) {
+			throw new InvalidOperationException("B3Config is frozen after physics world initialization.");
+		}
 		_lengthUnitsPerMeter = lengthUnits;
 	}
 
 	public static FP GetLengthUnitsPerMeter() => _lengthUnitsPerMeter;
+
+	/// <summary>Prevents process-global physics tolerances from changing after initialization.</summary>
+	public static void Freeze() => _frozen = true;
 
 	/// <summary>
 	/// A small length used as a collision and constraint tolerance. Usually chosen to be

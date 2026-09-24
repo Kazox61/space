@@ -1,10 +1,9 @@
 # GameCore Physics: Supported Fixed-Point Operating Limits
 
-Phase 0 deliverable of the Box3D migration plan
-(docs/physics-box3d-migration-assessment.md). It defines the operating envelope
-the Q16.16 fixed-point math can actually support. Enforcement (validation at
-creation, checked conversions) is Phase 5; until then these limits are a
-contract callers must honor, backed by the tests noted below.
+This document defines the operating envelope enforced by Phase 5 of the Box3D
+migration plan (`docs/physics-box3d-migration-assessment.md`). Public body,
+shape, material, solver, character, and world-query boundaries reject values
+outside these limits before derived physics state is changed.
 
 ## Numeric base
 
@@ -30,6 +29,26 @@ headroom.
 
 World ray-cast origins (`PhysicsQueries.CastRay`) also narrow the absolute
 origin to Fixed32 for tree traversal, so the envelope applies to queries too.
+Query translations (rays, shape casts, mover casts) are limited to a magnitude
+of 100 so their squared length stays inside Q16.16.
+
+### Runtime escape
+
+Creation and queries are validated against +/-8192, but bodies can still move
+there under simulation. Instead of throwing mid-step, anything whose origin
+crosses the escape line at +/-8064 (`PhysicsValidation.EscapeCoordinate`, the
+envelope minus a 128-unit margin) leaves the simulation:
+
+- A non-static body is disabled at the end of the solver step (its proxies and
+  contacts are released) and tagged `OutOfPhysicsBounds`. Gameplay decides
+  whether to destroy it, or move it back with `SetTransform` and `Enable` it,
+  which clears the tag.
+- The player character mover stops simulating (velocity zeroed) while its
+  origin is beyond the line.
+
+The 128-unit margin exceeds the reach of any valid shape (a 40-unit static
+extent rotated about its body origin) plus one tick of travel, so escaped
+geometry is still inside +/-8192 when it is caught.
 
 ## Shape dimensions
 
@@ -48,7 +67,8 @@ safe to rotate arbitrarily.
 
 ## Density and mass
 
-Dynamic-shape mass math runs entirely in Fixed32:
+Per-shape mass and inertia are computed in Fixed32; body aggregation and inversion
+run in Fixed64 (see below):
 
 - Sphere: `mass = density * 4/3*pi*r^3`, `inertia ~ 2/5 * mass * r^2`
 - Box: `mass = density * 8*h^3` (cube), `inertia ~ mass * h^2` terms
@@ -59,29 +79,61 @@ Consequences:
 
 | Rule | Value |
 | --- | --- |
-| Dynamic shape density | Set explicitly; `1` is the only validated value |
-| Default density 1000 | **Unsafe — known issue** (assessment finding 10). Overflows mass/inertia for any realistic size; every production/test call site already overrides it. Fix (wider arithmetic or new default) is Phase 5. |
+| Dynamic shape density | [0, 2]; the default is `1` |
+| Default density | `1`; the unsafe Box3D-derived default of `1000` was removed in Phase 5 |
 | Static/kinematic density | Irrelevant — `BodyMassUpdate` returns early and never computes mass |
-| Body mass | <= 1000 |
-| Every inertia matrix entry | <= 1000, determinant > 0 (required for the inversion) |
+| Body mass | [1/4096, 1000] for a dynamic body with mass; the lower bound keeps `1 / mass` <= 4096 (a density-1 sphere needs r >= ~0.04) |
+| Every inertia matrix entry | <= 1000 |
+| Inverse inertia | <= 4096 per principal axis, enforced by an inertia floor (below) |
 
-Worked example of the boundary: a dynamic sphere with density 1 is safe up to
-about r = 5 (r = 8 gives inertia ~ 5.5e4, already beyond 32768). Satisfying the
-dimension table above (dynamic r <= 4) keeps both mass and inertia comfortably
-in range.
+Mass aggregation, the parallel-axis terms, and the inversion run in Fixed64
+and are narrowed with checked conversions.
+
+Inertia floor: small or thin shapes (an r = 0.1 bullet, a thin capsule) have
+principal moments at or below one Q16.16 ulp, whose exact inverse would
+overflow. When the smallest moment of a rotating dynamic body is below 1/4096,
+`BodyMassUpdate` adds 1/4096 to every principal moment. The body still rotates,
+with slightly more inertia than its geometry implies. Fixed-rotation bodies skip
+the inversion entirely.
+
+Geometry, mass, and inertia limits apply together: satisfying the dimension
+table above does not by itself guarantee a dynamic shape is accepted, because
+its mass and every inertia entry must also stay <= 1000.
+
+Worked example of the boundary: a density-1 sphere has inertia
+`8*pi/15 * r^5`, so the inertia cap limits it to about r = 3.59 (below the
+geometric r <= 4). A density-1 cube with equal half-extents h has inertia
+`16/3 * h^5` per axis, so the cap limits it to about h = 2.85. Doubling the
+density lowers both limits further.
 
 ## Speeds and per-tick motion
 
-`ContactSolverSystem.IntegratePositions` clamps speeds by comparing squared
-magnitudes in Fixed32, so any squared magnitude must stay below 32768:
+Public velocity operations (`SetLinearVelocity`, `SetAngularVelocity`, and the
+impulse functions) clamp to the same limits the solver applies in
+`IntegratePositions`, so any velocity the solver can produce is valid input.
+Impulse sums are formed in Fixed64 and scaled before squaring, so an oversized
+impulse saturates at the limit instead of wrapping. Solver configuration is
+validated before each step:
 
 | Limit | Value | Rationale |
 | --- | --- | --- |
 | Hard math bound, linear speed | < 181 (sqrt(32768)) | `LengthSqr(v) > maxLinearSpeed^2` wraps beyond this |
-| `PhysicsWorld.MaximumLinearSpeed` default 400 | **Unsafe — known issue** | 400^2 = 160000 wraps in Q16.16; the clamp itself misbehaves. Phase 5 replaces the default. Keep gameplay speeds well under 181 meanwhile. |
+| `PhysicsWorld.MaximumLinearSpeed` default | 60 |
 | Supported linear speed | <= 60 | Validated gameplay speeds are <= 12 (projectile); 60 keeps translation per tick ~1 unit at 60 Hz |
-| Angular speed | Auto-clamped at ~47.1 rad/s (MaxRotation * 60); supported <= 30 | Clamp arithmetic is safe; leave headroom for solver cross products |
+| Angular speed | Clamped at ~47.1 rad/s (MaxRotation * 60) by both the solver and the public API; bodies with `AllowFastRotation` are clamped by the API at 100 | Keeps squared magnitudes inside Q16.16 |
 | Translation per tick | <= 1 unit (60 Hz) before CCD is expected to engage | Dynamic bodies whose linear and angular motion exceeds half their smallest shape extent receive automatic CCD against static geometry; explicit bullets sweep against static, kinematic, and non-bullet dynamic bodies |
+
+## Configuration and snapshots
+
+- `B3Config` length units must be selected before the first `PhysicsWorld` is
+  created. Creation freezes the process-global scale; later attempts to change
+  it fail.
+- `PhysicsWorld` and `BroadPhase` snapshots use explicit stable GUIDs and schema
+  version 1. Unknown versions are rejected.
+- `PhysicsWorld` fields are serialized and validated during rollback and full
+  synchronization. The saved length scale must match the initialized process.
+- Fixed64-to-Fixed32 physics boundaries use checked narrowing and throw rather
+  than wrapping.
 
 ## Events, filters, and lifecycle invariants (non-numeric Phase 0 contracts)
 

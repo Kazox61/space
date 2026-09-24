@@ -1,3 +1,4 @@
+using System;
 using FFS.Libraries.StaticEcs;
 using Shenanicode.Rollback;
 
@@ -9,6 +10,7 @@ public abstract partial class Core<TWorld> where TWorld : struct, ISessionType, 
 	public abstract class S : Session<TWorld> { }
 
 	public struct GameSystemsType : ISystemsType { }
+	public static readonly Guid GameSystemsSnapshotGuid = new("76e5ae3f-ce79-4689-8334-d7aca56540af");
 
 	public abstract class Systems : W.Systems<GameSystemsType> { }
 }

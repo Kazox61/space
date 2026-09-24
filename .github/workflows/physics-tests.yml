@@ -37,3 +37,33 @@ jobs:
 
       - name: Run physics checks
         run: dotnet run --project Test/Test.csproj --configuration ${{ matrix.configuration }} --no-restore
+
+  # The per-configuration job above proves each build is internally deterministic; this one proves
+  # Debug and Release agree with each other (Phase 5 acceptance criterion).
+  hash-parity:
+    name: Debug/Release state-hash parity
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+        with:
+          submodules: recursive
+
+      - name: Set up .NET
+        uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: 10.0.x
+
+      - name: Restore test project
+        run: dotnet restore Test/Test.csproj
+
+      - name: Compare state hashes
+        run: |
+          set -euo pipefail
+          for configuration in Debug Release; do
+            dotnet run --project Test/Test.csproj --configuration "$configuration" --no-restore \
+              | grep '^STATE-HASH ' > "hashes-$configuration.txt"
+          done
+          test -s hashes-Debug.txt
+          diff hashes-Debug.txt hashes-Release.txt

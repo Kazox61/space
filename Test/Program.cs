@@ -12,6 +12,7 @@ using static Space.GameCore.Core<PhysicsSmokeTest.TestWorld>;
 namespace PhysicsSmokeTest;
 
 public struct TestWorld : IWorldType, ISessionType { }
+public struct SyncTargetWorld : IWorldType, ISessionType { }
 
 /// <summary>Mirrors GameWorldPrev/WP: a second parallel world the client deserializes into every simulated tick for render interpolation (GameInterpolationReceiver.SaveInterpolationState).</summary>
 public struct TestWorldPrev : IWorldType { }
@@ -83,6 +84,10 @@ public static class Program {
 		BodyDestructionRollbackTest();
 		DeathSystemPhysicsLifecycleTest();
 		ProjectileLifecycleCountsTest();
+		FixedPointBoundaryValidationTest();
+		EscapingBodyIsDisabledTest();
+		PhysicsConfigurationRollbackTest();
+		CrossWorldFullSyncTest();
 
 		if (_failures == 0) {
 			Console.WriteLine("ALL CHECKS PASSED");
@@ -94,7 +99,7 @@ public static class Program {
 
 	internal static void Bootstrap() {
 		W.Create(GameWorldSetup.WorldConfig);
-		Systems.Create();
+		Systems.Create(snapshotGuid: GameSystemsSnapshotGuid);
 		W.Types().RegisterAll(typeof(CoreRoot).Assembly);
 		W.SetResource(new PhysicsWorld());
 		W.SetResource(new BroadPhase());
@@ -940,6 +945,9 @@ public static class Program {
 			Systems.Update();
 			replayHashes[tick] = HashState();
 		}
+
+		// Consumed by CI, which runs this harness in Debug and Release and requires identical hashes.
+		Console.WriteLine($"STATE-HASH rollback-replay 0x{liveHashes[replayTicks - 1].ToString("x16")}");
 
 		var divergedAt = -1;
 		for (var tick = 0; tick < replayTicks; tick++) {
@@ -1841,19 +1849,19 @@ public static class Program {
 		Console.WriteLine("--- AutomaticFastBodyCcdTest ---");
 		Bootstrap();
 		var wall = W.NewEntity<Default>();
-		BodyOperations.CreateBody(wall, BodyType.Static, new FWorldTransform(new FPos(Fixed64.FP.FromRatio(3, 2), Fixed64.FP.Zero, Fixed64.FP.Zero), FQuaternion.Identity));
+		BodyOperations.CreateBody(wall, BodyType.Static, new FWorldTransform(new FPos(Fixed64.FP.FromRatio(3, 4), Fixed64.FP.Zero, Fixed64.FP.Zero), FQuaternion.Identity));
 		ShapeFactory.CreateShape(wall, Shape.MakeBox(FVector3.Zero, new FVector3(FP.FromRatio(1, 20), 2.ToFP(), 2.ToFP())));
 		var fastBody = W.NewEntity<Default>();
 		BodyOperations.CreateBody(fastBody, BodyType.Dynamic, FWorldTransform.Identity);
 		var fastShape = Shape.MakeSphere(FVector3.Zero, FP.FromRatio(1, 10));
 		fastShape.Density = FP.One;
 		ShapeFactory.CreateShape(fastBody, fastShape);
-		BodyOperations.SetLinearVelocity(fastBody, new FVector3(120.ToFP(), FP.Zero, FP.Zero));
+		BodyOperations.SetLinearVelocity(fastBody, new FVector3(60.ToFP(), FP.Zero, FP.Zero));
 		var fastBodyGid = fastBody.GID;
 		var snapshot = W.Serializer.CreateWorldSnapshot();
 		W.Tick();
 		Systems.Update();
-		Check("unmarked fast dynamic body receives automatic CCD against static geometry", fastBody.Read<Body>().Transform.Position.X < Fixed64.FP.FromRatio(3, 2));
+		Check("unmarked fast dynamic body receives automatic CCD against static geometry", fastBody.Read<Body>().Transform.Position.X < Fixed64.FP.FromRatio(3, 4));
 		var liveState = W.Serializer.CreateWorldSnapshot();
 		var liveX = fastBody.Read<Body>().Transform.Position.X;
 		W.Serializer.LoadWorldSnapshot(snapshot, hardReset: true);
@@ -1877,13 +1885,13 @@ public static class Program {
 		var rotorShape = Shape.MakeBox(FVector3.Zero, new FVector3(2.ToFP(), FP.FromRatio(1, 10), FP.FromRatio(1, 10)));
 		rotorShape.Density = FP.One;
 		ShapeFactory.CreateShape(rotor, rotorShape);
-		BodyOperations.SetAngularVelocity(rotor, new FVector3(FP.Zero, FP.Zero, 60.ToFP()));
+		BodyOperations.SetAngularVelocity(rotor, new FVector3(FP.Zero, FP.Zero, 30.ToFP()));
 		var rotorGid = rotor.GID;
 		var snapshot = W.Serializer.CreateWorldSnapshot();
 		W.Tick();
 		Systems.Update();
 		var angle = FQuaternion.GetAngle(rotor.Read<Body>().Transform.Rotation);
-		Check("automatic CCD clips a rotating thin body at its intermediate impact", angle > FP.Zero && angle < FP.FromRatio(4, 5));
+		Check("automatic CCD clips a rotating thin body at its intermediate impact", angle > FP.Zero && angle < FP.FromRatio(9, 20));
 		var liveState = W.Serializer.CreateWorldSnapshot();
 		var liveRotation = rotor.Read<Body>().Transform.Rotation;
 		W.Serializer.LoadWorldSnapshot(snapshot, hardReset: true);
@@ -1901,7 +1909,7 @@ public static class Program {
 		static bool Hits(BodyType sourceType, BodyType targetType, bool targetIsBullet) {
 			Bootstrap();
 			var target = W.NewEntity<Default>();
-			BodyOperations.CreateBody(target, targetType, new FWorldTransform(new FPos(Fixed64.FP.FromRatio(3, 2), Fixed64.FP.Zero, Fixed64.FP.Zero), FQuaternion.Identity));
+			BodyOperations.CreateBody(target, targetType, new FWorldTransform(new FPos(Fixed64.FP.FromRatio(3, 4), Fixed64.FP.Zero, Fixed64.FP.Zero), FQuaternion.Identity));
 			if (targetIsBullet)
 				BodyOperations.SetBullet(target, true);
 			var targetShape = Shape.MakeSphere(FVector3.Zero, FP.FromRatio(1, 5));
@@ -1910,7 +1918,7 @@ public static class Program {
 			var bullet = W.NewEntity<Default>();
 			BodyOperations.CreateBody(bullet, sourceType, FWorldTransform.Identity);
 			BodyOperations.SetBullet(bullet, true);
-			BodyOperations.SetLinearVelocity(bullet, new FVector3(120.ToFP(), FP.Zero, FP.Zero));
+			BodyOperations.SetLinearVelocity(bullet, new FVector3(60.ToFP(), FP.Zero, FP.Zero));
 			var bulletShape = Shape.MakeSphere(FVector3.Zero, FP.FromRatio(1, 10));
 			bulletShape.Density = FP.One;
 			ShapeFactory.CreateShape(bullet, bulletShape);
@@ -1950,7 +1958,7 @@ public static class Program {
 		Console.WriteLine("--- MaximumSpeedBulletCcdTest ---");
 		Bootstrap();
 		var wall = W.NewEntity<Default>();
-		BodyOperations.CreateBody(wall, BodyType.Static, new FWorldTransform(new FPos(Fixed64.FP.FromRatio(3, 1), Fixed64.FP.Zero, Fixed64.FP.Zero), FQuaternion.Identity));
+		BodyOperations.CreateBody(wall, BodyType.Static, new FWorldTransform(new FPos(Fixed64.FP.FromRatio(3, 4), Fixed64.FP.Zero, Fixed64.FP.Zero), FQuaternion.Identity));
 		ShapeFactory.CreateShape(wall, Shape.MakeBox(FVector3.Zero, new FVector3(FP.FromRatio(1, 20), 2.ToFP(), 2.ToFP())));
 		var bullet = W.NewEntity<Default>();
 		BodyOperations.CreateBody(bullet, BodyType.Kinematic, FWorldTransform.Identity);
@@ -1960,7 +1968,7 @@ public static class Program {
 		W.Tick();
 		Systems.Update();
 		Check("configured maximum-speed bullet cannot tunnel through the minimum thin-wall fixture",
-			bullet.Read<Body>().Transform.Position.X < Fixed64.FP.FromRatio(3, 1));
+			bullet.Read<Body>().Transform.Position.X < Fixed64.FP.FromRatio(3, 4));
 		Shutdown();
 	}
 
@@ -2005,14 +2013,14 @@ public static class Program {
 		Console.WriteLine("--- BulletCcdRollbackTest ---");
 		Bootstrap();
 		var wall = W.NewEntity<Default>();
-		BodyOperations.CreateBody(wall, BodyType.Static, new FWorldTransform(new FPos(Fixed64.FP.FromRatio(3, 2), Fixed64.FP.Zero, Fixed64.FP.Zero), FQuaternion.Identity));
+		BodyOperations.CreateBody(wall, BodyType.Static, new FWorldTransform(new FPos(Fixed64.FP.FromRatio(3, 4), Fixed64.FP.Zero, Fixed64.FP.Zero), FQuaternion.Identity));
 		ShapeFactory.CreateShape(wall, Shape.MakeBox(FVector3.Zero, new FVector3(FP.FromRatio(1, 20), 2.ToFP(), 2.ToFP())));
 
 		var continuousReceiver = W.RegisterEventReceiver<ContinuousHitEvent>();
 		var bullet = W.NewEntity<Default>();
 		BodyOperations.CreateBody(bullet, BodyType.Kinematic, FWorldTransform.Identity);
 		BodyOperations.SetBullet(bullet, true);
-		BodyOperations.SetLinearVelocity(bullet, new FVector3(120.ToFP(), FP.Zero, FP.Zero));
+		BodyOperations.SetLinearVelocity(bullet, new FVector3(60.ToFP(), FP.Zero, FP.Zero));
 		var bulletShape = Shape.MakeSphere(FVector3.Zero, FP.FromRatio(1, 10));
 		bulletShape.EnableContactEvents = true;
 		ShapeFactory.CreateShape(bullet, bulletShape);
@@ -2029,7 +2037,7 @@ public static class Program {
 		Check("bullet resolves after the live CCD tick", true);
 		var liveX = liveBullet.Read<Body>().Transform.Position.X;
 		var liveState = W.Serializer.CreateWorldSnapshot();
-		Check("supported-speed bullet does not tunnel through a thin wall", liveX > Fixed64.FP.Zero && liveX < Fixed64.FP.FromRatio(3, 2));
+		Check("supported-speed bullet does not tunnel through a thin wall", liveX > Fixed64.FP.Zero && liveX < Fixed64.FP.FromRatio(3, 4));
 		var continuousCount = 0;
 		var validContinuousEvent = false;
 		foreach (var e in continuousReceiver) {
@@ -2055,7 +2063,7 @@ public static class Program {
 			Systems.Update();
 		}
 		Check("surviving bullet does not drive through the wall after impact", bulletGid.TryUnpack<TestWorld>(out var stoppedBullet)
-			&& stoppedBullet.Read<Body>().Transform.Position.X < Fixed64.FP.FromRatio(3, 2));
+			&& stoppedBullet.Read<Body>().Transform.Position.X < Fixed64.FP.FromRatio(3, 4));
 		Shutdown();
 	}
 
@@ -2919,6 +2927,273 @@ public static class Program {
 		Shutdown();
 	}
 
+	private static void FixedPointBoundaryValidationTest() {
+		Console.WriteLine("--- FixedPointBoundaryValidationTest ---");
+		Bootstrap();
+
+		var boundaryBody = W.NewEntity<Default>();
+		BodyOperations.CreateBody(boundaryBody, BodyType.Kinematic,
+			new FWorldTransform(new FPos(Fixed64.FP.FromRatio(8192, 1), Fixed64.FP.Zero, Fixed64.FP.Zero), FQuaternion.Identity));
+		Check("the documented coordinate boundary is accepted", boundaryBody.Has<Body>());
+
+		var outsideBody = W.NewEntity<Default>();
+		Check("coordinates outside the supported envelope fail before body creation", Throws<ArgumentOutOfRangeException>(() =>
+			BodyOperations.CreateBody(outsideBody, BodyType.Dynamic,
+				new FWorldTransform(new FPos(Fixed64.FP.FromRatio(8193, 1), Fixed64.FP.Zero, Fixed64.FP.Zero), FQuaternion.Identity)))
+			&& !outsideBody.Has<Body>());
+
+		var staticBody = W.NewEntity<Default>();
+		BodyOperations.CreateBody(staticBody, BodyType.Static, FWorldTransform.Identity);
+		ShapeFactory.CreateShape(staticBody, Shape.MakeBox(FVector3.Zero, new FVector3(40.ToFP(), FP.Half, 40.ToFP())));
+		var staticShapeCount = W.Query<All<Shape>>().EntitiesCount();
+		Check("static dimensions beyond the documented boundary are rejected without creating a shape", Throws<ArgumentOutOfRangeException>(() =>
+			ShapeFactory.CreateShape(staticBody, Shape.MakeBox(FVector3.Zero, new FVector3(FP.FromRatio(4001, 100), FP.Half, FP.One))))
+			&& W.Query<All<Shape>>().EntitiesCount() == staticShapeCount);
+
+		var dynamicBody = W.NewEntity<Default>();
+		BodyOperations.CreateBody(dynamicBody, BodyType.Dynamic, FWorldTransform.Identity);
+		var validShape = Shape.MakeSphere(FVector3.Zero, 3.ToFP());
+		var shapeEntity = ShapeFactory.CreateShape(dynamicBody, validShape);
+		Check("validated default density is one", shapeEntity.Read<Shape>().Density == FP.One);
+		Check("mass/inertia overflow candidates fail before replacing live geometry", Throws<ArgumentOutOfRangeException>(() =>
+			ShapeOperations.SetSphere(shapeEntity, new Sphere(FVector3.Zero, 4.ToFP())))
+			&& shapeEntity.Read<Shape>().SphereShape.Radius == 3.ToFP());
+		Check("density above the validated range is rejected transactionally", Throws<ArgumentOutOfRangeException>(() =>
+			ShapeOperations.SetDensity(shapeEntity, FP.FromRatio(201, 100)))
+			&& shapeEntity.Read<Shape>().Density == FP.One);
+
+		BodyOperations.SetLinearVelocity(dynamicBody, new FVector3(60.ToFP(), FP.Zero, FP.Zero));
+		Check("the supported linear-speed boundary is accepted", dynamicBody.Read<Body>().LinearVelocity.X == 60.ToFP());
+		BodyOperations.SetLinearVelocity(dynamicBody, new FVector3(61.ToFP(), FP.Zero, FP.Zero));
+		Check("linear speed beyond the configured maximum is clamped like the solver clamps it",
+			NearlyEqual(FVector3.Length(dynamicBody.Read<Body>().LinearVelocity), 60.ToFP()));
+		var solverAngularLimit = B3Config.MaxRotation * Space.GameCore.Const.InvDeltaTime.To32();
+		BodyOperations.SetAngularVelocity(dynamicBody, new FVector3(FP.Zero, FP.Zero, 100.ToFP()));
+		Check("angular speed beyond the solver's limit is clamped to it",
+			NearlyEqual(FVector3.Length(dynamicBody.Read<Body>().AngularVelocity), solverAngularLimit));
+		// 40 rad/s is above the old 30 rad/s API bound but below the solver's own ~47 rad/s clamp, so the
+		// solver can produce it; a small impulse on such a body must not throw.
+		BodyOperations.SetAngularVelocity(dynamicBody, new FVector3(FP.Zero, FP.Zero, 40.ToFP()));
+		BodyOperations.ApplyLinearImpulse(dynamicBody, new FVector3(FP.Zero, FP.One, FP.Zero),
+			dynamicBody.Read<Body>().Center + new FVector3(FP.One, FP.Zero, FP.Zero));
+		Check("impulses on a body spinning at a solver-reachable speed are accepted",
+			FVector3.Length(dynamicBody.Read<Body>().AngularVelocity) <= solverAngularLimit + FP.CalculationsEpsilon);
+		BodyOperations.ApplyLinearImpulseToCenter(dynamicBody, new FVector3(30000.ToFP(), FP.Zero, FP.Zero));
+		Check("an impulse far beyond the speed limit saturates instead of wrapping",
+			dynamicBody.Read<Body>().LinearVelocity.X > FP.Zero
+			&& NearlyEqual(FVector3.Length(dynamicBody.Read<Body>().LinearVelocity), 60.ToFP()));
+
+		var thinCapsule = Shape.MakeCapsule(new FVector3(FP.Zero, -2.ToFP(), FP.Zero), new FVector3(FP.Zero, 2.ToFP(), FP.Zero), FP.FromRatio(4, 100));
+		var thinBody = W.NewEntity<Default>();
+		BodyOperations.CreateBody(thinBody, BodyType.Dynamic, new FWorldTransform(new FPos(Fixed64.FP.Zero, 20.ToFP().To64(), Fixed64.FP.Zero), FQuaternion.Identity));
+		// About its long axis this capsule's inertia (~1.6e-5) is one Q16.16 ulp; its exact inverse (~62000)
+		// would overflow Q16.16. The inertia floor must keep it rotatable with a bounded inverse.
+		ShapeFactory.CreateShape(thinBody, thinCapsule);
+		ref readonly var thin = ref thinBody.Read<Body>();
+		var maxInverse = PhysicsValidation.MaximumInverseMassOrInertia + FP.FromRatio(1, 100);
+		Check("a thin dynamic capsule gets a floored, invertible inertia instead of overflowing",
+			thin.InvInertiaLocal.Cy.Y > FP.Zero && thin.InvInertiaLocal.Cy.Y <= maxInverse
+			&& thin.InvInertiaLocal.Cx.X > FP.Zero && thin.InvInertiaLocal.Cz.Z > FP.Zero);
+		// The same thin capsule laid diagonally and offset from the body origin: its tiny long-axis moment
+		// hides in off-diagonal terms, so a floor based on the smallest diagonal entry would miss it.
+		var obliqueCapsule = Shape.MakeCapsule(new FVector3(FP.Zero, -FP.One, FP.One), new FVector3(2.ToFP(), FP.One, FP.One), FP.FromRatio(4, 100));
+		var obliqueBody = W.NewEntity<Default>();
+		BodyOperations.CreateBody(obliqueBody, BodyType.Dynamic, new FWorldTransform(new FPos(20.ToFP().To64(), 20.ToFP().To64(), Fixed64.FP.Zero), FQuaternion.Identity));
+		ShapeFactory.CreateShape(obliqueBody, obliqueCapsule);
+		ref readonly var oblique = ref obliqueBody.Read<Body>();
+		Check("an oriented, offset thin capsule gets a floored inertia with bounded inverse diagonal",
+			oblique.InvInertiaLocal.Cx.X > FP.Zero && oblique.InvInertiaLocal.Cx.X <= maxInverse
+			&& oblique.InvInertiaLocal.Cy.Y > FP.Zero && oblique.InvInertiaLocal.Cy.Y <= maxInverse
+			&& oblique.InvInertiaLocal.Cz.Z > FP.Zero && oblique.InvInertiaLocal.Cz.Z <= maxInverse);
+		var tinyBody = W.NewEntity<Default>();
+		BodyOperations.CreateBody(tinyBody, BodyType.Dynamic, new FWorldTransform(new FPos(10.ToFP().To64(), 20.ToFP().To64(), Fixed64.FP.Zero), FQuaternion.Identity));
+		var shapeCountBeforeTiny = W.Query<All<Shape>>().EntitiesCount();
+		Check("a dynamic body whose inverse mass exceeds the envelope is rejected at creation", Throws<ArgumentOutOfRangeException>(() =>
+			ShapeFactory.CreateShape(tinyBody, Shape.MakeSphere(FVector3.Zero, FP.FromRatio(3, 100))))
+			&& W.Query<All<Shape>>().EntitiesCount() == shapeCountBeforeTiny);
+		Check("checked Fixed64 narrowing diagnoses overflow", Throws<OverflowException>(() =>
+			_ = Fixed64.FP.FromRatio(32768, 1).To32Checked()));
+
+		var world = W.GetResource<PhysicsWorld>();
+		world.SubStepCount = 0;
+		Check("invalid solver configuration fails before stepping", Throws<ArgumentOutOfRangeException>(() => Systems.Update()));
+		world.SubStepCount = 4;
+		Shutdown();
+	}
+
+	/// <summary>
+	/// A body falling past the escape line must leave the simulation (disabled + tagged) instead of
+	/// throwing mid-step or narrowing an out-of-range coordinate; moving it back and re-enabling restores it.
+	/// </summary>
+	private static void EscapingBodyIsDisabledTest() {
+		Console.WriteLine("--- EscapingBodyIsDisabledTest ---");
+		Bootstrap();
+
+		var startY = -(PhysicsValidation.EscapeCoordinate - FP.Half);
+		var body = W.NewEntity<Default>();
+		BodyOperations.CreateBody(body, BodyType.Dynamic,
+			new FWorldTransform(new FPos(Fixed64.FP.Zero, startY.To64(), Fixed64.FP.Zero), FQuaternion.Identity));
+		ShapeFactory.CreateShape(body, Shape.MakeSphere(FVector3.Zero, FP.Half));
+		BodyOperations.SetLinearVelocity(body, new FVector3(FP.Zero, -60.ToFP(), FP.Zero));
+
+		var threw = false;
+		try {
+			for (var i = 0; i < 5; i++) {
+				W.Tick();
+				Systems.Update();
+			}
+		} catch (Exception) {
+			threw = true;
+		}
+
+		Check("stepping a body across the escape line does not throw", !threw);
+		Check("the escaped body is disabled and tagged", !BodyOperations.IsEnabled(body.Read<Body>()) && body.Has<OutOfPhysicsBounds>());
+		Check("the escaped body's proxies and contacts are released", PhysicsDiagnostics.Capture().Proxies == 0);
+
+		Check("re-enabling an escaped body in place is rejected", Throws<InvalidOperationException>(() => BodyOperations.Enable(body))
+			&& !BodyOperations.IsEnabled(body.Read<Body>()) && body.Has<OutOfPhysicsBounds>());
+
+		BodyOperations.SetTransform(body, FWorldTransform.Identity);
+		BodyOperations.Enable(body);
+		Check("moving the body back and re-enabling it clears the tag", BodyOperations.IsEnabled(body.Read<Body>()) && !body.Has<OutOfPhysicsBounds>());
+
+		Shutdown();
+	}
+
+	/// <summary>Physics configuration is world state: a rollback must restore the snapshot tick's values.</summary>
+	private static void PhysicsConfigurationRollbackTest() {
+		Console.WriteLine("--- PhysicsConfigurationRollbackTest ---");
+		Bootstrap();
+
+		var world = W.GetResource<PhysicsWorld>();
+		world.Gravity = new FVector3(FP.Zero, -7.ToFP(), FP.Zero);
+		world.ContactHertz = 24.ToFP();
+		world.MaximumLinearSpeed = 48.ToFP();
+		world.EnableWarmStarting = false;
+		world.SubStepCount = 3;
+		var snapshot = W.Serializer.CreateWorldSnapshot();
+
+		world.Gravity = new FVector3(FP.Zero, -9.ToFP(), FP.Zero);
+		world.ContactHertz = 30.ToFP();
+		world.MaximumLinearSpeed = 60.ToFP();
+		world.EnableWarmStarting = true;
+		world.SubStepCount = 4;
+		W.Tick();
+		Systems.Update();
+
+		W.Serializer.LoadWorldSnapshot(snapshot, hardReset: true);
+		var restored = W.GetResource<PhysicsWorld>();
+		Check("rollback restores the snapshot tick's physics configuration",
+			restored.Gravity == new FVector3(FP.Zero, -7.ToFP(), FP.Zero)
+			&& restored.ContactHertz == 24.ToFP()
+			&& restored.MaximumLinearSpeed == 48.ToFP()
+			&& !restored.EnableWarmStarting
+			&& restored.SubStepCount == 3);
+
+		Shutdown();
+	}
+
+	private static void CrossWorldFullSyncTest() {
+		Console.WriteLine("--- CrossWorldFullSyncTest ---");
+		Bootstrap();
+		var sourceWorld = W.GetResource<PhysicsWorld>();
+		sourceWorld.Gravity = new FVector3(FP.Zero, -7.ToFP(), FP.Zero);
+		sourceWorld.ContactHertz = 24.ToFP();
+		sourceWorld.ContactDampingRatio = 8.ToFP();
+		sourceWorld.ContactSpeed = 2.ToFP();
+		sourceWorld.RestitutionThreshold = FP.Half;
+		sourceWorld.HitEventThreshold = FP.FromRatio(3, 2);
+		sourceWorld.MaximumLinearSpeed = 48.ToFP();
+		sourceWorld.EnableWarmStarting = false;
+		sourceWorld.SubStepCount = 3;
+
+		var ground = W.NewEntity<Default>();
+		BodyOperations.CreateBody(ground, BodyType.Static, FWorldTransform.Identity);
+		ShapeFactory.CreateShape(ground, Shape.MakeBox(FVector3.Zero, new FVector3(4.ToFP(), FP.Half, 4.ToFP())));
+		var ball = W.NewEntity<Default>();
+		BodyOperations.CreateBody(ball, BodyType.Dynamic,
+			new FWorldTransform(new FPos(Fixed64.FP.Zero, 3.ToFP().To64(), Fixed64.FP.Zero), FQuaternion.Identity));
+		ShapeFactory.CreateShape(ball, Shape.MakeSphere(FVector3.Zero, FP.Half));
+		BodyOperations.SetLinearVelocity(ball, new FVector3(FP.One, FP.Zero, FP.Zero));
+		for (var i = 0; i < 5; i++) {
+			W.Tick();
+			Systems.Update();
+		}
+
+		Core<SyncTargetWorld>.W.Create(Core<SyncTargetWorld>.GameWorldSetup.WorldConfig);
+		Core<SyncTargetWorld>.Systems.Create(snapshotGuid: Core<SyncTargetWorld>.GameSystemsSnapshotGuid);
+		GameTypes.Register<SyncTargetWorld>();
+		Core<SyncTargetWorld>.W.SetResource(new Core<SyncTargetWorld>.PhysicsWorld());
+		Core<SyncTargetWorld>.W.SetResource(new Core<SyncTargetWorld>.BroadPhase());
+		Core<SyncTargetWorld>.Systems.Add(new Core<SyncTargetWorld>.DamageSystem(), order: 0);
+		Core<SyncTargetWorld>.Systems.Add(new Core<SyncTargetWorld>.ProjectileDespawnSystem(), order: 0);
+		Core<SyncTargetWorld>.Systems.Add(new Core<SyncTargetWorld>.DeathSystem(), order: 1);
+		Core<SyncTargetWorld>.Systems.Add(new Core<SyncTargetWorld>.ShapeProxySystem(), order: 2);
+		Core<SyncTargetWorld>.Systems.Add(new Core<SyncTargetWorld>.ContactSystem(), order: 3);
+		Core<SyncTargetWorld>.Systems.Add(new Core<SyncTargetWorld>.ContactSolverSystem(), order: 4);
+		Core<SyncTargetWorld>.Systems.Add(new Core<SyncTargetWorld>.BodyTransformSyncSystem(), order: 5);
+		Core<SyncTargetWorld>.Systems.Add(new Core<SyncTargetWorld>.ProjectileHitSystem(), order: 6);
+		Core<SyncTargetWorld>.W.Initialize();
+		Core<SyncTargetWorld>.Systems.Initialize();
+
+		var buffer = BinaryPackWriter.Create(new byte[GameWorldRollback.WorldSnapshotLength]);
+		new GameWorldFullSyncHandler().WriteFullSync(ref buffer);
+		var reader = buffer.AsReader();
+		new Core<SyncTargetWorld>.GameWorldFullSyncHandler().ReadFullSync(ref reader);
+
+		var targetWorld = Core<SyncTargetWorld>.W.GetResource<Core<SyncTargetWorld>.PhysicsWorld>();
+		var configMatches = targetWorld.Gravity == sourceWorld.Gravity
+			&& targetWorld.ContactHertz == sourceWorld.ContactHertz
+			&& targetWorld.ContactDampingRatio == sourceWorld.ContactDampingRatio
+			&& targetWorld.ContactSpeed == sourceWorld.ContactSpeed
+			&& targetWorld.RestitutionThreshold == sourceWorld.RestitutionThreshold
+			&& targetWorld.HitEventThreshold == sourceWorld.HitEventThreshold
+			&& targetWorld.MaximumLinearSpeed == sourceWorld.MaximumLinearSpeed
+			&& targetWorld.EnableWarmStarting == sourceWorld.EnableWarmStarting
+			&& targetWorld.SubStepCount == sourceWorld.SubStepCount;
+		Check("full sync restores serialized physics configuration into a distinct world type", configMatches);
+		var sourceCounts = PhysicsDiagnostics.Capture();
+		var targetCounts = Core<SyncTargetWorld>.PhysicsDiagnostics.Capture();
+		Check("full sync restores identical physics counts into a distinct world type",
+			sourceCounts.Bodies == targetCounts.Bodies && sourceCounts.Shapes == targetCounts.Shapes
+			&& sourceCounts.Proxies == targetCounts.Proxies && sourceCounts.Contacts == targetCounts.Contacts
+			&& sourceCounts.CachedPairs == targetCounts.CachedPairs && sourceCounts.MovedProxies == targetCounts.MovedProxies);
+		Core<SyncTargetWorld>.W.GetResource<Core<SyncTargetWorld>.BroadPhase>().Validate();
+
+		var synchronizedStateMatches = ball.GID.TryUnpack<SyncTargetWorld>(out var targetBall);
+		for (var i = 0; i < 20; i++) {
+			W.Tick();
+			Systems.Update();
+			Core<SyncTargetWorld>.W.Tick();
+			Core<SyncTargetWorld>.Systems.Update();
+			if (!ball.GID.TryUnpack<SyncTargetWorld>(out targetBall)) {
+				synchronizedStateMatches = false;
+				continue;
+			}
+			ref readonly var sourceBody = ref ball.Read<Body>();
+			ref readonly var targetBody = ref targetBall.Read<Body>();
+			var sourceStepCounts = PhysicsDiagnostics.Capture();
+			var targetStepCounts = Core<SyncTargetWorld>.PhysicsDiagnostics.Capture();
+			synchronizedStateMatches &= sourceBody.Transform == targetBody.Transform
+				&& sourceBody.Center == targetBody.Center
+				&& sourceBody.LocalCenter == targetBody.LocalCenter
+				&& sourceBody.LinearVelocity == targetBody.LinearVelocity
+				&& sourceBody.AngularVelocity == targetBody.AngularVelocity
+				&& sourceBody.Mass == targetBody.Mass
+				&& sourceBody.Inertia == targetBody.Inertia
+				&& sourceStepCounts.Bodies == targetStepCounts.Bodies
+				&& sourceStepCounts.Shapes == targetStepCounts.Shapes
+				&& sourceStepCounts.Proxies == targetStepCounts.Proxies
+				&& sourceStepCounts.Contacts == targetStepCounts.Contacts
+				&& sourceStepCounts.CachedPairs == targetStepCounts.CachedPairs;
+		}
+		Check("distinct synchronized worlds retain identical canonical physics state", synchronizedStateMatches);
+
+		Core<SyncTargetWorld>.Systems.Destroy();
+		Core<SyncTargetWorld>.W.Destroy();
+		Shutdown();
+	}
+
 	/// <summary>FNV-1a 64 over the first <paramref name="length"/> bytes -- a stable, process-independent byte hash (unlike GetHashCode).</summary>
 	private static ulong Fnv1a64(byte[] data, int length) {
 		const ulong offset = 14695981039346656037UL;
@@ -2954,6 +3229,17 @@ public static class Program {
 		} else {
 			Console.WriteLine($"FAIL: {label}");
 			_failures++;
+		}
+	}
+
+	private static bool NearlyEqual(FP a, FP b) => FP.Abs(a - b) <= FP.FromRatio(1, 1000);
+
+	private static bool Throws<TException>(Action action) where TException : Exception {
+		try {
+			action();
+			return false;
+		} catch (TException) {
+			return true;
 		}
 	}
 }
