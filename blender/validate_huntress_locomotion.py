@@ -30,7 +30,7 @@ def validate():
     durations = {'idle': 33 / 30, 'run': 16 / 30,
                   'jump': 11 / 30, 'fall': 16 / 30, 'land': 8 / 30,
                   'tilt_l': 8 / 30, 'tilt_r': 8 / 30,
-                  'bow_hold': 1 / 30, 'attack': 41 / 30}
+                  'bow_hold': 1 / 30, 'attack': 32 / 30}
     assert {a['name'] for a in gltf['animations']} == set(durations)
     assert len(gltf['meshes']) == len(gltf['skins']) == 1
     assert len(gltf['images']) == len(gltf['materials']) == 1
@@ -121,7 +121,7 @@ def validate():
                 first = matrices
             assert source.pose.bones['Root'].location.length < 1e-6
             hip_heights.append(source.pose.bones['Hip'].matrix.translation.z)
-            if name == 'attack' and frame == 20:
+            if name == 'attack' and frame == 15:
                 crossbow = source.pose.bones['Crossbow']
                 direction = crossbow.tail - crossbow.head
                 attack_release_yaw = math.degrees(math.atan2(direction.x, -direction.y))

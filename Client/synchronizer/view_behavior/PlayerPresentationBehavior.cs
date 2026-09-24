@@ -97,6 +97,7 @@ public partial class PlayerPresentationBehavior : EntityBehavior {
 		}
 		if (isAttacking && _lastAttackTick != S.CurrentTick) {
 			_lastAttackTick = S.CurrentTick;
+			// Visual state only: the attack sound comes from FxPlayer, deduplicated across rollbacks.
 			_skin.PlayAttack();
 		}
 

@@ -7,7 +7,9 @@ public abstract partial class Core<TWorld> where TWorld : struct, ISessionType, 
 	/// <summary>
 	/// Reacts to discrete and continuous contact events to turn a projectile hit into gameplay
 	/// effects: damages whatever it hit (if it has <see cref="Health"/>) and always kills the
-	/// projectile itself, one hit and done.
+	/// projectile itself, one hit and done. Reports <see cref="FxKind.ProjectileHit"/> keyed by the
+	/// projectile's <see cref="ProjectileOrigin"/>, so a hit that a correction shifts by a tick, or that
+	/// lands on a re-created projectile entity, is still the same effect.
 	/// </summary>
 	public struct ProjectileHitSystem : ISystem {
 		private EventReceiver<TWorld, ContactBeginTouchEvent> receiver;
@@ -51,6 +53,16 @@ public abstract partial class Core<TWorld> where TWorld : struct, ISessionType, 
 					? shooter.GID
 					: projectile.GID;
 				W.SendEvent(new DamageEvent { Amount = int.MaxValue, Target = target.GID, Source = source });
+			}
+
+			if (projectile.Has<ProjectileOrigin>() && projectile.Has<Transform>()) {
+				ref readonly var origin = ref projectile.Read<ProjectileOrigin>();
+				RecordFx(new FxEvent {
+					Kind = FxKind.ProjectileHit,
+					Channel = origin.Channel,
+					KeyTick = origin.SpawnTick,
+					Position = projectile.Read<Transform>().Position,
+				});
 			}
 
 			W.SendEvent(new DeadEvent { Gid = projectile.GID });

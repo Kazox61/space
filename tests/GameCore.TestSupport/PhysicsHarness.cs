@@ -117,6 +117,16 @@ public static partial class Program {
 		new(nameof(BroadPhaseHealthTest), "Diagnostics", BroadPhaseHealthTest),
 		new(nameof(SteadyStateAllocationTest), "Performance", SteadyStateAllocationTest),
 		new(nameof(NestedQueryReentrancyTest), "Queries", NestedQueryReentrancyTest),
+		new(nameof(RemoteAttackNotRepeatedTest), "Fx", RemoteAttackNotRepeatedTest),
+		new(nameof(PredictedJumpNotRepeatedTest), "Fx", PredictedJumpNotRepeatedTest),
+		new(nameof(FxDedupAcrossRollbackTest), "Fx", FxDedupAcrossRollbackTest),
+		new(nameof(FxMispredictNotRetractedTest), "Fx", FxMispredictNotRetractedTest),
+		new(nameof(FxHitKeyedByProjectileTest), "Fx", FxHitKeyedByProjectileTest),
+		new(nameof(FxLateGuardTest), "Fx", FxLateGuardTest),
+		new(nameof(FxPruningTest), "Fx", FxPruningTest),
+		new(nameof(FxFullSyncClearsLogTest), "Fx", FxFullSyncClearsLogTest),
+		new(nameof(FxTickAfterHardResetTest), "Fx", FxTickAfterHardResetTest),
+		new(nameof(ProjectileOriginSurvivesRollbackTest), "Fx", ProjectileOriginSurvivesRollbackTest),
 	};
 
 	internal static void Bootstrap() {
@@ -148,6 +158,7 @@ public static partial class Program {
 	}
 
 	private static void CleanupResidualState() {
+		FxSink = null;
 		if (_syncTargetSystemsCreated) {
 			Core<SyncTargetWorld>.Systems.Destroy();
 			_syncTargetSystemsCreated = false;

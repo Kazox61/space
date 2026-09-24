@@ -333,6 +333,13 @@ public static partial class Program {
 		Check("the projectile remains queued until the final delay tick", W.Query<All<IsProjectile>>().EntitiesCount() == 0);
 		S.FastForwardToTick(S.CurrentTick + 1);
 		Check("the retried flick spawns after its attack delay", W.Query<All<IsProjectile>>().EntitiesCount() == 1);
+		foreach (var projectile in W.Query<All<IsProjectile, Transform, Body>>().Entities()) {
+			ref readonly var projectileTransform = ref projectile.Read<Transform>();
+			ref readonly var projectileBody = ref projectile.Read<Body>();
+			var forward = projectileTransform.Rotation * Fixed64.FVector3.Forward;
+			var velocityDirection = Fixed32.FVector3.NormalizeSafe(projectileBody.LinearVelocity).To64();
+			Check("a projectile faces in its flight direction", Fixed64.FVector3.DistanceSqr(forward, velocityDirection) < Fixed64.FP.CalculationsEpsilonSqr);
+		}
 
 		GameWorldSetup.Destroy();
 		_systemsCreated = false;

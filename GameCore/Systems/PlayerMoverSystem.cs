@@ -48,7 +48,9 @@ public abstract partial class Core<TWorld> where TWorld : struct, ISessionType, 
 				// Jump check comes before the grounded reset (and clears Grounded immediately) so the
 				// fresh jump velocity isn't stomped back to zero by that same reset this tick --
 				// mirrors box3d's CharacterMover::Step/SolveMove ordering.
-				if (lastInput.Jump && mover.Grounded) {
+				// Jump is edge-triggered: a predicted tick carries the previous input forward (Aged), so
+				// only a fresh input may jump, or one press would re-jump on every predicted landing.
+				if (input.IsFresh && lastInput.Jump && mover.Grounded) {
 					mover.Velocity.Y = jumpForce;
 					mover.Grounded = false;
 					mover.JumpCooldown = characterRes.JumpCooldownTime.To32();

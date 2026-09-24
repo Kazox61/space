@@ -19,6 +19,20 @@ public partial class TransformViewBehavior : EntityBehavior {
 	}
 
 
+	public static Transform3D ToGodot(in Transform transform) => new(
+		new Basis(new Quaternion(
+			transform.Rotation.X.ToFloat(),
+			transform.Rotation.Y.ToFloat(),
+			transform.Rotation.Z.ToFloat(),
+			transform.Rotation.W.ToFloat()
+		).Normalized()),
+		new Vector3(
+			transform.Position.X.ToFloat(),
+			transform.Position.Y.ToFloat(),
+			transform.Position.Z.ToFloat()
+		)
+	);
+
 	public override void OnEntityUpdate(EntityGID entityGid) {
 		if (!entityGid.TryUnpack<ClientWorld>(out var entity)) {
 			return;

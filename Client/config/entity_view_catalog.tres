@@ -2,8 +2,8 @@
 
 [ext_resource type="Script" uid="uid://brajig61a15ny" path="res://synchronizer/EntityViewCatalog.cs" id="1_catalog"]
 [ext_resource type="Script" uid="uid://pdh65li00xgk" path="res://synchronizer/EntityViewDefinition.cs" id="2_definition"]
+[ext_resource type="PackedScene" uid="uid://dx5m8gsco5rh4" path="res://entity/arrow.tscn" id="3_coaq0"]
 [ext_resource type="PackedScene" uid="uid://sv6lfeph1nso" path="res://entity/player.tscn" id="3_player"]
-[ext_resource type="PackedScene" uid="uid://bcgxoj4pa2tt6" path="res://entity/projectile.tscn" id="4_projectile"]
 [ext_resource type="PackedScene" uid="uid://be445c1y421lr" path="res://entity/sphere.tscn" id="5_sphere"]
 [ext_resource type="PackedScene" uid="uid://nx2rh7s10aj5" path="res://entity/platform.tscn" id="6_platform"]
 [ext_resource type="PackedScene" uid="uid://dqx8m3vf2k7n0" path="res://entity/box.tscn" id="7_box"]
@@ -17,7 +17,7 @@ PrewarmCount = 4
 [sub_resource type="Resource" id="Resource_projectile"]
 script = ExtResource("2_definition")
 Asset = 1
-Scene = ExtResource("4_projectile")
+Scene = ExtResource("3_coaq0")
 PrewarmCount = 32
 
 [sub_resource type="Resource" id="Resource_sphere"]

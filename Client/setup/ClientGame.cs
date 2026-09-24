@@ -9,6 +9,7 @@ namespace Space.Client;
 
 public partial class ClientGame : Node3D {
 	[Export] private EntityViewCatalog _viewCatalog;
+	[Export] private FxPlayer _fxPlayer;
 
 	private float _clientTime;
 	private FVector2 _attackInput;
@@ -43,6 +44,10 @@ public partial class ClientGame : Node3D {
 		OfflineServer.Update(delta);
 		_clientTime += (float)delta;
 		CLNT.Update(_clientTime);
+		// After the update, so every tick it (re-)simulated has reported its effects and the head
+		// tick for the late check is known.
+		ClientSetup.FxLog.LocalChannel = CLNT.Channel;
+		ClientSetup.FxLog.Flush(S.CurrentTick, _fxPlayer);
 		var moveInput = Input.GetVector("move_left", "move_right", "move_forward", "move_backward").Normalized();
 		var sendingAttack = !_inputConsumed;
 		var jumping = Input.IsActionJustPressed("jump") || _pendingJump;
