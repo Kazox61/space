@@ -106,9 +106,9 @@ Phase 5, "Dynamic navigation"):
   takes Klotho's `Frame`/`EntityRef` and must be rewritten against StaticEcs.
 - **B. Zones switched on and off.** Uses the triangle fields
   `isBlocked`, `areaMask` and `costMultiplier` that the pathfinder already
-  honours. The on/off state lives in the ECS and is written into the mesh
-  before pathfinding, following Klotho's "installed mesh is derived state"
-  rule (`Klotho/Docs/Navigation.Rebake.md`).
+  honours. The on/off state lives in snapshotted ECS state and is written into
+  the mesh before pathfinding, following Klotho's "installed mesh is derived
+  state" rule (`Klotho/Docs/Navigation.Rebake.md`).
 
 ### Skip
 
@@ -144,8 +144,12 @@ static colliders, which are already in simulation coordinates.
 
 ### Rollback
 
-- The navmesh is immutable at runtime: store it as a non-snapshotted resource
-  loaded identically on server and client.
+- The navmesh topology and geometry (vertices, triangles, adjacency, portals,
+  grid) are immutable at runtime: store them as a non-snapshotted resource
+  loaded identically on server and client. The per-triangle flags
+  `isBlocked`, `areaMask` and `costMultiplier` are the exception: they are
+  derived state, re-written from the snapshotted ECS zone state before each
+  pathfinding pass (B above), so a rollback restores them.
 - Agent state (destination, corridor, current triangle, status, repath tick)
   must live in a StaticEcs component so it rolls back. Klotho's corridor is a
   128-entry `fixed int` buffer; keep a fixed-size buffer so the component stays
