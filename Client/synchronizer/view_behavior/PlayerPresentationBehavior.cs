@@ -25,7 +25,6 @@ public partial class PlayerPresentationBehavior : EntityBehavior {
 	private bool _hasPreviousState;
 	private bool _isAssigned;
 	private bool _wasGrounded;
-	private float _attackFacingTimeRemaining;
 	private int _lastAttackTick = -1;
 	private float _previousVerticalVelocity;
 	private float _targetYaw;
@@ -66,16 +65,12 @@ public partial class PlayerPresentationBehavior : EntityBehavior {
 			mover.Velocity.Z.ToFloat()
 		);
 		var movementInput = new Vector2(input.MoveX.ToFloat(), input.MoveY.ToFloat());
-		var attackInput = new Vector2(input.AttackX.ToFloat(), input.AttackY.ToFloat());
 		var isMoving = movementInput.LengthSquared() > 0.01f;
-		var isAttacking = inputState.IsFresh && attackInput.LengthSquared() > 0.01f;
+		var isAttacking = TryFindLatestAttack(entity, out var attackAim, out var attackTick);
 		var delta = (float)GetProcessDeltaTime();
 
 		if (isAttacking) {
-			_targetYaw = -attackInput.Orthogonal().Angle() + _skin.AimYawOffsetRadians;
-			_attackFacingTimeRemaining = Systems.GetResource<CharacterRes>().AttackDelay.ToFloat();
-		} else if (_attackFacingTimeRemaining > 0.0f) {
-			_attackFacingTimeRemaining = Mathf.Max(0.0f, _attackFacingTimeRemaining - delta);
+			_targetYaw = -attackAim.Orthogonal().Angle() + _skin.AimYawOffsetRadians;
 		} else if (isMoving) {
 			_targetYaw = -movementInput.Orthogonal().Angle();
 		}
@@ -95,8 +90,8 @@ public partial class PlayerPresentationBehavior : EntityBehavior {
 			_currentState = state;
 			_skin.SetState(state);
 		}
-		if (isAttacking && _lastAttackTick != S.CurrentTick) {
-			_lastAttackTick = S.CurrentTick;
+		if (isAttacking && attackTick > _lastAttackTick) {
+			_lastAttackTick = attackTick;
 			// Visual state only: the attack sound comes from FxPlayer, deduplicated across rollbacks.
 			_skin.PlayAttack();
 		}
@@ -113,6 +108,30 @@ public partial class PlayerPresentationBehavior : EntityBehavior {
 		_wasGrounded = mover.Grounded;
 		_previousVerticalVelocity = velocity.Y;
 		_hasPreviousState = true;
+	}
+
+	/// <summary>
+	/// The newest attack this player still has in flight. Read from the simulation's
+	/// <see cref="PendingShot"/>s rather than the input: a remote player's input reaches this client
+	/// ticks late, so it is never fresh at the tick being shown, but the re-simulated shot stays queued
+	/// for the whole <see cref="CharacterRes.AttackDelay"/>, which is also how long the player faces its aim.
+	/// </summary>
+	private static bool TryFindLatestAttack(W.Entity player, out Vector2 aim, out int attackTick) {
+		aim = default;
+		attackTick = -1;
+		var playerGid = player.GID;
+		foreach (var shot in W.Query<All<PendingShot, W.Link<Shooter>>>().Entities()) {
+			if (shot.Read<W.Link<Shooter>>().Value != playerGid) {
+				continue;
+			}
+
+			ref readonly var pending = ref shot.Read<PendingShot>();
+			if (pending.AttackTick > attackTick) {
+				attackTick = pending.AttackTick;
+				aim = new Vector2(pending.Aim.X.ToFloat(), pending.Aim.Y.ToFloat());
+			}
+		}
+		return attackTick >= 0;
 	}
 
 	private void PlayLandingFeedback(float verticalVelocity) {
@@ -150,7 +169,6 @@ public partial class PlayerPresentationBehavior : EntityBehavior {
 	private void ResetPresentation() {
 		_hasPreviousState = false;
 		_wasGrounded = false;
-		_attackFacingTimeRemaining = 0.0f;
 		_lastAttackTick = -1;
 		_previousVerticalVelocity = 0.0f;
 		_targetYaw = 0.0f;
