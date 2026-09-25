@@ -209,10 +209,11 @@ internal static class GJK {
 			return false;
 		}
 
-		// VR(AB)
-		var denominator = FP.One / divisor;
-		v0.A = denominator * u;
-		v1.A = denominator * v;
+		// VR(AB). Divide directly rather than box3d's reciprocal-then-multiply: in Q16.16, 1 / divisor
+		// keeps few significant bits once the edge is long (1 / 1600 truncates by ~2%), and the weights
+		// then sum well short of 1, pulling the witness points toward the origin.
+		v0.A = u / divisor;
+		v1.A = v / divisor;
 
 		return true;
 	}
