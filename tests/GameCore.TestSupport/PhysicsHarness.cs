@@ -59,6 +59,7 @@ public static partial class Program {
 		new(nameof(ShapeCastFarBelowLargeBoxTest), "Collision", ShapeCastFarBelowLargeBoxTest),
 		new(nameof(FarLargeRadiusDistanceTest), "Collision", FarLargeRadiusDistanceTest),
 		new(nameof(FarDistanceWorstCasePairTest), "Collision", FarDistanceWorstCasePairTest),
+		new(nameof(QuerySpanValidationTest), "Validation", QuerySpanValidationTest),
 		new(nameof(FeatureIdValidityTest), "Collision", FeatureIdValidityTest),
 		new(nameof(ParallelCapsuleRestingStabilityTest), "Collision", ParallelCapsuleRestingStabilityTest),
 		new(nameof(SpeculativeContactAndEventFlagsTest), "Contacts", SpeculativeContactAndEventFlagsTest),

@@ -55,6 +55,13 @@ public abstract partial class Core<TWorld> {
 		/// <summary>Hard cap for bodies with <see cref="Body.AllowFastRotation"/>, which the solver never clamps; keeps squared magnitudes inside Q16.16.</summary>
 		public static readonly FP MaximumFastAngularSpeed = 100.ToFP();
 		public static readonly FP MaximumQueryDistance = 100.ToFP();
+		/// <summary>
+		/// Cap on a query shape's radius plus twice its core bounding radius: what the largest dynamic
+		/// shape (2 * sqrt(3) * <see cref="MaximumDynamicExtent"/>) can reach. GJK's Q16.16 budget (see
+		/// Distance.FarDistance) covers a static shape against a dynamic one, so a query shape may be no
+		/// costlier than a dynamic one. Large spheres pass (their core bound is 0); large boxes don't.
+		/// </summary>
+		public static readonly FP MaximumQuerySpan = FP.Sqrt(12.ToFP()) * MaximumDynamicExtent;
 
 		/// <summary>
 		/// Headroom between the creation envelope and the runtime escape line. It exceeds the reach of any
@@ -169,6 +176,8 @@ public abstract partial class Core<TWorld> {
 				lower = FVector3.MinComponents(lower, point);
 				upper = FVector3.MaxComponents(upper, point);
 			}
+			Distance.ProxyBoundingSphere(proxy, FMatrix3.Identity, FVector3.Zero, out var coreBound);
+			ValidateQuerySpan(proxy.Radius + 2 * coreBound, nameof(proxy));
 			var radius = new FVector3(proxy.Radius, proxy.Radius, proxy.Radius);
 			ValidateQueryBounds(transform.Position, new FAABB(lower - radius, upper + radius), translation);
 		}
@@ -179,6 +188,7 @@ public abstract partial class Core<TWorld> {
 				throw new ArgumentOutOfRangeException(nameof(capsule), "Shape query radius is outside the supported range.");
 			ValidateLocalBounds(capsule.Center1, capsule.Radius, MaximumStaticExtent, nameof(capsule));
 			ValidateLocalBounds(capsule.Center2, capsule.Radius, MaximumStaticExtent, nameof(capsule));
+			ValidateQuerySpan(capsule.Radius + FVector3.Distance(capsule.Center1, capsule.Center2), nameof(capsule));
 			var localBounds = Capsule.ComputeAABB(capsule, new FTransform(FVector3.Zero, transform.Rotation));
 			ValidateQueryBounds(transform.Position, localBounds, translation);
 		}
@@ -186,6 +196,11 @@ public abstract partial class Core<TWorld> {
 		public static void ValidateRayQuery(FPos origin, FVector3 translation) {
 			ValidatePosition(origin, nameof(origin));
 			ValidateQueryBounds(origin, new FAABB(FVector3.Zero, FVector3.Zero), translation);
+		}
+
+		private static void ValidateQuerySpan(FP span, string parameterName) {
+			if (span > MaximumQuerySpan)
+				throw new ArgumentOutOfRangeException(parameterName, $"Shape query radius plus core diameter must be at most {MaximumQuerySpan}.");
 		}
 
 		private static void ValidateQueryBounds(FPos position, FAABB localBounds, FVector3 translation) {

@@ -196,6 +196,36 @@ public static partial class Program {
 			FP.Abs(output.Distance - expected) < FP.FromRatio(5, 100));
 	}
 
+	private static void QuerySpanValidationTest() {
+		Console.WriteLine("--- QuerySpanValidationTest ---");
+		// Query shapes may reach no further than the largest dynamic shape, which FarDistance's Q16.16
+		// budget already covers against the largest static one.
+		var xf = new FWorldTransform(FPos.Zero, FQuaternion.Identity);
+		static ShapeProxy Box(FP half) {
+			var proxy = new ShapeProxy { Count = 8, Radius = FP.Zero };
+			for (var i = 0; i < 8; i++) {
+				proxy.Points[i] = new FVector3((i & 1) != 0 ? half : -half, (i & 2) != 0 ? half : -half, (i & 4) != 0 ? half : -half);
+			}
+			return proxy;
+		}
+
+		Check("a large sphere query is accepted", !Throws<ArgumentOutOfRangeException>(() =>
+			PhysicsValidation.ValidateQuery(xf, ShapeProxy.MakePoint(FVector3.Zero, 10.ToFP()), FVector3.Zero)));
+		Check("a sphere query past the span is rejected", Throws<ArgumentOutOfRangeException>(() =>
+			PhysicsValidation.ValidateQuery(xf, ShapeProxy.MakePoint(FVector3.Zero, 14.ToFP()), FVector3.Zero)));
+		Check("a dynamic-sized box query is accepted", !Throws<ArgumentOutOfRangeException>(() =>
+			PhysicsValidation.ValidateQuery(xf, Box(FP.FromRatio(39, 10)), FVector3.Zero)));
+		Check("a larger box query is rejected", Throws<ArgumentOutOfRangeException>(() =>
+			PhysicsValidation.ValidateQuery(xf, Box(5.ToFP()), FVector3.Zero)));
+
+		var player = new Capsule { Center1 = new FVector3(FP.Zero, -FP.Half, FP.Zero), Center2 = new FVector3(FP.Zero, FP.Half, FP.Zero), Radius = FP.Half };
+		Check("the player capsule query is accepted", !Throws<ArgumentOutOfRangeException>(() =>
+			PhysicsValidation.ValidateCapsuleQuery(xf, player, FVector3.Zero)));
+		var pole = new Capsule { Center1 = new FVector3(FP.Zero, -7.ToFP(), FP.Zero), Center2 = new FVector3(FP.Zero, 7.ToFP(), FP.Zero), Radius = FP.One };
+		Check("a long capsule query is rejected", Throws<ArgumentOutOfRangeException>(() =>
+			PhysicsValidation.ValidateCapsuleQuery(xf, pole, FVector3.Zero)));
+	}
+
 	private static void CapsuleAtParallelBoxEdgeManifoldTest() {
 		Console.WriteLine("--- CapsuleAtParallelBoxEdgeManifoldTest ---");
 		var box = Shape.MakeBox(FVector3.Zero, new FVector3(FP.Half, FP.Half, FP.Half));

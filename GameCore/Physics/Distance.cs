@@ -371,13 +371,14 @@ public static partial class Distance {
 	/// vectors span at most gap + radiusA + radiusB + 2 * boundA + 2 * boundB. PhysicsValidation keeps
 	/// every core point within (extent - radius) per axis, so radius + 2 * bound <= 2 * sqrt(3) * extent
 	/// for any shape; for its MaximumStaticExtent (40) against MaximumDynamicExtent (4) that is
-	/// 16 + 138.6 + 13.9 = 168.5, under the ~181 Q16.16 squaring limit. Raising either extent breaks
-	/// this; FarDistanceWorstCasePairTest pins it.
+	/// 16 + 138.6 + 13.9 = 168.5, under the ~181 Q16.16 squaring limit. Query shapes are held to the
+	/// dynamic share by PhysicsValidation.MaximumQuerySpan. Raising either extent breaks this;
+	/// FarDistanceWorstCasePairTest pins it.
 	/// </summary>
 	private static readonly FP FarDistance = 16.ToFP();
 
 	/// <summary>Center (points' average, in frame A) and radius of a sphere around a proxy's core points.</summary>
-	private static FVector3 ProxyBoundingSphere(in ShapeProxy proxy, FMatrix3 rotation, FVector3 position, out FP radius) {
+	internal static FVector3 ProxyBoundingSphere(in ShapeProxy proxy, FMatrix3 rotation, FVector3 position, out FP radius) {
 		var sum = FVector3.Zero;
 		for (var i = 0; i < proxy.Count; i++) {
 			sum += proxy.Points[i];
