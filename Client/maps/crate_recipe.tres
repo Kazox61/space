@@ -1,0 +1,28 @@
+[gd_resource type="Resource" script_class="EntityRecipe" format=3 uid="uid://do3lqdeifscq8"]
+
+[ext_resource type="Script" uid="uid://crcwfs64lq55j" path="res://level_authoring/EntityComponent.cs" id="1_anadu"]
+[ext_resource type="Script" uid="uid://b82fwi3vurpa0" path="res://level_authoring/EntityRecipe.cs" id="1_recipe"]
+[ext_resource type="Script" uid="uid://eb4g86y84qna" path="res://level_authoring/HealthComponent.cs" id="2_health"]
+[ext_resource type="Script" uid="uid://bgqj0h1yboee6" path="res://level_authoring/LootComponent.cs" id="3_loot"]
+[ext_resource type="Script" uid="uid://8hu2s5xd7r4i" path="res://level_authoring/BodyComponent.cs" id="4_body"]
+[ext_resource type="Script" uid="uid://d3ws8oeafa2hk" path="res://level_authoring/BoxShapeComponent.cs" id="5_box"]
+[ext_resource type="Script" uid="uid://cnuquxj8c2tru" path="res://level_authoring/ViewComponent.cs" id="6_view"]
+
+[sub_resource type="Resource" id="Health"]
+script = ExtResource("2_health")
+
+[sub_resource type="Resource" id="Loot"]
+script = ExtResource("3_loot")
+
+[sub_resource type="Resource" id="Body"]
+script = ExtResource("4_body")
+
+[sub_resource type="Resource" id="Box"]
+script = ExtResource("5_box")
+
+[sub_resource type="Resource" id="View"]
+script = ExtResource("6_view")
+
+[resource]
+script = ExtResource("1_recipe")
+Components = Array[ExtResource("1_anadu")]([SubResource("Health"), SubResource("Loot"), SubResource("Body"), SubResource("Box"), SubResource("View")])

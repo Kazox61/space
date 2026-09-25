@@ -3,7 +3,7 @@
 [ext_resource type="Script" uid="uid://8s5cf28weng7" path="res://setup/ClientGame.cs" id="1_myinc"]
 [ext_resource type="PackedScene" uid="uid://daakfmjk2otty" path="res://ui/touchscreen_ui.tscn" id="2_2au82"]
 [ext_resource type="Resource" uid="uid://c5o1gws06ymte" path="res://config/entity_view_catalog.tres" id="3_catalog"]
-[ext_resource type="Script" path="res://setup/FxPlayer.cs" id="4_fxplayer"]
+[ext_resource type="Script" uid="uid://wi6mti1dtugk" path="res://setup/FxPlayer.cs" id="4_fxplayer"]
 [ext_resource type="AudioStream" uid="uid://beel4bseu55ic" path="res://assets/player/audio/huntress_launch.wav" id="5_launch"]
 [ext_resource type="AudioStream" uid="uid://n74qfxcmnf4x" path="res://assets/arrow/audio/huntress_hit.wav" id="6_hit"]
 
@@ -27,7 +27,7 @@ script = ExtResource("1_myinc")
 _viewCatalog = ExtResource("3_catalog")
 _fxPlayer = NodePath("FxPlayer")
 
-[node name="FxPlayer" type="Node" parent="."]
+[node name="FxPlayer" type="Node" parent="." unique_id=260239189]
 script = ExtResource("4_fxplayer")
 _attackSound = ExtResource("5_launch")
 _hitSound = ExtResource("6_hit")

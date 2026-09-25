@@ -9,12 +9,12 @@ public struct ServerWorld : IWorldType, ISessionType { }
 public abstract class SRVR : Server<ServerWorld> { }
 
 public static class ServerSetup {
-	public static void CreateAndInitialize(IRemoteClientListener remoteClientListener, ILogger? logger = null) {
+	public static void CreateAndInitialize(IRemoteClientListener remoteClientListener, LevelFile level, ILogger? logger = null) {
 		SRVR.Create(GameSessionSetup.SessionConfig, remoteClientListener, new GameWorldFullSyncHandler(), logger: logger);
 		GameSessionSetup.Register();
 		SRVR.Initialize();
 
-		GameWorldSetup.CreateAndInitialize();
+		GameWorldSetup.CreateAndInitialize(level.Data);
 	}
 
 	public static void Destroy() {

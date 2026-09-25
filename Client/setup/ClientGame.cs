@@ -1,4 +1,6 @@
+using System;
 using System.Collections.Generic;
+using System.IO;
 using Fixed64;
 using Godot;
 using Shenanicode.Rollback;
@@ -11,6 +13,8 @@ namespace Space.Client;
 public partial class ClientGame : Node3D {
 	[Export] private EntityViewCatalog _viewCatalog;
 	[Export] private FxPlayer _fxPlayer;
+	/// <summary>Level loaded from <c>res://maps/</c> unless <c>--level</c> is passed; empty means <see cref="LevelFile.DefaultName"/>.</summary>
+	[Export] private string _levelName = "";
 
 	private float _clientTime;
 	private FVector2 _attackInput;
@@ -18,16 +22,27 @@ public partial class ClientGame : Node3D {
 	private EntityViewUpdater _viewUpdater;
 	private bool _pendingJump;
 	private readonly List<PositionCorrection> _corrections = [];
+	private LevelFile _level;
 
 	public override void _EnterTree() {
-		var (host, port, offline) = ParseLaunchArgs();
-		if (offline && !OfflineServer.TryStart(port)) {
+		var (host, port, offline, levelName) = ParseLaunchArgs(string.IsNullOrWhiteSpace(_levelName) ? LevelFile.DefaultName : _levelName);
+		try {
+			_level = ReadLevel(levelName);
+		} catch (Exception exception) when (exception is IOException or InvalidDataException) {
+			GD.PushError(exception.Message);
+			SetProcess(false);
+			return;
+		}
+		GD.Print($"Level: {_level.Name} entities={_level.Data.Entities.Count} staticBoxes={_level.Data.StaticBoxes.Count} sha256={_level.ContentHash}");
+		AddMapVisuals(_level.Name);
+
+		if (offline && !OfflineServer.TryStart(_level, port)) {
 			GD.Print($"Port {port} is occupied — connecting to an external server instead.");
 		}
 
 		var connection = new LiteNetLibServerConnection();
-		ClientSetup.CreateAndInitialize(connection);
-		connection.Connect(host, port);
+		ClientSetup.CreateAndInitialize(connection, _level);
+		connection.Connect(host, port, _level.ConnectionKey);
 
 		_viewUpdater = new EntityViewUpdater();
 		AddChild(_viewUpdater);
@@ -85,10 +100,34 @@ public partial class ClientGame : Node3D {
 		_inputConsumed = false;
 	}
 
-	private static (string host, ushort port, bool offline) ParseLaunchArgs() {
+	/// <summary>Reads <c>res://maps/&lt;name&gt;.level.bytes</c> and verifies its embedded content hash.</summary>
+	private static LevelFile ReadLevel(string name) {
+		var path = $"res://maps/{name}{LevelFile.Extension}";
+		var bytes = Godot.FileAccess.GetFileAsBytes(path);
+		if (bytes.Length == 0) {
+			throw new FileNotFoundException($"Level file '{path}' is missing or empty ({Godot.FileAccess.GetOpenError()}).", path);
+		}
+		return LevelFile.Read(name, bytes);
+	}
+
+	/// <summary>
+	/// Instances <c>res://maps/&lt;name&gt;.tscn</c> for its visuals. Its <c>LevelCollider</c>s draw nothing in the
+	/// game; the simulation collides against the level file.
+	/// </summary>
+	private void AddMapVisuals(string name) {
+		var path = $"res://maps/{name}.tscn";
+		if (!ResourceLoader.Exists(path)) {
+			GD.PushWarning($"Map scene '{path}' not found; static geometry will be invisible.");
+			return;
+		}
+		AddChild(GD.Load<PackedScene>(path).Instantiate());
+	}
+
+	private static (string host, ushort port, bool offline, string level) ParseLaunchArgs(string defaultLevel) {
 		var host = "127.0.0.1";
 		var port = OfflineServer.DefaultPort;
 		var offline = true;
+		var level = defaultLevel;
 
 		var args = OS.GetCmdlineUserArgs();
 		for (var i = 0; i < args.Length; i++) {
@@ -98,9 +137,11 @@ public partial class ClientGame : Node3D {
 			} else if (args[i] == "--port" && i + 1 < args.Length && ushort.TryParse(args[i + 1], out var parsedPort)) {
 				port = parsedPort;
 				i++;
+			} else if (args[i] == "--level" && i + 1 < args.Length) {
+				level = args[++i];
 			}
 		}
 
-		return (host, port, offline);
+		return (host, port, offline, level);
 	}
 }

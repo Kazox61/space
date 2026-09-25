@@ -1,0 +1,6 @@
+[gd_scene load_steps=2 format=3]
+
+[ext_resource type="Script" path="res://level_authoring/LevelExportRunner.cs" id="1_runner"]
+
+[node name="LevelExportRunner" type="Node"]
+script = ExtResource("1_runner")

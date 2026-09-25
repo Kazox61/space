@@ -33,7 +33,7 @@ project/solution_directory="../"
 
 [editor_plugins]
 
-enabled=PackedStringArray("res://addons/GPUTrail/plugin.cfg")
+enabled=PackedStringArray("res://addons/GPUTrail/plugin.cfg", "res://addons/level_export/plugin.cfg")
 
 [filesystem]
 

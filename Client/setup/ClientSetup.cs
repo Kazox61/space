@@ -20,7 +20,7 @@ public static class ClientSetup {
 	/// <summary>Turns those corrections into fading offsets that the player views add to their pose.</summary>
 	public static CorrectionSmoother Corrections { get; private set; }
 
-	public static void CreateAndInitialize(ServerConnection connection) {
+	public static void CreateAndInitialize(ServerConnection connection, LevelFile level) {
 		CLNT.Create(GameSessionSetup.SessionConfig,
 			connection,
 			new GameWorldFullSyncHandler(),
@@ -29,7 +29,7 @@ public static class ClientSetup {
 		GameSessionSetup.Register();
 		CLNT.Initialize();
 
-		GameWorldSetup.CreateAndInitialize();
+		GameWorldSetup.CreateAndInitialize(level.Data);
 		GameInterpolationSetup.CreateAndInitialize();
 
 		FxLog = new FxLog(S.RollbackTicksCapacity);

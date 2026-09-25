@@ -8,6 +8,7 @@
 [ext_resource type="PackedScene" uid="uid://nx2rh7s10aj5" path="res://entity/platform.tscn" id="6_platform"]
 [ext_resource type="PackedScene" uid="uid://dqx8m3vf2k7n0" path="res://entity/box.tscn" id="7_box"]
 [ext_resource type="PackedScene" uid="uid://c3u4vrgwkk0k5" path="res://entity/dummy.tscn" id="8_dummy"]
+[ext_resource type="PackedScene" path="res://entity/crate.tscn" id="9_crate"]
 
 [sub_resource type="Resource" id="Resource_player"]
 script = ExtResource("2_definition")
@@ -44,6 +45,12 @@ Asset = 5
 Scene = ExtResource("8_dummy")
 PrewarmCount = 4
 
+[sub_resource type="Resource" id="Resource_crate"]
+script = ExtResource("2_definition")
+Asset = 6
+Scene = ExtResource("9_crate")
+PrewarmCount = 4
+
 [resource]
 script = ExtResource("1_catalog")
-Entries = Array[ExtResource("2_definition")]([SubResource("Resource_player"), SubResource("Resource_projectile"), SubResource("Resource_sphere"), SubResource("Resource_platform"), SubResource("Resource_box"), SubResource("Resource_dummy")])
+Entries = Array[ExtResource("2_definition")]([SubResource("Resource_player"), SubResource("Resource_projectile"), SubResource("Resource_sphere"), SubResource("Resource_platform"), SubResource("Resource_box"), SubResource("Resource_dummy"), SubResource("Resource_crate")])

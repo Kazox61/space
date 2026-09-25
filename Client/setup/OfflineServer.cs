@@ -14,7 +14,7 @@ public static class OfflineServer {
 
 	public static bool IsRunning { get; private set; }
 
-	public static bool TryStart(ushort port = DefaultPort) {
+	public static bool TryStart(LevelFile level, ushort port = DefaultPort) {
 		if (IsRunning) {
 			return true;
 		}
@@ -23,9 +23,10 @@ public static class OfflineServer {
 			return false;
 		}
 
-		ServerSetup.CreateAndInitialize(new LiteNetLibRemoteClientListener(port), new GodotLogger("Server"));
+		var listener = new LiteNetLibRemoteClientListener(port, level.ConnectionKey);
+		ServerSetup.CreateAndInitialize(listener, level, new GodotLogger("Server"));
 		IsRunning = true;
-		GD.Print($"Offline server started on port {port}.");
+		GD.Print($"Offline server started on port {port} with level {level}.");
 
 		return true;
 	}

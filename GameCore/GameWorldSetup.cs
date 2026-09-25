@@ -10,7 +10,7 @@ public abstract partial class Core<TWorld> where TWorld : struct, ISessionType, 
 			TrackCreated = true
 		};
 
-		public static void CreateAndInitialize() {
+		public static void CreateAndInitialize(LevelData level) {
 			W.Create(WorldConfig);
 			Systems.Create(snapshotGuid: GameSystemsSnapshotGuid);
 
@@ -19,6 +19,8 @@ public abstract partial class Core<TWorld> where TWorld : struct, ISessionType, 
 
 			W.Initialize();
 			Systems.Initialize();
+
+			LevelLoader.Load(level);
 		}
 
 		public static void Destroy() {

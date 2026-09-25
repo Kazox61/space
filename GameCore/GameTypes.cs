@@ -28,6 +28,7 @@ public static class GameTypes {
 			.Component<Contact>()
 			.Component<Health>()
 			.Component<Lifetime>()
+			.Component<LootDrop>()
 			.Component<Mover>()
 			.Component<PatrolRail>()
 			.Component<PendingRespawn>()
@@ -53,6 +54,7 @@ public static class GameTypes {
 			.Event<SensorEndTouchEvent>()
 			.Event<DamageEvent>()
 			.Event<DeadEvent>()
+			.EntityType<Crate>()
 			.EntityType<Dummy>()
 			.EntityType<Player>()
 			.EntityType<Projectile>();
@@ -64,13 +66,13 @@ public static class GameTypes {
 
 	// Mirrors the list above; only consulted by the debug-time coverage check.
 	private static readonly HashSet<Type> s_registered = [
-		typeof(Body), typeof(Contact), typeof(Health), typeof(Lifetime), typeof(Mover), typeof(PatrolRail), typeof(PendingRespawn), typeof(PendingShot),
+		typeof(Body), typeof(Contact), typeof(Health), typeof(Lifetime), typeof(LootDrop), typeof(Mover), typeof(PatrolRail), typeof(PendingRespawn), typeof(PendingShot),
 		typeof(PlayerInfo), typeof(ProjectileOrigin), typeof(RailSlot), typeof(Shape), typeof(Transform), typeof(ViewId),
 		typeof(IsProjectile), typeof(OutOfPhysicsBounds),
 		typeof(Shapes), typeof(BodyOwner), typeof(ShapeA), typeof(ShapeB), typeof(Shooter),
 		typeof(ContactBeginTouchEvent), typeof(ContactEndTouchEvent), typeof(ContactHitEvent), typeof(ContinuousHitEvent),
 		typeof(SensorBeginTouchEvent), typeof(SensorEndTouchEvent), typeof(DamageEvent), typeof(DeadEvent),
-		typeof(Dummy), typeof(Player), typeof(Projectile),
+		typeof(Crate), typeof(Dummy), typeof(Player), typeof(Projectile),
 	];
 
 	/// <summary>

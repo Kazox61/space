@@ -8,17 +8,20 @@
 ## Summary
 
 Port the core of Klotho's deterministic navigation runtime into
-`GameCore/Navigation`, and bake the navmesh with Godot's own
-`NavigationRegion3D` (Recast under the hood) plus Klotho's Godot exporter.
-Do not run DotRecast in the simulation. box3d has no navigation.
+`GameCore/Navigation`. Build the navmesh with our own offline builder:
+DotRecast bakes the walkable surface from the map's static colliders, and a
+port of Klotho's build pipeline turns it into a fixed-point navmesh stored in
+the level file (see `level-pipeline.md`, Phase 5). Godot's
+`NavigationRegion3D` bake is not used. Do not run DotRecast in the simulation.
+box3d has no navigation.
 
 ## Candidate Sources
 
 | Source | License | Math | Usable for |
 | --- | --- | --- | --- |
-| Klotho `Runtime/Deterministic/Navigation/` | Apache-2.0 | `FP64` (Q32.32) | Runtime query, A*, funnel, serialization, Godot bake export |
-| DotRecast | MIT (Recast/Detour: zlib) | `float` | Offline baking only |
-| Godot `NavigationRegion3D` | MIT | `float` | Offline baking (already Recast-based) |
+| Klotho `Runtime/Deterministic/Navigation/` | Apache-2.0 | `FP64` (Q32.32) | Runtime query, A*, funnel; build pipeline (triangles → navmesh) |
+| DotRecast | MIT (Recast/Detour: zlib) | `float` | Offline baking only (chosen baker) |
+| Godot `NavigationRegion3D` | MIT | `float` | Offline baking; not used, to keep the builder independent of Godot |
 | box3d | MIT | `float` | Nothing; physics only |
 
 ### DotRecast
@@ -31,9 +34,9 @@ modes. Converting Detour to fixed point is a large port that Klotho has
 already done.
 
 Baking determinism does not matter, because the baked result is shipped as
-data. DotRecast would work as a baker, but Godot's baker already uses Recast
-and is integrated with the editor, so it adds nothing today. Revisit DotRecast
-only if a headless/server-side bake from level geometry is needed.
+data. DotRecast is therefore the baker: it runs as plain .NET, needs no
+Godot, and bakes from the same static colliders the simulation uses. Only its
+Recast part (`RcBuilder`) is used; Detour stays out of the runtime.
 
 ### box3d
 
@@ -66,9 +69,14 @@ None of these files import Klotho's ECS.
 | `FPNavMeshSerializer.cs` | 278 | `.bytes` read/write |
 | `FPNavTuning.cs` | 342 | Buffer sizes and loop budgets (referenced 23 times by the above) |
 
-Plus the Godot editor exporter,
-`com.xpturn.klotho/Godot~/Adapters/Editor/GodotFPNavMeshExporter.cs`, which
-converts a baked `NavigationRegion3D` into the binary format.
+Plus the build pipeline, `FPNavMeshBuildPipeline.cs` (2733 lines; port only
+the full `Build(vertices, indices, areas, cellSize, ...)` path, not the
+incremental rebake paths). It takes plain welded triangles, so it accepts
+DotRecast's output directly, and produces the adjacency, portals and spatial
+grid the runtime needs.
+
+Klotho's Godot exporter (`GodotFPNavMeshExporter.cs`) is not used: it only
+reads Godot's `NavigationRegion3D` bake.
 
 External dependencies to replace:
 
@@ -87,12 +95,26 @@ External dependencies to replace:
   Collision, grounding, and slopes come for free, and there is only one
   movement path to keep deterministic.
 
-### Skip for now
+### Port later (dynamic navigation)
 
-- ORCA avoidance (`FPNavAvoidance.cs`, 1012 lines, plus obstacle extraction):
-  add when agent crowds jam.
+Scope is limited to two mechanisms (details in `level-pipeline.md`,
+Phase 5, "Dynamic navigation"):
+
+- **A. Avoidance for moving obstacles.** `FPNavAvoidance.cs` (1012 lines) and
+  `FPNavMeshObstacleExtractor.cs`. Static-obstacle loading
+  (`LoadObstacles`, `Extract`) has no ECS coupling; `ComputeNewVelocity`
+  takes Klotho's `Frame`/`EntityRef` and must be rewritten against StaticEcs.
+- **B. Zones switched on and off.** Uses the triangle fields
+  `isBlocked`, `areaMask` and `costMultiplier` that the pathfinder already
+  honours. The on/off state lives in the ECS and is written into the mesh
+  before pathfinding, following Klotho's "installed mesh is derived state"
+  rule (`Klotho/Docs/Navigation.Rebake.md`).
+
+### Skip
+
 - Runtime rebake, placement, constrained Delaunay, abstract graph: the
   majority of the 23k lines, needed only for RTS-style building placement.
+  Not planned.
 
 ## Porting Constraints
 
@@ -117,8 +139,8 @@ External dependencies to replace:
 ### Coordinate handedness
 
 Klotho documents that Unity-baked `.bytes` do not work in Godot because of
-handedness. Use only the Godot exporter so the baked data matches Space's
-coordinate system.
+handedness. This does not affect Space: the navmesh is built from the exported
+static colliders, which are already in simulation coordinates.
 
 ### Rollback
 
@@ -140,13 +162,14 @@ entry crediting xpTURN Klotho, and mark modified files as changed.
 
 1. Port mesh, triangle, query, pathfinder, heap, funnel, tuning, and a Space
    serializer into `GameCore/Navigation`. Port the matching Klotho tests into
-   `Test/` to validate the fixed-point conversion.
-2. Port the Godot exporter. Bake one level, load the `.bytes` on server and
-   client.
+   `tests/GameCore.Tests` to validate the fixed-point conversion.
+2. Build the `NavBuilder` (DotRecast bake → Klotho build pipeline), run it
+   from the level exporter (`level-pipeline.md`, Phase 5), and load the
+   navmesh from the level file on server and client.
 3. Add a `NavAgent` component and a system that requests paths and drives
    `CharacterMover`.
 4. Add a navmesh fingerprint to the connect handshake (Klotho:
    `INavFingerprintSource.cs`), alongside the build fingerprint proposed in
    `klotho-workflow-comparison.md` #9.
-5. Later: ORCA avoidance, and a navmesh debug overlay
-   (`Klotho/Docs/NavMeshVisualizer.Godot.md`).
+5. Dynamic navigation: ORCA avoidance (A), then nav zones (B).
+6. Navmesh debug overlay (`Klotho/Docs/NavMeshVisualizer.Godot.md`).

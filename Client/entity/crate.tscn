@@ -1,0 +1,23 @@
+[gd_scene load_steps=4 format=3]
+
+[ext_resource type="Script" path="res://synchronizer/EntityView.cs" id="1_view"]
+[ext_resource type="Script" path="res://synchronizer/view_behavior/TransformViewBehavior.cs" id="2_transform"]
+
+[sub_resource type="StandardMaterial3D" id="Material_crate"]
+albedo_color = Color(0.45, 0.28, 0.12, 1)
+
+[sub_resource type="BoxMesh" id="Mesh_crate"]
+size = Vector3(1, 1, 1)
+
+[node name="Crate" type="Node3D" node_paths=PackedStringArray("_entityBehaviours")]
+script = ExtResource("1_view")
+_entityBehaviours = [NodePath("TransformViewBehavior")]
+
+[node name="MeshInstance3D" type="MeshInstance3D" parent="."]
+material_override = SubResource("Material_crate")
+mesh = SubResource("Mesh_crate")
+
+[node name="TransformViewBehavior" type="Node" parent="." node_paths=PackedStringArray("_targetNodePosition", "_targetNodeRotation")]
+script = ExtResource("2_transform")
+_targetNodePosition = NodePath("..")
+_targetNodeRotation = NodePath("..")
