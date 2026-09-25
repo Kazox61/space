@@ -23,4 +23,6 @@ Everything is set up the same way: a marker node with a `Recipe` resource for de
 
 Markers take position and rotation from their node transform and must have unit scale; sizes live in components. A `LevelCollider` draws its box as orange lines in the editor and nothing in the game, so give it a mesh (a child works) for what players see. Godot physics nodes (`StaticBody3D`, `CollisionShape3D`, `Area3D`) are refused by the exporter.
 
+Every Godot export preset must list `*.level.bytes` under Resources → "Filters to export non-resource files", or exported builds stop at startup with "Level file ... is missing". The editor reads presets only at startup, so restart it after the filter changes in `export_presets.cfg`.
+
 The server and client load the exported file at startup (`--level` selects another one); see "Startup integration" in `docs/level-pipeline.md`. Re-export after editing a map and commit the `.level.bytes` file.
