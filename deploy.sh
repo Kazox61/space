@@ -9,17 +9,26 @@ REMOTE_DIR="/opt/space"
 
 echo "==> Deploying to $SERVER_IP..."
 
-# Sync project files to VPS (excludes dev/build artifacts)
+# Sync only what the server image builds from (mirrors the .dockerignore allowlist). Server-only
+# files such as .env or docker-compose.override.yml are excluded, so --delete leaves them alone.
 rsync -avz --delete \
-    --exclude '.git/' \
-    --exclude '.godot/' \
-    --exclude '/Client/android/' \
-    --exclude 'obj/' \
     --exclude 'bin/' \
-    --exclude '.idea/' \
-    --exclude '.env' \
-    --exclude 'docker-compose.override.yml' \
+    --exclude 'obj/' \
+    --exclude '*.user' \
     --exclude '.DS_Store' \
+    --include '/Dockerfile' \
+    --include '/docker-compose.yml' \
+    --include '/.dockerignore' \
+    --include '/Server/***' \
+    --include '/GameCore/***' \
+    --include '/FixedPoint/***' \
+    --include '/static-ecs/***' \
+    --include '/static-rollback/***' \
+    --include '/static-rollback-litenetlib/***' \
+    --include '/Client/' \
+    --include '/Client/maps/' \
+    --include '/Client/maps/*.level.bytes' \
+    --exclude '*' \
     ./ "$SSH_USER@$SERVER_IP:$REMOTE_DIR/"
 
 echo "==> Building and starting services..."

@@ -1,9 +1,16 @@
+# Allowlist: the server image only needs its own projects, their project references and the
+# exported levels. Everything else (Client art, references, prototypes, ...) stays out of the
+# build context. Keep in sync with the rsync filter in deploy.sh.
+*
+
+!Server/
+!GameCore/
+!FixedPoint/
+!static-ecs/
+!static-rollback/
+!static-rollback-litenetlib/
+!Client/maps/*.level.bytes
+
 **/bin/
 **/obj/
-.git
-.gitignore
-.vs/
-.vscode/
-*.user
-Dockerfile
-docker-compose.yml
+**/*.user
