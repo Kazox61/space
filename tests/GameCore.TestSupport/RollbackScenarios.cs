@@ -308,7 +308,7 @@ public static partial class Program {
 		S.Types().Signal<PlayerConnectedSignal>().Signal<PlayerDisconnectedSignal>();
 		GameSessionSetup.Register();
 		S.Initialize();
-		GameWorldSetup.CreateAndInitialize();
+		GameWorldSetup.CreateAndInitialize(TestLevels.Arena);
 		_systemsCreated = true;
 		Systems.GetResource<CharacterRes>().AttackDelay = Space.GameCore.Const.DeltaTime * 3;
 

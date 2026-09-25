@@ -16,3 +16,6 @@ bin/
 /blender/models/huntress_anims.blend
 /blender/models/huntress_base_review.blend
 /blender/models/huntress_run_review.blend
+
+# Cloned third-party repos used as reading material, not part of the build
+/references/

@@ -7,10 +7,11 @@ public struct ViewId : IComponent, ITrackableAdded, ITrackableDeleted {
 }
 
 public enum ViewAsset {
-	Player,
-	Projectile,
-	Sphere,
-	Platform,
-	Box,
-	Dummy,
+	Player = 0,
+	Projectile = 1,
+	Sphere = 2,
+	Platform = 3,
+	Box = 4,
+	Dummy = 5,
+	Crate = 6,
 }

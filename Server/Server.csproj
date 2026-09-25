@@ -12,6 +12,11 @@
         </ItemGroup>
 
   <ItemGroup>
+    <!-- Levels exported from Client/maps by Client/level_authoring/level_export_runner.tscn. -->
+    <None Include="..\Client\maps\*.level.bytes" Link="levels\%(Filename)%(Extension)" CopyToOutputDirectory="PreserveNewest" CopyToPublishDirectory="PreserveNewest" />
+  </ItemGroup>
+
+  <ItemGroup>
     <ProjectReference Include="..\static-rollback-litenetlib\Runtime\Shenanicode.Rollback.LiteNetLib.csproj" />
     <ProjectReference Include="..\GameCore\GameCore.csproj" />
     <ProjectReference Include="..\static-rollback\Runtime\Shenanicode.Rollback.csproj" />

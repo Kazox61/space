@@ -50,7 +50,7 @@ public static partial class Program {
 		S.Types().Signal<PlayerConnectedSignal>().Signal<PlayerDisconnectedSignal>();
 		GameSessionSetup.Register();
 		S.Initialize();
-		GameWorldSetup.CreateAndInitialize();
+		GameWorldSetup.CreateAndInitialize(TestLevels.Arena);
 		_systemsCreated = true;
 
 		W.NewEntity(new Player { PlayerGuid = Guid.NewGuid(), InputChannel = LocalChannel });

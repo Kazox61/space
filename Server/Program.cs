@@ -17,8 +17,14 @@ internal class Program {
 			Arity = ArgumentArity.ZeroOrOne,
 		};
 
+		Option<FileInfo> levelOption = new("--level") {
+			Description = $"The .level.bytes file to load (default: levels/{LevelFile.DefaultName}{LevelFile.Extension} next to the server)",
+			Arity = ArgumentArity.ExactlyOne,
+		};
+
 		RootCommand rootCommand = new("Game server.");
 		rootCommand.Options.Add(fileOption);
+		rootCommand.Options.Add(levelOption);
 		rootCommand.Options.Add(portOption);
 		rootCommand.SetAction(RunProgram);
 
@@ -32,9 +38,20 @@ internal class Program {
 			};
 			AppDomain.CurrentDomain.ProcessExit += (_, _) => running = false;
 
-			var clientListener = new LiteNetLibRemoteClientListener(parseResult.GetValue(portOption));
+			var levelPath = parseResult.GetValue(levelOption)?.FullName
+				?? Path.Combine(AppContext.BaseDirectory, "levels", LevelFile.DefaultName + LevelFile.Extension);
+			LevelFile level;
+			LiteNetLibRemoteClientListener clientListener;
+			try {
+				level = LevelFile.ReadFromDisk(levelPath);
+				Console.WriteLine($"Level: {level.Name} entities={level.Data.Entities.Count} sha256={level.ContentHash}");
 
-			ServerSetup.CreateAndInitialize(clientListener, new ConsoleLogger("Server"));
+				clientListener = new LiteNetLibRemoteClientListener(parseResult.GetValue(portOption), level.ConnectionKey);
+				ServerSetup.CreateAndInitialize(clientListener, level, new ConsoleLogger("Server"));
+			} catch (Exception exception) when (exception is IOException or InvalidDataException or ArgumentException) {
+				Console.Error.WriteLine($"Failed to start server with level file '{levelPath}': {exception.Message}");
+				return 1;
+			}
 
 			if (parseResult.GetValue(fileOption) is { } parsedFile) {
 				Console.WriteLine($"WorldFile: {parsedFile.Name}");
