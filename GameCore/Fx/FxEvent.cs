@@ -20,7 +20,11 @@ public struct FxEvent {
 	/// <summary>Tick that identifies this event across re-simulations: the attack tick for attacks and shots, the projectile's spawn tick for hits.</summary>
 	public int KeyTick;
 	public FVector3 Position;
-	/// <summary>Aim direction; <see cref="FxKind.AttackStarted"/> and <see cref="FxKind.ShotReleased"/> only.</summary>
+	/// <summary>
+	/// Aim direction for <see cref="FxKind.AttackStarted"/> and <see cref="FxKind.ShotReleased"/>. For
+	/// <see cref="FxKind.ProjectileHit"/>, the direction the impact faces (not normalized): the hit
+	/// surface's outward normal when known, otherwise back along the projectile's flight.
+	/// </summary>
 	public FVector3 Direction;
 }
 

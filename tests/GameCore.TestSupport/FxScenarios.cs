@@ -203,8 +203,13 @@ public static partial class Program {
 		Check("the re-simulated hit is played once", player.Count(FxKind.ProjectileHit) == 1);
 		Check("the hit is keyed by the shooter's channel", player.Played.Exists(p => p.Fx.Kind == FxKind.ProjectileHit && p.Fx.Channel == LocalChannel));
 
-		// The same hit reported a tick later, somewhere else, is still the same hit.
+		// The arrow flies +x into the wall's face at x = 1.5, so the impact faces back out along -x.
 		var hit = player.Played.Find(p => p.Fx.Kind == FxKind.ProjectileHit).Fx;
+		Check("the hit is placed on the wall's face", Math.Abs(Fixed64.FConversions.ToDouble(hit.Position.X) - 1.5) < 0.05);
+		Check("the hit faces out of the wall", Fixed64.FConversions.ToDouble(hit.Direction.X) < 0.0
+			&& Math.Abs(Fixed64.FConversions.ToDouble(hit.Direction.Y)) < 0.05 && Math.Abs(Fixed64.FConversions.ToDouble(hit.Direction.Z)) < 0.05);
+
+		// The same hit reported a tick later, somewhere else, is still the same hit.
 		var shifted = hit;
 		shifted.Position += Fixed64.FVector3.Up;
 		sink.Log.Record(shifted, S.CurrentTick - 1);
