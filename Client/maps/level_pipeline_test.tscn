@@ -10,6 +10,10 @@
 [ext_resource type="Script" uid="uid://crcwfs64lq55j" path="res://level_authoring/EntityComponent.cs" id="8_entity_component"]
 [ext_resource type="Script" uid="uid://eb4g86y84qna" path="res://level_authoring/HealthComponent.cs" id="9_health"]
 
+[sub_resource type="Resource" id="StrongCrateHealth"]
+script = ExtResource("9_health")
+Value = 250
+
 [sub_resource type="Resource" id="GroundBox"]
 script = ExtResource("7_box_collider")
 Size = Vector3(80, 1, 80)
@@ -26,10 +30,6 @@ albedo_color = Color(1, 0.6, 0, 1)
 
 [sub_resource type="BoxMesh" id="BoxMesh"]
 size = Vector3(4, 1, 4)
-
-[sub_resource type="Resource" id="StrongCrateHealth"]
-script = ExtResource("9_health")
-Value = 250
 
 [node name="LevelPipelineTest" type="Node3D" unique_id=913589659]
 
