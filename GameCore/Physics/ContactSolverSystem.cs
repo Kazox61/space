@@ -679,7 +679,7 @@ public abstract partial class Core<TWorld> where TWorld : struct, ISessionType, 
 					deltaImpulse = newImpulse - pt.NormalImpulse;
 					pt.NormalImpulse = newImpulse;
 					pt.TotalNormalImpulse += newImpulse;
-					totalNormalImpulse += pt.TotalNormalImpulse;
+					totalNormalImpulse += newImpulse;
 					totalTwistLimit += pt.LeverArm * pt.NormalImpulse;
 
 					var p = deltaImpulse * c.Normal;

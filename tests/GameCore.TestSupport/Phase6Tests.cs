@@ -225,6 +225,63 @@ public static partial class Program {
 		Shutdown();
 	}
 
+	private static void MoverPushesSleepingCrateTest() {
+		Console.WriteLine("--- MoverPushesSleepingCrateTest ---");
+		Bootstrap();
+		CreateStaticGround();
+
+		var obstacle = W.NewEntity<Default>();
+		BodyOperations.CreateBody(obstacle, BodyType.Static, new FWorldTransform(Pos(5, 1, 0), FQuaternion.Identity));
+		ShapeFactory.CreateShape(obstacle, Shape.MakeBox(FVector3.Zero, new FVector3(2.ToFP(), FP.Half, 2.ToFP())));
+
+		// The crate rests against the side of the same 4x1x4 static box used by the sample level.
+		var crate = CreateDynamicBox(Pos(5, 2, 0, 2), FP.Half);
+		Step(240);
+		Check("production-sized crate resting against a static box is asleep", BodyOperations.IsSleeping(crate));
+
+		var broadPhase = W.GetResource<BroadPhase>();
+		var capsule = new Capsule(new FVector3(FP.Zero, -FP.Half, FP.Zero), new FVector3(FP.Zero, FP.Half, FP.Zero), FP.Half);
+		var moverXf = new FWorldTransform(Pos(5, 3, -2, 2), FQuaternion.Identity);
+		var moverVelocity = FVector3.Zero;
+		var dt = Space.GameCore.Const.DeltaTime.To32();
+		var startZ = crate.Read<Body>().Transform.Position.Z;
+
+		for (var tick = 0; tick < 90; tick++) {
+			StepMover(broadPhase, ref moverXf, ref moverVelocity, capsule, new FVector3(FP.Zero, FP.Zero, 3.ToFP()), dt);
+			Step(1);
+		}
+
+		Check("the character mover wakes a sleeping crate against a static box", !BodyOperations.IsSleeping(crate));
+		Check("the character mover slides a sleeping crate along a static box", crate.Read<Body>().Transform.Position.Z > startZ + Fixed64.FP.Half);
+		Shutdown();
+	}
+
+	private static void MoverPushesCrateByItsCornerTest() {
+		Console.WriteLine("--- MoverPushesCrateByItsCornerTest ---");
+		Bootstrap();
+		CreateStaticGround();
+		var crate = CreateDynamicBox(Pos(0, 1, 0), FP.Half);
+		Step(180);
+
+		var broadPhase = W.GetResource<BroadPhase>();
+		var capsule = new Capsule(new FVector3(FP.Zero, -FP.Half, FP.Zero), new FVector3(FP.Zero, FP.Half, FP.Zero), FP.Half);
+		var moverXf = new FWorldTransform(Pos(-3, 3, -3, 2), FQuaternion.Identity);
+		var moverVelocity = FVector3.Zero;
+		var velocity = 7 * FVector3.Normalize(new FVector3(FP.One, FP.Zero, FP.One));
+		var dt = Space.GameCore.Const.DeltaTime.To32();
+
+		// Walking diagonally straight into the crate's vertical edge.
+		for (var tick = 0; tick < 40; tick++) {
+			StepMover(broadPhase, ref moverXf, ref moverVelocity, capsule, velocity, dt);
+			Step(1);
+		}
+
+		var cratePosition = crate.Read<Body>().Transform.Position;
+		Check("the character mover pushes a crate it walks into corner-first", cratePosition.X > Fixed64.FP.One && cratePosition.Z > Fixed64.FP.One);
+		Check("the crate does not stop the mover at its corner", moverXf.Position.X > Fixed64.FP.Zero);
+		Shutdown();
+	}
+
 	private static void WorldSleepToggleTest() {
 		Console.WriteLine("--- WorldSleepToggleTest ---");
 		Bootstrap();

@@ -443,7 +443,13 @@ public struct Manifold {
 		return CollideBoxBox(a.Center, a.Rotation, a.HalfExtents, centerB, rotationB, b.HalfExtents);
 	}
 
-	/// <summary>Box (zero-radius hull) versus capsule. Ported from box3d's b3CollideHullAndCapsule (SAT branch only).</summary>
+	/// <summary>
+	/// Box (zero-radius hull) versus capsule. Ported from box3d's b3CollideHullAndCapsule: GJK
+	/// closest points while the capsule's core segment is outside the box, SAT only once it
+	/// penetrates. SAT alone can't separate a segment parallel to a box edge (an upright capsule at
+	/// an upright box's corner), because box3d's edge query skips parallel edge pairs; it then
+	/// reports a deep face overlap that clips to nothing and the contact is lost.
+	/// </summary>
 	private static Manifold CollideBoxCapsule(FVector3 boxCenter, FQuaternion boxRotation, FVector3 heA, FVector3 c1, FVector3 c2, FP radius) {
 		var invRotation = FQuaternion.Inverse(boxRotation);
 		var localC1 = invRotation * (c1 - boxCenter);
@@ -451,6 +457,57 @@ public struct Manifold {
 
 		var manifold = new Manifold();
 
+		var boxProxy = new ShapeProxy { Count = 8, Radius = FP.Zero };
+		for (var i = 0; i < 8; i++) {
+			boxProxy.Points[i] = Hull.LocalCorner(heA, i);
+		}
+
+		var distanceInput = new DistanceInput {
+			ProxyA = boxProxy,
+			ProxyB = ShapeProxy.MakeSegment(localC1, localC2, FP.Zero),
+			Transform = FTransform.Identity,
+			UseRadii = false,
+		};
+		var cache = SimplexCache.Empty;
+		var distanceOutput = Distance.ShapeDistance(distanceInput, ref cache);
+
+		if (distanceOutput.Distance > radius + B3Config.SpeculativeDistance) {
+			return TransformBoxManifold(manifold, boxCenter, boxRotation);
+		}
+
+		// box3d's shallow/deep split is 100 * FLT_EPSILON (~1e-5), under one Q16.16 step; 0.01 * LinearSlop
+		// (~5e-5, a few raw steps) is the smallest threshold GJK's fixed-point distance resolves reliably.
+		if (distanceOutput.Distance > FP.FromRatio(1, 100) * B3Config.LinearSlop) {
+			// Shallow: the core segment is outside the box.
+			var delta = distanceOutput.Normal;
+			var refFaceIndex = 0;
+			var bestDot = FP.MinValue;
+			for (var f = 0; f < 6; f++) {
+				var dot = FVector3.Dot(Hull.Faces[f].Normal, delta);
+				if (dot > bestDot) {
+					bestDot = dot;
+					refFaceIndex = f;
+				}
+			}
+
+			// Two points when the closest-point direction is nearly the face normal (capsule lying on a face).
+			if (bestDot > FP.FromRatio(998, 1000) && BuildBoxFaceAndCapsuleContact(heA, localC1, localC2, radius, refFaceIndex, ref manifold)) {
+				return TransformBoxManifold(manifold, boxCenter, boxRotation);
+			}
+
+			manifold = new Manifold {
+				Normal = delta,
+				PointCount = 1,
+				Point0 = new ManifoldPoint {
+					Point = FP.Half * (distanceOutput.PointA + distanceOutput.PointB - radius * delta),
+					Separation = distanceOutput.Distance - radius,
+					HasFeatureId = false,
+				},
+			};
+			return TransformBoxManifold(manifold, boxCenter, boxRotation);
+		}
+
+		// Deep: the core segment penetrates the box.
 		var faceQuery = QueryFaceDirectionsBoxCapsule(heA, localC1, localC2);
 		if (faceQuery.Separation > radius) {
 			return TransformBoxManifold(manifold, boxCenter, boxRotation);

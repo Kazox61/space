@@ -112,6 +112,139 @@ public static partial class Program {
 		Shutdown();
 	}
 
+	private static void ShapeCastFarBelowLargeBoxTest() {
+		Console.WriteLine("--- ShapeCastFarBelowLargeBoxTest ---");
+		// The sample level's 80x1x80 ground and the mover's ground-probe box, 150 units below it: the
+		// first GJK vertex is ~180 away, past where Q16.16 squared lengths wrap.
+		var ground = Shape.MakeBox(FVector3.Zero, new FVector3(40.ToFP(), FP.Half, 40.ToFP()));
+		var quarter = FP.FromRatio(1, 4);
+		var probe = new ShapeProxy { Count = 8, Radius = FP.Zero };
+		for (var i = 0; i < 8; i++) {
+			probe.Points[i] = new FVector3((i & 1) != 0 ? quarter : -quarter, (i & 2) != 0 ? quarter : -quarter, (i & 4) != 0 ? quarter : -quarter);
+		}
+
+		var threw = false;
+		var hit = false;
+		try {
+			var output = Distance.ShapeCast(new ShapeCastPairInput {
+				ProxyA = ground.MakeProxy(),
+				ProxyB = probe,
+				Transform = new FTransform(new FVector3(-16.ToFP(), -150.ToFP(), -100.ToFP()), FQuaternion.Identity),
+				TranslationB = new FVector3(FP.Zero, -FP.One, FP.Zero),
+				MaxFraction = FP.One,
+				CanEncroach = true,
+			});
+			hit = output.Hit;
+		} catch (ArgumentOutOfRangeException) {
+			threw = true;
+		}
+
+		Check("a shape cast far from a large box does not overflow", !threw);
+		Check("a shape cast far from a large box misses it", !threw && !hit);
+	}
+
+	private static void FarLargeRadiusDistanceTest() {
+		Console.WriteLine("--- FarLargeRadiusDistanceTest ---");
+		// A validation-legal static capsule whose radius (20) exceeds FarDistance, and a sphere 40 out
+		// from its segment's middle. The core bounding-sphere gap (20) alone would take the far path
+		// and, minus the radii, report -0.5; the true distance is 19.5.
+		var capsule = Shape.MakeCapsule(new FVector3(FP.Zero, -20.ToFP(), FP.Zero), new FVector3(FP.Zero, 20.ToFP(), FP.Zero), 20.ToFP());
+		var sphere = Shape.MakeSphere(FVector3.Zero, FP.Half);
+		var identity = new FWorldTransform(FPos.Zero, FQuaternion.Identity);
+		Check("the large-radius capsule is a legal static shape", !Throws<ArgumentOutOfRangeException>(() =>
+			PhysicsValidation.ValidateShape(capsule, BodyType.Static, identity, nameof(capsule))));
+
+		var cache = SimplexCache.Empty;
+		var output = Distance.ShapeDistance(new DistanceInput {
+			ProxyA = capsule.MakeProxy(),
+			ProxyB = sphere.MakeProxy(),
+			Transform = new FTransform(new FVector3(40.ToFP(), FP.Zero, FP.Zero), FQuaternion.Identity),
+			UseRadii = true,
+		}, ref cache);
+
+		Check("a sphere far from a large-radius capsule does not overlap it", output.Distance >= B3Config.OverlapSlop);
+		Check("a sphere far from a large-radius capsule reports its true distance",
+			FP.Abs(output.Distance - FP.FromRatio(195, 10)) < FP.FromRatio(1, 100));
+	}
+
+	private static void FarDistanceWorstCasePairTest() {
+		Console.WriteLine("--- FarDistanceWorstCasePairTest ---");
+		// The largest static and dynamic boxes validation allows, diagonal to each other with a gap just
+		// under FarDistance (16), so GJK runs with its longest possible simplex vectors. If either extent
+		// grows past what Distance.FarDistance's remarks budget for, Q16.16 wraps and this goes wrong.
+		var staticExtent = PhysicsValidation.MaximumStaticExtent;
+		var dynamicExtent = PhysicsValidation.MaximumDynamicExtent;
+		var large = Shape.MakeBox(FVector3.Zero, new FVector3(staticExtent, staticExtent, staticExtent));
+		var small = Shape.MakeBox(FVector3.Zero, new FVector3(dynamicExtent, dynamicExtent, dynamicExtent));
+		var identity = new FWorldTransform(FPos.Zero, FQuaternion.Identity);
+		Check("the largest static box is legal", !Throws<ArgumentOutOfRangeException>(() =>
+			PhysicsValidation.ValidateShape(large, BodyType.Static, identity, nameof(large))));
+		Check("the largest dynamic box is legal", !Throws<ArgumentOutOfRangeException>(() =>
+			PhysicsValidation.ValidateShape(small, BodyType.Dynamic, identity, nameof(small))));
+
+		var expected = FP.FromRatio(155, 10);
+		var offset = staticExtent + dynamicExtent + expected / FP.Sqrt(3.ToFP());
+		var cache = SimplexCache.Empty;
+		var output = Distance.ShapeDistance(new DistanceInput {
+			ProxyA = large.MakeProxy(),
+			ProxyB = small.MakeProxy(),
+			Transform = new FTransform(new FVector3(offset, offset, offset), FQuaternion.Identity),
+			UseRadii = true,
+		}, ref cache);
+
+		Check("the worst-case pair inside FarDistance reports its true distance",
+			FP.Abs(output.Distance - expected) < FP.FromRatio(5, 100));
+	}
+
+	private static void QuerySpanValidationTest() {
+		Console.WriteLine("--- QuerySpanValidationTest ---");
+		// Query shapes may reach no further than the largest dynamic shape, which FarDistance's Q16.16
+		// budget already covers against the largest static one.
+		var xf = new FWorldTransform(FPos.Zero, FQuaternion.Identity);
+		static ShapeProxy Box(FP half) {
+			var proxy = new ShapeProxy { Count = 8, Radius = FP.Zero };
+			for (var i = 0; i < 8; i++) {
+				proxy.Points[i] = new FVector3((i & 1) != 0 ? half : -half, (i & 2) != 0 ? half : -half, (i & 4) != 0 ? half : -half);
+			}
+			return proxy;
+		}
+
+		Check("a large sphere query is accepted", !Throws<ArgumentOutOfRangeException>(() =>
+			PhysicsValidation.ValidateQuery(xf, ShapeProxy.MakePoint(FVector3.Zero, 10.ToFP()), FVector3.Zero)));
+		Check("a sphere query past the span is rejected", Throws<ArgumentOutOfRangeException>(() =>
+			PhysicsValidation.ValidateQuery(xf, ShapeProxy.MakePoint(FVector3.Zero, 14.ToFP()), FVector3.Zero)));
+		Check("a dynamic-sized box query is accepted", !Throws<ArgumentOutOfRangeException>(() =>
+			PhysicsValidation.ValidateQuery(xf, Box(FP.FromRatio(39, 10)), FVector3.Zero)));
+		Check("a larger box query is rejected", Throws<ArgumentOutOfRangeException>(() =>
+			PhysicsValidation.ValidateQuery(xf, Box(5.ToFP()), FVector3.Zero)));
+
+		var player = new Capsule { Center1 = new FVector3(FP.Zero, -FP.Half, FP.Zero), Center2 = new FVector3(FP.Zero, FP.Half, FP.Zero), Radius = FP.Half };
+		Check("the player capsule query is accepted", !Throws<ArgumentOutOfRangeException>(() =>
+			PhysicsValidation.ValidateCapsuleQuery(xf, player, FVector3.Zero)));
+		var pole = new Capsule { Center1 = new FVector3(FP.Zero, -7.ToFP(), FP.Zero), Center2 = new FVector3(FP.Zero, 7.ToFP(), FP.Zero), Radius = FP.One };
+		Check("a long capsule query is rejected", Throws<ArgumentOutOfRangeException>(() =>
+			PhysicsValidation.ValidateCapsuleQuery(xf, pole, FVector3.Zero)));
+	}
+
+	private static void CapsuleAtParallelBoxEdgeManifoldTest() {
+		Console.WriteLine("--- CapsuleAtParallelBoxEdgeManifoldTest ---");
+		var box = Shape.MakeBox(FVector3.Zero, new FVector3(FP.Half, FP.Half, FP.Half));
+		var capsule = Shape.MakeCapsule(new FVector3(FP.Zero, -FP.Half, FP.Zero), new FVector3(FP.Zero, FP.Half, FP.Zero), FP.Half);
+		// Upright capsule beside the box's vertical edge at (-0.5, y, -0.5): the core segment is 0.4879
+		// from that edge, so the capsule overlaps it by ~0.012 and SAT alone finds no separating axis.
+		var capsuleXf = new FWorldTransform(new FPos(Fixed64.FP.FromRatio(-845, 1000), Fixed64.FP.FromRatio(1, 2), Fixed64.FP.FromRatio(-845, 1000)), FQuaternion.Identity);
+		var boxXf = new FWorldTransform(FPos.Zero, FQuaternion.Identity);
+
+		var capsuleFirst = Manifold.Collide(capsule, capsuleXf, box, boxXf);
+		Check("upright capsule touching a parallel box edge produces a contact", capsuleFirst.PointCount > 0);
+		Check("the edge contact is shallow", capsuleFirst.PointCount > 0 && capsuleFirst.MinSeparation() < FP.Zero && capsuleFirst.MinSeparation() > -FP.FromRatio(3, 100));
+		Check("the edge contact normal points diagonally from capsule to box",
+			capsuleFirst.Normal.X > FP.FromRatio(6, 10) && capsuleFirst.Normal.Z > FP.FromRatio(6, 10));
+
+		var boxFirst = Manifold.Collide(box, boxXf, capsule, capsuleXf);
+		Check("box-first order produces the same edge contact", boxFirst.PointCount > 0 && boxFirst.Normal.X < -FP.FromRatio(6, 10));
+	}
+
 	private static void ParallelCapsuleManifoldTest() {
 		Console.WriteLine("--- ParallelCapsuleManifoldTest ---");
 		var shapeA = Shape.MakeCapsule(new FVector3(-2.ToFP(), FP.Zero, FP.Zero), new FVector3(2.ToFP(), FP.Zero, FP.Zero), FP.One);

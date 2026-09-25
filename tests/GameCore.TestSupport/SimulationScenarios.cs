@@ -12,6 +12,28 @@ using static Space.GameCore.Core<PhysicsSmokeTest.TestWorld>;
 namespace PhysicsSmokeTest;
 
 public static partial class Program {
+	private static void FrictionIsStableAcrossSubstepsTest() {
+		Console.WriteLine("--- FrictionIsStableAcrossSubstepsTest ---");
+
+		static FP StepSlidingBox(int subStepCount) {
+			Bootstrap();
+			W.GetResource<PhysicsWorld>().SubStepCount = subStepCount;
+			CreateStaticGround();
+			var box = CreateDynamicBox(Pos(0, 2, 0, 2), FP.Half);
+			Step(240);
+			BodyOperations.SetLinearVelocity(box, new FVector3(5.ToFP(), FP.Zero, FP.Zero));
+			Step(1);
+			var speed = box.Read<Body>().LinearVelocity.X;
+			Shutdown();
+			return speed;
+		}
+
+		var oneSubstepSpeed = StepSlidingBox(1);
+		var fourSubstepSpeed = StepSlidingBox(4);
+		var difference = FP.Abs(oneSubstepSpeed - fourSubstepSpeed);
+		Check("contact friction is broadly invariant to solver substep count", difference < FP.FromRatio(1, 20));
+	}
+
 	private static void DropAndRestTest() {
 		Console.WriteLine("--- DropAndRestTest (sphere on sphere) ---");
 		Bootstrap();

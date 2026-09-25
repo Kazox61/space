@@ -62,7 +62,7 @@ public static class MoverSolver {
 
 		for (var i = 0; i < planes.Count; i++) {
 			var plane = planes.GetPlane(i);
-			if (!plane.ClipVelocity) {
+			if (plane.Push == FP.Zero || !plane.ClipVelocity) {
 				continue;
 			}
 

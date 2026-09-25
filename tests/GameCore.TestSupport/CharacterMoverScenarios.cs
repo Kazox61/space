@@ -522,6 +522,21 @@ public static partial class Program {
 		Shutdown();
 	}
 
+	private static void MoverVelocityIgnoresInactivePlanesTest() {
+		Console.WriteLine("--- MoverVelocityIgnoresInactivePlanesTest ---");
+		var planes = new MoverPlaneBuffer();
+		planes.Add(new MoverPlane {
+			Normal = FVector3.Left,
+			BaseSeparation = FP.One,
+			PushLimit = FP.MaxValue,
+			ClipVelocity = true,
+		});
+
+		MoverSolver.SolvePlanes(new FVector3(FP.One, FP.Zero, FP.Zero), ref planes);
+		var clipped = MoverSolver.ClipVector(new FVector3(FP.One, FP.Zero, FP.Zero), in planes);
+		Check("a speculative mover plane that did not push does not clip velocity", clipped.X == FP.One);
+	}
+
 	/// <summary>
 	/// box3d's own downward "pogo stick" ray, ported verbatim from CharacterMover::SolveMove
 	/// (samples/sample.cpp): true when grounded near the surface, false mid-air; also drives a
