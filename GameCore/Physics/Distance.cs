@@ -39,6 +39,35 @@ public static partial class Distance {
 		ref readonly var pointsA = ref proxyA.Points;
 		ref readonly var pointsB = ref proxyB.Points;
 
+		// Far apart, GJK's own dot products wrap (see SaturatingLengthSqr) and it returns garbage, so
+		// answer from bounding spheres instead: their gap is a lower bound on the true distance and
+		// their center line a valid separating direction, which is all ShapeCast's and TimeOfImpact's
+		// conservative advancement and every threshold test need. The gap must clear FarDistance even
+		// after the radii come off: callers subtract them (UseRadii) or compare against their sum
+		// (ShapeCast's target), and a lower bound minus a large radius can dip below zero while the
+		// real shapes are far apart.
+		var centerA = ProxyBoundingSphere(proxyA, FMatrix3.Identity, FVector3.Zero, out var boundA);
+		var centerB = ProxyBoundingSphere(proxyB, m, xf.Position, out var boundB);
+		var centerOffset = centerB - centerA;
+		var sphereGap = FP.Sqrt(SaturatingLengthSqr(centerOffset)) - boundA - boundB;
+		if (sphereGap - proxyA.Radius - proxyB.Radius > FarDistance) {
+			var farNormal = NormalizeWide(centerOffset, FVector3.Up);
+			var farOutput = new DistanceOutput {
+				PointA = centerA + boundA * farNormal,
+				PointB = centerB - boundB * farNormal,
+				Normal = farNormal,
+				Distance = sphereGap,
+			};
+			if (input.UseRadii) {
+				farOutput.Distance -= proxyA.Radius + proxyB.Radius;
+				farOutput.PointA += proxyA.Radius * farNormal;
+				farOutput.PointB -= proxyB.Radius * farNormal;
+			}
+
+			cache.Count = 0;
+			return farOutput;
+		}
+
 		// Compute the initial simplex from the cache.
 		var simplex = Simplex.Empty;
 		simplex.Count = cache.Count;
@@ -146,7 +175,7 @@ public static partial class Distance {
 				GJK.ComputeWitnessPoints(simplex, out var localPointA, out var localPointB);
 				distanceOutput.PointA = localPointA;
 				distanceOutput.PointB = localPointB;
-				distanceOutput.Normal = FVector3.NormalizeSafe(localPointB - localPointA, FVector3.Up);
+				distanceOutput.Normal = NormalizeWide(localPointB - localPointA, FVector3.Up);
 				return distanceOutput;
 			}
 
@@ -177,7 +206,7 @@ public static partial class Distance {
 					break;
 			}
 
-			distanceSq = FVector3.Dot(closestPoint, closestPoint);
+			distanceSq = SaturatingLengthSqr(closestPoint);
 
 			if (distanceSq >= oldDistanceSq) {
 				// No progress - reconstruct the last simplex.
@@ -213,7 +242,7 @@ public static partial class Distance {
 					// of being conflated with their scale. Same fix already applied once in this
 					// codebase for the same box3d-raw-cross-product-on-large-shapes issue -- see
 					// Manifold.IsMinkowskiFace's remarks.
-					var ab = FVector3.NormalizeSafe(b - a);
+					var ab = NormalizeWide(b - a, FVector3.Zero);
 					searchDirection = FVector3.Cross(FVector3.Cross(ab, -a), ab);
 					break;
 				}
@@ -226,8 +255,8 @@ public static partial class Distance {
 					// See the case 2 remarks just above -- same box3d-raw-edge-cross-product
 					// overflow risk, same fix (normalize the edges; only the sign/direction of
 					// n matters here, not its magnitude).
-					var ab = FVector3.NormalizeSafe(b - a);
-					var ac = FVector3.NormalizeSafe(c - a);
+					var ab = NormalizeWide(b - a, FVector3.Zero);
+					var ac = NormalizeWide(c - a, FVector3.Zero);
 					var n = FVector3.Cross(ab, ac);
 					searchDirection = FVector3.Dot(n, a) < FP.Zero ? n : -n;
 					break;
@@ -238,14 +267,14 @@ public static partial class Distance {
 					break;
 			}
 
-			if (FVector3.LengthSqr(searchDirection) < FP.CalculationsEpsilonSqr) {
+			if (SaturatingLengthSqr(searchDirection) < FP.CalculationsEpsilonSqr) {
 				// The origin is probably contained by a line segment or triangle. The shapes are
 				// overlapped. See the MaxSimplexVertices branch above's remarks on why Normal is
 				// populated here too (a same-point fallback), not left at its zero default.
 				GJK.ComputeWitnessPoints(simplex, out var localPointA, out var localPointB);
 				distanceOutput.PointA = localPointA;
 				distanceOutput.PointB = localPointB;
-				distanceOutput.Normal = FVector3.NormalizeSafe(localPointB - localPointA, FVector3.Up);
+				distanceOutput.Normal = NormalizeWide(localPointB - localPointA, FVector3.Up);
 				return distanceOutput;
 			}
 
@@ -284,7 +313,7 @@ public static partial class Distance {
 			simplex.Count += 1;
 		}
 
-		normal = FVector3.Normalize(normal);
+		normal = NormalizeWide(normal, FVector3.Zero);
 		if (!FVector3.IsNormalized(normal, NormalTolerance)) {
 			// Treat as overlap -- a third "no well-defined separating normal" exit (the main loop
 			// ended via no-progress/cycling/duplicate-vertex rather than one of the two explicit
@@ -294,7 +323,7 @@ public static partial class Distance {
 			GJK.ComputeWitnessPoints(simplex, out var localPointA, out var localPointB);
 			distanceOutput.PointA = localPointA;
 			distanceOutput.PointB = localPointB;
-			distanceOutput.Normal = FVector3.NormalizeSafe(localPointB - localPointA, FVector3.Up);
+			distanceOutput.Normal = NormalizeWide(localPointB - localPointA, FVector3.Up);
 			return distanceOutput;
 		}
 
@@ -305,7 +334,7 @@ public static partial class Distance {
 		// Results stay in frame A.
 		distanceOutput.PointA = finalPointA;
 		distanceOutput.PointB = finalPointB;
-		distanceOutput.Distance = FVector3.Distance(finalPointA, finalPointB);
+		distanceOutput.Distance = FP.Sqrt(SaturatingLengthSqr(finalPointB - finalPointA));
 		distanceOutput.Normal = normal;
 		distanceOutput.Iterations = iteration;
 		distanceOutput.SimplexCount = simplexIndex;
@@ -322,6 +351,56 @@ public static partial class Distance {
 		}
 
 		return distanceOutput;
+	}
+
+	/// <summary>
+	/// Squared length that saturates at <see cref="FP.MaxValue"/> instead of wrapping. Q16.16 squares
+	/// wrap past a length of ~181, which happens when the first simplex vertex pairs far-apart points
+	/// (a large shape's far corner, or a mover that fell far below the level); a wrapped negative
+	/// value passed ShapeDistance's degenerate-search-direction check as a false overlap and then
+	/// crashed Sqrt.
+	/// </summary>
+	private static FP SaturatingLengthSqr(FVector3 v) {
+		long x = v.X.RawValue, y = v.Y.RawValue, z = v.Z.RawValue;
+		var sum = ((x * x) >> FP.FractionalBits) + ((y * y) >> FP.FractionalBits) + ((z * z) >> FP.FractionalBits);
+		return sum > int.MaxValue ? FP.MaxValue : FP.FromRaw((int)sum);
+	}
+
+	/// <summary>
+	/// Gap, beyond the shapes' radii, past which <see cref="ShapeDistance"/> skips GJK. GJK's simplex
+	/// vectors span at most gap + radiusA + radiusB + 2 * boundA + 2 * boundB. PhysicsValidation keeps
+	/// every core point within (extent - radius) per axis, so radius + 2 * bound <= 2 * sqrt(3) * extent
+	/// for any shape; for its MaximumStaticExtent (40) against MaximumDynamicExtent (4) that is
+	/// 16 + 138.6 + 13.9 = 168.5, under the ~181 Q16.16 squaring limit. Raising either extent breaks
+	/// this; FarDistanceWorstCasePairTest pins it.
+	/// </summary>
+	private static readonly FP FarDistance = 16.ToFP();
+
+	/// <summary>Center (points' average, in frame A) and radius of a sphere around a proxy's core points.</summary>
+	private static FVector3 ProxyBoundingSphere(in ShapeProxy proxy, FMatrix3 rotation, FVector3 position, out FP radius) {
+		var sum = FVector3.Zero;
+		for (var i = 0; i < proxy.Count; i++) {
+			sum += proxy.Points[i];
+		}
+
+		var localCenter = sum / proxy.Count;
+		var radiusSqr = FP.Zero;
+		for (var i = 0; i < proxy.Count; i++) {
+			radiusSqr = FP.Max(radiusSqr, SaturatingLengthSqr(proxy.Points[i] - localCenter));
+		}
+
+		radius = FP.Sqrt(radiusSqr);
+		return rotation * localCenter + position;
+	}
+
+	/// <summary><see cref="FVector3.NormalizeSafe"/> for vectors of any length: scaled into [-1, 1] first so its squared length can't wrap.</summary>
+	private static FVector3 NormalizeWide(FVector3 v, FVector3 fallback) {
+		var maxComponent = FP.Max(FP.Abs(v.X), FP.Max(FP.Abs(v.Y), FP.Abs(v.Z)));
+		if (maxComponent == FP.Zero) {
+			return fallback;
+		}
+
+		return FVector3.NormalizeSafe(v / maxComponent, fallback);
 	}
 
 	/// <summary>
