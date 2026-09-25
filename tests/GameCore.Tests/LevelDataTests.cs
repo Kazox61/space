@@ -75,6 +75,60 @@ public sealed class LevelDataTests {
 	}
 
 	[Test]
+	public void CodecRejectsDynamicBoxWhoseMassExceedsPhysicsLimit() {
+		var placement = Placement("Map/HeavyCrate", 100, LootKind.None, Fixed64.FP.Zero) with {
+			Crate = new CratePlacementData(
+				100,
+				LootKind.None,
+				BodyType.Dynamic,
+				new FVector3(4.ToFP(), 4.ToFP(), 4.ToFP()),
+				FP.Two,
+				ViewAsset.Crate
+			)
+		};
+
+		Assert.That(() => LevelDataCodec.Serialize(new LevelData([placement])),
+			Throws.TypeOf<InvalidDataException>().With.Message.Contains("Map/HeavyCrate"));
+	}
+
+	[Test]
+	public void DynamicBoxWithinLimitsPassesExportAndRuntimeValidation() {
+		var placement = Placement("Map/Crate", 100, LootKind.None, Fixed64.FP.Zero) with {
+			Crate = new CratePlacementData(
+				100,
+				LootKind.None,
+				BodyType.Dynamic,
+				new FVector3(FP.One, FP.One, FP.One),
+				FP.Two,
+				ViewAsset.Crate
+			)
+		};
+		var shape = Shape.MakeBox(FVector3.Zero, placement.Crate.BoxHalfExtents);
+		shape.Density = placement.Crate.Density;
+
+		Assert.Multiple(() => {
+			Assert.That(() => LevelDataCodec.Serialize(new LevelData([placement])), Throws.Nothing);
+			Assert.That(() => PhysicsValidation.ValidateShape(shape, placement.Crate.BodyType, placement.Transform, placement.SourcePath), Throws.Nothing);
+		});
+	}
+
+	[TestCase(ShapeType.Sphere)]
+	[TestCase(ShapeType.Capsule)]
+	[TestCase(ShapeType.Hull)]
+	public void RuntimeValidationAppliesMassLimitsToEverySupportedShape(ShapeType shapeType) {
+		var shape = shapeType switch {
+			ShapeType.Sphere => Shape.MakeSphere(FVector3.Zero, 4.ToFP()),
+			ShapeType.Capsule => Shape.MakeCapsule(FVector3.Zero, FVector3.Zero, 4.ToFP()),
+			ShapeType.Hull => Shape.MakeBox(FVector3.Zero, new FVector3(4.ToFP(), 4.ToFP(), 4.ToFP())),
+			_ => throw new ArgumentOutOfRangeException(nameof(shapeType))
+		};
+		shape.Density = FP.Two;
+
+		Assert.That(() => PhysicsValidation.ValidateShape(shape, BodyType.Dynamic, FWorldTransform.Identity, "shape"),
+			Throws.TypeOf<ArgumentOutOfRangeException>());
+	}
+
+	[Test]
 	public void LoaderCreatesStaticBodiesWithoutViews() {
 		W.Create(GameWorldSetup.WorldConfig);
 		GameTypes.Register<LevelTestWorld>();
@@ -115,6 +169,46 @@ public sealed class LevelDataTests {
 	[Test]
 	public void LevelFileNameStripsExtension() {
 		Assert.That(LevelFile.NameFromPath("/srv/levels/arena.level.bytes"), Is.EqualTo("arena"));
+	}
+
+	[Test]
+	public void ServerSetupCleansUpWhenRuntimeLevelValidationFails() {
+		var validBytes = LevelDataCodec.Serialize(new LevelData([Placement("Map/Crate", 100, LootKind.None, Fixed64.FP.Zero)]));
+		var level = LevelFile.Read("runtime-invalid", validBytes);
+		var entities = (EntityPlacement[])level.Data.Entities;
+		entities[0] = entities[0] with {
+			Crate = entities[0].Crate with {
+				BoxHalfExtents = new FVector3(4.ToFP(), 4.ToFP(), 4.ToFP()),
+				Density = FP.Two
+			}
+		};
+		var listener = new TestRemoteClientListener();
+
+		try {
+			Assert.That(() => ServerSetup.CreateAndInitialize(listener, level), Throws.TypeOf<InvalidDataException>());
+			Assert.Multiple(() => {
+				Assert.That(SRVR.IsCreated, Is.False);
+				Assert.That(World<ServerWorld>.Status, Is.EqualTo(WorldStatus.NotCreated));
+				Assert.That(listener.IsListening, Is.False);
+			});
+		} finally {
+			if (World<ServerWorld>.Status != WorldStatus.NotCreated) {
+				Core<ServerWorld>.GameWorldSetup.Destroy();
+			}
+			if (SRVR.IsCreated) {
+				SRVR.Destroy();
+			}
+		}
+	}
+
+	[Test]
+	public void ExportedSampleContainsDifferentCrateHealthOverrides() {
+		var path = FindRepositoryFile("Client", "maps", "level_pipeline_test.level.bytes");
+		var level = LevelFile.ReadFromDisk(path);
+		var defaultCrate = level.Data.Entities.Single(static entity => entity.SourcePath == "DefaultCrate");
+		var strongCrate = level.Data.Entities.Single(static entity => entity.SourcePath == "StrongCrate");
+
+		Assert.That(strongCrate.Crate.Health, Is.Not.EqualTo(defaultCrate.Crate.Health));
 	}
 
 	[Test]
@@ -160,4 +254,26 @@ public sealed class LevelDataTests {
 			ViewAsset.Crate
 		)
 	);
+
+	private static string FindRepositoryFile(params string[] relativePath) {
+		for (var directory = new DirectoryInfo(TestContext.CurrentContext.TestDirectory); directory is not null; directory = directory.Parent) {
+			var candidate = Path.Combine([directory.FullName, .. relativePath]);
+			if (File.Exists(candidate)) {
+				return candidate;
+			}
+		}
+		throw new FileNotFoundException($"Could not find repository file '{Path.Combine(relativePath)}'.");
+	}
+
+	private sealed class TestRemoteClientListener : IRemoteClientListener {
+		public bool IsListening { get; private set; }
+		public void Start() => IsListening = true;
+		public void Stop() => IsListening = false;
+		public void Poll() { }
+		public bool TryAccept(out RemoteClientConnection connection) {
+			connection = null!;
+			return false;
+		}
+		public void Release(RemoteClientConnection connection) { }
+	}
 }

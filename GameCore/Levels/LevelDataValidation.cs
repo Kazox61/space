@@ -30,6 +30,13 @@ internal static class LevelDataValidation {
 		if (placement.Crate.Density <= FP.Zero || placement.Crate.Density > FP.Two) {
 			throw new InvalidDataException($"{placement.SourcePath}: density must be in (0, 2].");
 		}
+		var shape = Shape.MakeBox(FVector3.Zero, placement.Crate.BoxHalfExtents);
+		shape.Density = placement.Crate.Density;
+		try {
+			PhysicsMassValidation.ValidateShape(shape, placement.Crate.BodyType, placement.SourcePath);
+		} catch (ArgumentOutOfRangeException exception) {
+			throw new InvalidDataException($"{placement.SourcePath}: {exception.Message}", exception);
+		}
 		if (!Enum.IsDefined(placement.Crate.View)) {
 			throw new InvalidDataException($"{placement.SourcePath}: invalid view {placement.Crate.View}.");
 		}

@@ -7,6 +7,8 @@
 [ext_resource type="Resource" uid="uid://b0vu13fjtjuch" path="res://maps/static_box_recipe.tres" id="5_collider_recipe"]
 [ext_resource type="Script" uid="uid://xgjvft0g5vnd" path="res://level_authoring/ColliderComponent.cs" id="6_collider_component"]
 [ext_resource type="Script" uid="uid://d4dh3ymbrr865" path="res://level_authoring/BoxColliderComponent.cs" id="7_box_collider"]
+[ext_resource type="Script" uid="uid://crcwfs64lq55j" path="res://level_authoring/EntityComponent.cs" id="8_entity_component"]
+[ext_resource type="Script" uid="uid://eb4g86y84qna" path="res://level_authoring/HealthComponent.cs" id="9_health"]
 
 [sub_resource type="Resource" id="GroundBox"]
 script = ExtResource("7_box_collider")
@@ -25,6 +27,10 @@ albedo_color = Color(1, 0.6, 0, 1)
 [sub_resource type="BoxMesh" id="BoxMesh"]
 size = Vector3(4, 1, 4)
 
+[sub_resource type="Resource" id="StrongCrateHealth"]
+script = ExtResource("9_health")
+Value = 250
+
 [node name="LevelPipelineTest" type="Node3D" unique_id=913589659]
 
 [node name="DefaultCrate" type="Node3D" parent="." unique_id=969607312]
@@ -36,6 +42,7 @@ Recipe = ExtResource("2_recipe")
 transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, -3, 2, -2)
 script = ExtResource("1_spawn")
 Recipe = ExtResource("2_recipe")
+Overrides = Array[ExtResource("8_entity_component")]([SubResource("StrongCrateHealth")])
 
 [node name="Ground" type="Node3D" parent="." unique_id=1150829718]
 script = ExtResource("4_collider")

@@ -6,6 +6,37 @@ using Vector64 = Fixed64.FVector3;
 
 namespace Space.GameCore;
 
+internal static class PhysicsMassValidation {
+	public static readonly FP MaximumMassOrInertia = 1000.ToFP();
+
+	public static void ValidateShape(in Shape shape, BodyType bodyType, string parameterName) {
+		if (bodyType == BodyType.Dynamic && shape.Density > FP.Zero) {
+			ValidateMassData(shape.ComputeMass(), parameterName);
+		}
+	}
+
+	public static void ValidateMassData(in MassData data, string parameterName) {
+		if (data.Mass < FP.Zero || data.Mass > MaximumMassOrInertia) {
+			throw new ArgumentOutOfRangeException(parameterName, $"Mass must be within [0, {MaximumMassOrInertia}].");
+		}
+		RequireEntry(data.Inertia.Cx.X, parameterName);
+		RequireEntry(data.Inertia.Cx.Y, parameterName);
+		RequireEntry(data.Inertia.Cx.Z, parameterName);
+		RequireEntry(data.Inertia.Cy.X, parameterName);
+		RequireEntry(data.Inertia.Cy.Y, parameterName);
+		RequireEntry(data.Inertia.Cy.Z, parameterName);
+		RequireEntry(data.Inertia.Cz.X, parameterName);
+		RequireEntry(data.Inertia.Cz.Y, parameterName);
+		RequireEntry(data.Inertia.Cz.Z, parameterName);
+	}
+
+	private static void RequireEntry(FP value, string parameterName) {
+		if (value < -MaximumMassOrInertia || value > MaximumMassOrInertia) {
+			throw new ArgumentOutOfRangeException(parameterName, $"Mass and inertia entries must be within +/-{MaximumMassOrInertia}.");
+		}
+	}
+}
+
 public abstract partial class Core<TWorld> {
 	/// <summary>Enforces the deterministic Q16.16 operating envelope at public physics boundaries.</summary>
 	public static class PhysicsValidation {
@@ -13,7 +44,7 @@ public abstract partial class Core<TWorld> {
 		public static readonly FP MaximumDynamicExtent = 4.ToFP();
 		public static readonly FP MaximumStaticExtent = 40.ToFP();
 		public static readonly FP MaximumDensity = 2.ToFP();
-		public static readonly FP MaximumMassOrInertia = 1000.ToFP();
+		public static readonly FP MaximumMassOrInertia = PhysicsMassValidation.MaximumMassOrInertia;
 		public static readonly FP MaximumInverseMassOrInertia = 4096.ToFP();
 		public static readonly FP MaximumLinearSpeed = 60.ToFP();
 		/// <summary>
@@ -101,15 +132,11 @@ public abstract partial class Core<TWorld> {
 
 			var rotationOnly = new FTransform(FVector3.Zero, bodyTransform.Rotation);
 			ValidateWorldBounds(bodyTransform.Position, shape.ComputeAABB(rotationOnly), parameterName);
-			if (bodyType == BodyType.Dynamic && shape.Density > FP.Zero) {
-				ValidateMassData(shape.ComputeMass(), parameterName);
-			}
+			PhysicsMassValidation.ValidateShape(shape, bodyType, parameterName);
 		}
 
-		public static void ValidateMassData(in MassData data, string parameterName) {
-			RequireRange(data.Mass, FP.Zero, MaximumMassOrInertia, parameterName);
-			ValidateMatrix(data.Inertia, parameterName);
-		}
+		public static void ValidateMassData(in MassData data, string parameterName) =>
+			PhysicsMassValidation.ValidateMassData(data, parameterName);
 
 		/// <summary>
 		/// Clamps a velocity to <paramref name="maximum"/> without overflowing its squared length. Components
@@ -165,23 +192,6 @@ public abstract partial class Core<TWorld> {
 			ValidateMagnitude(translation, MaximumQueryDistance, nameof(translation));
 			ValidateWorldBounds(position, localBounds, nameof(position));
 			ValidateWorldBounds(position + translation, localBounds, nameof(translation));
-		}
-
-		private static void ValidateMassDataEntry(FP value, string parameterName) {
-			if (value < -MaximumMassOrInertia || value > MaximumMassOrInertia)
-				throw new ArgumentOutOfRangeException(parameterName, $"Mass and inertia entries must be within +/-{MaximumMassOrInertia}.");
-		}
-
-		private static void ValidateMatrix(FMatrix3 matrix, string parameterName) {
-			ValidateMassDataEntry(matrix.Cx.X, parameterName);
-			ValidateMassDataEntry(matrix.Cx.Y, parameterName);
-			ValidateMassDataEntry(matrix.Cx.Z, parameterName);
-			ValidateMassDataEntry(matrix.Cy.X, parameterName);
-			ValidateMassDataEntry(matrix.Cy.Y, parameterName);
-			ValidateMassDataEntry(matrix.Cy.Z, parameterName);
-			ValidateMassDataEntry(matrix.Cz.X, parameterName);
-			ValidateMassDataEntry(matrix.Cz.Y, parameterName);
-			ValidateMassDataEntry(matrix.Cz.Z, parameterName);
 		}
 
 		private static void ValidateLocalBounds(FVector3 center, FP radius, FP limit, string parameterName) {

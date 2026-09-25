@@ -41,17 +41,17 @@ internal class Program {
 			var levelPath = parseResult.GetValue(levelOption)?.FullName
 				?? Path.Combine(AppContext.BaseDirectory, "levels", LevelFile.DefaultName + LevelFile.Extension);
 			LevelFile level;
+			LiteNetLibRemoteClientListener clientListener;
 			try {
 				level = LevelFile.ReadFromDisk(levelPath);
-			} catch (Exception exception) when (exception is IOException or InvalidDataException) {
-				Console.Error.WriteLine(exception.Message);
+				Console.WriteLine($"Level: {level.Name} entities={level.Data.Entities.Count} sha256={level.ContentHash}");
+
+				clientListener = new LiteNetLibRemoteClientListener(parseResult.GetValue(portOption), level.ConnectionKey);
+				ServerSetup.CreateAndInitialize(clientListener, level, new ConsoleLogger("Server"));
+			} catch (Exception exception) when (exception is IOException or InvalidDataException or ArgumentException) {
+				Console.Error.WriteLine($"Failed to start server with level file '{levelPath}': {exception.Message}");
 				return 1;
 			}
-			Console.WriteLine($"Level: {level.Name} entities={level.Data.Entities.Count} sha256={level.ContentHash}");
-
-			var clientListener = new LiteNetLibRemoteClientListener(parseResult.GetValue(portOption), level.ConnectionKey);
-
-			ServerSetup.CreateAndInitialize(clientListener, level, new ConsoleLogger("Server"));
 
 			if (parseResult.GetValue(fileOption) is { } parsedFile) {
 				Console.WriteLine($"WorldFile: {parsedFile.Name}");

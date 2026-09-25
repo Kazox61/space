@@ -10,15 +10,24 @@ public abstract class SRVR : Server<ServerWorld> { }
 
 public static class ServerSetup {
 	public static void CreateAndInitialize(IRemoteClientListener remoteClientListener, LevelFile level, ILogger? logger = null) {
-		SRVR.Create(GameSessionSetup.SessionConfig, remoteClientListener, new GameWorldFullSyncHandler(), logger: logger);
-		GameSessionSetup.Register();
-		SRVR.Initialize();
+		try {
+			SRVR.Create(GameSessionSetup.SessionConfig, remoteClientListener, new GameWorldFullSyncHandler(), logger: logger);
+			GameSessionSetup.Register();
+			SRVR.Initialize();
 
-		GameWorldSetup.CreateAndInitialize(level.Data);
+			GameWorldSetup.CreateAndInitialize(level.Data);
+		} catch (Exception exception) when (exception is InvalidDataException or ArgumentException) {
+			Destroy();
+			throw;
+		}
 	}
 
 	public static void Destroy() {
-		GameWorldSetup.Destroy();
-		SRVR.Destroy();
+		if (W.Status != WorldStatus.NotCreated) {
+			GameWorldSetup.Destroy();
+		}
+		if (SRVR.IsCreated) {
+			SRVR.Destroy();
+		}
 	}
 }
