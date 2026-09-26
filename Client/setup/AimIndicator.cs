@@ -43,11 +43,13 @@ public partial class AimIndicator : Node3D {
 		filter.GroupIndex = Filter.SelfGroup(playerInfo.InputChannel);
 
 		var length = Fixed32.FConversions.ToFloat(Fixed32.FVector3.Length(translation));
-		if (W.HasResource<BroadPhase>() && PhysicsQueries.CastRayClosest(
+		if (W.HasResource<BroadPhase>() && PhysicsQueries.CastShapeClosest(
 			W.GetResource<BroadPhase>(),
-			new FPos(origin.X, origin.Y, origin.Z),
+			new FWorldTransform(new FPos(origin.X, origin.Y, origin.Z), Fixed32.FQuaternion.Identity),
+			ShapeProxy.MakePoint(Fixed32.FVector3.Zero, config.ProjectileRadius.To32()),
 			translation,
 			filter,
+			QuerySensorMode.Exclude,
 			out var hit)) {
 			length *= Fixed32.FConversions.ToFloat(hit.Fraction);
 		}
