@@ -65,7 +65,7 @@ public abstract partial class Core<TWorld> where TWorld : struct, ISessionType, 
 				var res = Systems.GetResource<CharacterRes>();
 
 				// Spawn a bit ahead of the player's own center so the muzzle isn't buried in their capsule.
-				var spawnPosition = transform.Position + direction * Fixed64.FP.FromRatio(3, 4);
+				var spawnPosition = transform.Position + direction * res.ProjectileSpawnOffset;
 				var rotation = Fixed64.FQuaternion.LookRotation(direction, Fixed64.FVector3.Up);
 				var worldTransform = new FWorldTransform(new FPos(spawnPosition.X, spawnPosition.Y, spawnPosition.Z), rotation.To32());
 
@@ -75,14 +75,14 @@ public abstract partial class Core<TWorld> where TWorld : struct, ISessionType, 
 				var projectile = W.NewEntity<Projectile>();
 				projectile.Set(projectileTransform);
 				projectile.Set(new W.Link<Shooter>(playerEntity));
-				projectile.Set(new Lifetime { TimeRemaining = res.ProjectileLifetime });
+				projectile.Set(new ProjectileRange { Remaining = res.ProjectileMaxRange.To32() });
 				projectile.Set(new ProjectileOrigin { SpawnTick = S.CurrentTick, Channel = playerInfo.InputChannel });
 
 				BodyOperations.CreateBody(projectile, BodyType.Kinematic, worldTransform);
 				BodyOperations.SetBullet(projectile, true);
 				BodyOperations.SetLinearVelocity(projectile, (direction * res.ProjectileSpeed).To32());
 
-				var shape = Shape.MakeSphere(FVector3.Zero, FP.FromRatio(1, 4));
+				var shape = Shape.MakeSphere(FVector3.Zero, res.ProjectileRadius.To32());
 				shape.EnableContactEvents = true;
 				// So this projectile never collides with its own shooter once players have a Shape too.
 				shape.Filter.GroupIndex = Filter.SelfGroup(playerInfo.InputChannel);

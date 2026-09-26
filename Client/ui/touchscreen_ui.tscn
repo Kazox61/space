@@ -98,6 +98,10 @@ joystick_size = 300.0
 tip_size = 120.0
 deadzone_ratio = 0.2
 initial_offset_ratio = Vector2(0.65, 0.8)
+action_left = &"aim_left"
+action_right = &"aim_right"
+action_up = &"aim_forward"
+action_down = &"aim_backward"
 
 [node name="ActionButton" type="Button" parent="HBoxContainer/Control" unique_id=317816380]
 custom_minimum_size = Vector2(150, 150)

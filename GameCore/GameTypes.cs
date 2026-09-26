@@ -27,7 +27,6 @@ public static class GameTypes {
 			.Component<Body>()
 			.Component<Contact>()
 			.Component<Health>()
-			.Component<Lifetime>()
 			.Component<LootDrop>()
 			.Component<Mover>()
 			.Component<PatrolRail>()
@@ -35,6 +34,7 @@ public static class GameTypes {
 			.Component<PendingShot>()
 			.Component<PlayerInfo>()
 			.Component<ProjectileOrigin>()
+			.Component<ProjectileRange>()
 			.Component<RailSlot>()
 			.Component<Shape>()
 			.Component<Transform>()
@@ -66,8 +66,8 @@ public static class GameTypes {
 
 	// Mirrors the list above; only consulted by the debug-time coverage check.
 	private static readonly HashSet<Type> s_registered = [
-		typeof(Body), typeof(Contact), typeof(Health), typeof(Lifetime), typeof(LootDrop), typeof(Mover), typeof(PatrolRail), typeof(PendingRespawn), typeof(PendingShot),
-		typeof(PlayerInfo), typeof(ProjectileOrigin), typeof(RailSlot), typeof(Shape), typeof(Transform), typeof(ViewId),
+		typeof(Body), typeof(Contact), typeof(Health), typeof(LootDrop), typeof(Mover), typeof(PatrolRail), typeof(PendingRespawn), typeof(PendingShot),
+		typeof(PlayerInfo), typeof(ProjectileOrigin), typeof(ProjectileRange), typeof(RailSlot), typeof(Shape), typeof(Transform), typeof(ViewId),
 		typeof(IsProjectile), typeof(OutOfPhysicsBounds),
 		typeof(Shapes), typeof(BodyOwner), typeof(ShapeA), typeof(ShapeB), typeof(Shooter),
 		typeof(ContactBeginTouchEvent), typeof(ContactEndTouchEvent), typeof(ContactHitEvent), typeof(ContinuousHitEvent),

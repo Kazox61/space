@@ -483,13 +483,13 @@ public static partial class Program {
 		Core<SyncTargetWorld>.W.SetResource(new Core<SyncTargetWorld>.PhysicsWorld());
 		Core<SyncTargetWorld>.W.SetResource(new Core<SyncTargetWorld>.BroadPhase());
 		Core<SyncTargetWorld>.Systems.Add(new Core<SyncTargetWorld>.DamageSystem(), order: 0);
-		Core<SyncTargetWorld>.Systems.Add(new Core<SyncTargetWorld>.ProjectileDespawnSystem(), order: 0);
 		Core<SyncTargetWorld>.Systems.Add(new Core<SyncTargetWorld>.DeathSystem(), order: 1);
-		Core<SyncTargetWorld>.Systems.Add(new Core<SyncTargetWorld>.ShapeProxySystem(), order: 2);
-		Core<SyncTargetWorld>.Systems.Add(new Core<SyncTargetWorld>.ContactSystem(), order: 3);
-		Core<SyncTargetWorld>.Systems.Add(new Core<SyncTargetWorld>.ContactSolverSystem(), order: 4);
-		Core<SyncTargetWorld>.Systems.Add(new Core<SyncTargetWorld>.BodyTransformSyncSystem(), order: 5);
-		Core<SyncTargetWorld>.Systems.Add(new Core<SyncTargetWorld>.ProjectileHitSystem(), order: 6);
+		Core<SyncTargetWorld>.Systems.Add(new Core<SyncTargetWorld>.ProjectileRangeSystem(), order: 2);
+		Core<SyncTargetWorld>.Systems.Add(new Core<SyncTargetWorld>.ShapeProxySystem(), order: 3);
+		Core<SyncTargetWorld>.Systems.Add(new Core<SyncTargetWorld>.ContactSystem(), order: 4);
+		Core<SyncTargetWorld>.Systems.Add(new Core<SyncTargetWorld>.ContactSolverSystem(), order: 5);
+		Core<SyncTargetWorld>.Systems.Add(new Core<SyncTargetWorld>.BodyTransformSyncSystem(), order: 6);
+		Core<SyncTargetWorld>.Systems.Add(new Core<SyncTargetWorld>.ProjectileHitSystem(), order: 7);
 		Core<SyncTargetWorld>.W.Initialize();
 		Core<SyncTargetWorld>.Systems.Initialize();
 
