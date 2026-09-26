@@ -23,16 +23,16 @@ public abstract partial class Core<TWorld> where TWorld : struct, ISessionType, 
 			Systems.Add(new SpawnDummySystem(), order: 0);
 			Systems.Add(new DamageSystem(), order: 0);
 			Systems.Add(new DummyRespawnSystem(), order: 0);
-			Systems.Add(new ProjectileDespawnSystem(), order: 0);
 			Systems.Add(new DeathSystem(), order: 1);
 			Systems.Add(new PlayerMoverSystem(), order: 2);
 			Systems.Add(new ShootSystem(), order: 3);
-			Systems.Add(new ShapeProxySystem(), order: 4);
-			Systems.Add(new ContactSystem(), order: 5);
-			Systems.Add(new DummyPatrolSystem(), order: 6);
-			Systems.Add(new ContactSolverSystem(), order: 7);
-			Systems.Add(new BodyTransformSyncSystem(), order: 8);
-			Systems.Add(new ProjectileHitSystem(), order: 9);
+			Systems.Add(new ProjectileRangeSystem(), order: 4);
+			Systems.Add(new ShapeProxySystem(), order: 5);
+			Systems.Add(new ContactSystem(), order: 6);
+			Systems.Add(new DummyPatrolSystem(), order: 7);
+			Systems.Add(new ContactSolverSystem(), order: 8);
+			Systems.Add(new BodyTransformSyncSystem(), order: 9);
+			Systems.Add(new ProjectileHitSystem(), order: 10);
 		}
 	}
 }

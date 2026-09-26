@@ -104,7 +104,7 @@ public static partial class Program {
 		new(nameof(ShapeFilterMutationTest), "Mutation", ShapeFilterMutationTest),
 		new(nameof(ShapeGeometryDensityAndForcesTest), "Mutation", ShapeGeometryDensityAndForcesTest),
 		new(nameof(MutationRollbackTest), "Rollback", MutationRollbackTest),
-		new(nameof(ProjectileDespawnTtlTest), "Lifecycle", ProjectileDespawnTtlTest),
+		new(nameof(ProjectileDespawnRangeTest), "Lifecycle", ProjectileDespawnRangeTest),
 		new(nameof(SessionInputDuplicateRetryTest), "Rollback", SessionInputDuplicateRetryTest),
 		new(nameof(BodyDestructionRollbackTest), "Rollback", BodyDestructionRollbackTest),
 		new(nameof(DeathSystemPhysicsLifecycleTest), "Lifecycle", DeathSystemPhysicsLifecycleTest),
@@ -152,13 +152,13 @@ public static partial class Program {
 		W.SetResource(new PhysicsWorld());
 		W.SetResource(new BroadPhase());
 		Systems.Add(new DamageSystem(), order: 0);
-		Systems.Add(new ProjectileDespawnSystem(), order: 0);
 		Systems.Add(new DeathSystem(), order: 1);
-		Systems.Add(new ShapeProxySystem(), order: 2);
-		Systems.Add(new ContactSystem(), order: 3);
-		Systems.Add(new ContactSolverSystem(), order: 4);
-		Systems.Add(new BodyTransformSyncSystem(), order: 5);
-		Systems.Add(new ProjectileHitSystem(), order: 6);
+		Systems.Add(new ProjectileRangeSystem(), order: 2);
+		Systems.Add(new ShapeProxySystem(), order: 3);
+		Systems.Add(new ContactSystem(), order: 4);
+		Systems.Add(new ContactSolverSystem(), order: 5);
+		Systems.Add(new BodyTransformSyncSystem(), order: 6);
+		Systems.Add(new ProjectileHitSystem(), order: 7);
 		W.Initialize();
 		Systems.Initialize();
 

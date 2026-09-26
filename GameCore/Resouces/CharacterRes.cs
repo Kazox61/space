@@ -11,15 +11,17 @@ public class CharacterRes : IResource {
 	/// <summary>Muzzle velocity for <c>Core&lt;TWorld&gt;.ShootSystem</c>'s spawned projectiles.</summary>
 	public FP ProjectileSpeed = 12.ToFP();
 
+	/// <summary>Distance from the player's center at which a projectile is spawned.</summary>
+	public FP ProjectileSpawnOffset = FP.FromRatio(3, 4);
+
+	/// <summary>Collision radius of a projectile.</summary>
+	public FP ProjectileRadius = FP.FromRatio(1, 4);
+
 	/// <summary>Seconds between attack input and projectile release, synchronized to the firing animation.</summary>
 	public FP AttackDelay = FP.FromRatio(14, 30);
 
-	/// <summary>
-	/// Seconds a projectile lives before <c>Core&lt;TWorld&gt;.ProjectileDespawnSystem</c> despawns it,
-	/// misses included -- without this they accumulate forever (each carrying a physics body, shape,
-	/// and broad-phase proxy into every rollback snapshot).
-	/// </summary>
-	public FP ProjectileLifetime = 2.ToFP();
+	/// <summary>Maximum distance a projectile travels before it despawns.</summary>
+	public FP ProjectileMaxRange = 12.ToFP();
 
 	/// <summary>Pogo suspension spring frequency, matching box3d's CharacterMover::SolveMove (samples/sample.cpp) default.</summary>
 	public FP PogoHertz = 4.ToFP();

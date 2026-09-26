@@ -7,6 +7,25 @@
 [ext_resource type="AudioStream" uid="uid://beel4bseu55ic" path="res://assets/player/audio/huntress_launch.wav" id="5_launch"]
 [ext_resource type="AudioStream" uid="uid://n74qfxcmnf4x" path="res://assets/arrow/audio/huntress_hit.wav" id="6_hit"]
 [ext_resource type="PackedScene" path="res://assets/arrow/vfx/arrow_hit.tscn" id="7_hitvfx"]
+[ext_resource type="Script" path="res://setup/AimIndicator.cs" id="8_aim"]
+
+[sub_resource type="StandardMaterial3D" id="StandardMaterial3D_aim_border"]
+transparency = 1
+shading_mode = 0
+albedo_color = Color(1, 1, 1, 0.82)
+
+[sub_resource type="StandardMaterial3D" id="StandardMaterial3D_aim_fill"]
+transparency = 1
+shading_mode = 0
+albedo_color = Color(1, 1, 1, 0.2)
+
+[sub_resource type="PlaneMesh" id="PlaneMesh_aim_border"]
+material = SubResource("StandardMaterial3D_aim_border")
+size = Vector2(1, 1)
+
+[sub_resource type="PlaneMesh" id="PlaneMesh_aim_fill"]
+material = SubResource("StandardMaterial3D_aim_fill")
+size = Vector2(1, 1)
 
 [sub_resource type="Environment" id="Environment_aq4fw"]
 background_mode = 1
@@ -33,6 +52,29 @@ script = ExtResource("4_fxplayer")
 _attackSound = ExtResource("5_launch")
 _hitSound = ExtResource("6_hit")
 _hitVfx = ExtResource("7_hitvfx")
+
+[node name="AimIndicator" type="Node3D" parent="." node_paths=PackedStringArray("_leftBorder", "_rightBorder", "_endBorder", "_fill")]
+script = ExtResource("8_aim")
+_leftBorder = NodePath("LeftBorder")
+_rightBorder = NodePath("RightBorder")
+_endBorder = NodePath("EndBorder")
+_fill = NodePath("Fill")
+
+[node name="LeftBorder" type="MeshInstance3D" parent="AimIndicator"]
+cast_shadow = 0
+mesh = SubResource("PlaneMesh_aim_border")
+
+[node name="RightBorder" type="MeshInstance3D" parent="AimIndicator"]
+cast_shadow = 0
+mesh = SubResource("PlaneMesh_aim_border")
+
+[node name="EndBorder" type="MeshInstance3D" parent="AimIndicator"]
+cast_shadow = 0
+mesh = SubResource("PlaneMesh_aim_border")
+
+[node name="Fill" type="MeshInstance3D" parent="AimIndicator"]
+cast_shadow = 0
+mesh = SubResource("PlaneMesh_aim_fill")
 
 [node name="TouchscreenUi" parent="." unique_id=1386424317 instance=ExtResource("2_2au82")]
 

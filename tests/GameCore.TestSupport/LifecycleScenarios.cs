@@ -13,36 +13,46 @@ namespace PhysicsSmokeTest;
 
 public static partial class Program {
 	/// <summary>
-	/// Missed projectiles used to live forever (nothing destroyed them except a hit). Verifies the
-	/// <see cref="Lifetime"/> countdown keeps them alive mid-flight and then routes expiry through
-	/// <see cref="DeadEvent"/> → <c>DeathSystem</c>'s complete body/shape/proxy teardown.
+	/// Missed projectiles used to live forever (nothing destroyed them except a hit). Verifies that
+	/// <see cref="ProjectileRange"/> stops one exactly at its configured range and routes expiry
+	/// through <see cref="DeadEvent"/> into <c>DeathSystem</c>'s complete physics teardown.
 	/// </summary>
-	private static void ProjectileDespawnTtlTest() {
-		Console.WriteLine("--- ProjectileDespawnTtlTest ---");
+	private static void ProjectileDespawnRangeTest() {
+		Console.WriteLine("--- ProjectileDespawnRangeTest ---");
 		Bootstrap();
 
 		var baseline = PhysicsDiagnostics.Capture();
 
 		var projectile = W.NewEntity<Projectile>();
+		projectile.Set(new Transform());
 		BodyOperations.CreateBody(projectile, BodyType.Kinematic, new FWorldTransform(FPos.Zero, FQuaternion.Identity));
 		var shape = Shape.MakeSphere(FVector3.Zero, FP.FromRatio(1, 4));
 		shape.EnableContactEvents = true;
 		ShapeFactory.CreateShape(projectile, shape);
-		projectile.Set(new Lifetime { TimeRemaining = Fixed64.FP.FromRatio(2, 1) });
+		BodyOperations.SetLinearVelocity(projectile, new FVector3(6.ToFP(), FP.Zero, FP.Zero));
+		projectile.Set(new ProjectileRange { Remaining = 12.ToFP() });
 		var projectileGid = projectile.GID;
 
-		for (var i = 0; i < 60; i++) {
+		for (var i = 0; i < 119; i++) {
 			W.Tick();
 			Systems.Update();
 		}
-		Check("projectile is still alive at half its lifetime", projectileGid.TryUnpack<TestWorld>(out _) && PhysicsDiagnostics.Capture().Bodies == baseline.Bodies + 1);
+		Check("projectile remains alive before reaching max range", projectileGid.TryUnpack<TestWorld>(out _) && PhysicsDiagnostics.Capture().Bodies == baseline.Bodies + 1);
 
-		for (var i = 0; i < 70; i++) {
-			W.Tick();
-			Systems.Update();
-		}
-		Check("expired projectile entity is destroyed", !projectileGid.TryUnpack<TestWorld>(out _));
-		Check("expiry returns every physics count to baseline", PhysicsDiagnostics.Capture() == baseline);
+		W.Tick();
+		Systems.Update();
+		Check("projectile reaches max range exactly", projectileGid.TryUnpack<TestWorld>(out var atRange)
+			&& Fixed64.FP.Abs(atRange.Read<Transform>().Position.X - 12.ToFP().To64()) < Fixed64.FP.FromRatio(1, 100));
+
+		W.Tick();
+		Systems.Update();
+		Check("projectile remains stopped while range expiry is consumed", projectileGid.TryUnpack<TestWorld>(out var stopped)
+			&& Fixed64.FP.Abs(stopped.Read<Transform>().Position.X - 12.ToFP().To64()) < Fixed64.FP.FromRatio(1, 100));
+
+		W.Tick();
+		Systems.Update();
+		Check("out-of-range projectile entity is destroyed", !projectileGid.TryUnpack<TestWorld>(out _));
+		Check("range expiry returns every physics count to baseline", PhysicsDiagnostics.Capture() == baseline);
 		W.GetResource<BroadPhase>().Validate();
 
 		Shutdown();
