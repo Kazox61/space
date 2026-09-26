@@ -6,6 +6,7 @@
 [ext_resource type="Script" uid="uid://wi6mti1dtugk" path="res://setup/FxPlayer.cs" id="4_fxplayer"]
 [ext_resource type="AudioStream" uid="uid://beel4bseu55ic" path="res://assets/player/audio/huntress_launch.wav" id="5_launch"]
 [ext_resource type="AudioStream" uid="uid://n74qfxcmnf4x" path="res://assets/arrow/audio/huntress_hit.wav" id="6_hit"]
+[ext_resource type="PackedScene" path="res://assets/arrow/vfx/arrow_hit.tscn" id="7_hitvfx"]
 
 [sub_resource type="Environment" id="Environment_aq4fw"]
 background_mode = 1
@@ -31,6 +32,7 @@ _fxPlayer = NodePath("FxPlayer")
 script = ExtResource("4_fxplayer")
 _attackSound = ExtResource("5_launch")
 _hitSound = ExtResource("6_hit")
+_hitVfx = ExtResource("7_hitvfx")
 
 [node name="TouchscreenUi" parent="." unique_id=1386424317 instance=ExtResource("2_2au82")]
 

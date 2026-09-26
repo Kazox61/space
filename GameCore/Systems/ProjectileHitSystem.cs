@@ -1,4 +1,6 @@
 using FFS.Libraries.StaticEcs;
+using Fixed;
+using Fixed64;
 using Shenanicode.Rollback;
 
 namespace Space.GameCore;
@@ -22,14 +24,18 @@ public abstract partial class Core<TWorld> where TWorld : struct, ISessionType, 
 
 		public void Update() {
 			foreach (var e in receiver) {
-				HandleHit(e.Value.ShapeA, e.Value.ShapeB);
+				HandleHit(e.Value.ShapeA, e.Value.ShapeB, surface: null);
 			}
 			foreach (var e in continuousReceiver) {
-				HandleHit(e.Value.BulletShape, e.Value.TargetShape);
+				ref readonly var hit = ref e.Value;
+				var point = new FVector3(hit.Point.X, hit.Point.Y, hit.Point.Z);
+				var normal = new FVector3(hit.Normal.X.To64(), hit.Normal.Y.To64(), hit.Normal.Z.To64());
+				HandleHit(hit.BulletShape, hit.TargetShape, (point, normal));
 			}
 		}
 
-		private static void HandleHit(EntityGID shapeA, EntityGID shapeB) {
+		/// <param name="surface">Contact point and outward surface normal, when the hit reports them (continuous hits only).</param>
+		private static void HandleHit(EntityGID shapeA, EntityGID shapeB, (FVector3 Point, FVector3 Normal)? surface) {
 			if (!TryResolveOwner(shapeA, out var ownerA) || !TryResolveOwner(shapeB, out var ownerB)) {
 				return;
 			}
@@ -57,11 +63,16 @@ public abstract partial class Core<TWorld> where TWorld : struct, ISessionType, 
 
 			if (projectile.Has<ProjectileOrigin>() && projectile.Has<Transform>()) {
 				ref readonly var origin = ref projectile.Read<ProjectileOrigin>();
+				// Without a reported surface, face back along the flight: discrete contacts never change a
+				// kinematic body's velocity. (Continuous hits do -- the solver strips its normal part -- which
+				// is why they must use the reported normal.)
+				var velocity = projectile.Has<Body>() ? projectile.Read<Body>().LinearVelocity : default;
 				RecordFx(new FxEvent {
 					Kind = FxKind.ProjectileHit,
 					Channel = origin.Channel,
 					KeyTick = origin.SpawnTick,
-					Position = projectile.Read<Transform>().Position,
+					Position = surface?.Point ?? projectile.Read<Transform>().Position,
+					Direction = surface?.Normal ?? new FVector3(-velocity.X.To64(), -velocity.Y.To64(), -velocity.Z.To64()),
 				});
 			}
 

@@ -203,14 +203,52 @@ public static partial class Program {
 		Check("the re-simulated hit is played once", player.Count(FxKind.ProjectileHit) == 1);
 		Check("the hit is keyed by the shooter's channel", player.Played.Exists(p => p.Fx.Kind == FxKind.ProjectileHit && p.Fx.Channel == LocalChannel));
 
-		// The same hit reported a tick later, somewhere else, is still the same hit.
+		// The arrow flies +x into the wall's face at x = 1.5, so the impact faces back out along -x.
 		var hit = player.Played.Find(p => p.Fx.Kind == FxKind.ProjectileHit).Fx;
+		Check("the hit is placed on the wall's face", Math.Abs(ToDouble(hit.Position.X) - 1.5) < 0.05);
+		Check("the hit faces out of the wall", FacesMinusX(hit.Direction));
+
+		// The same hit reported a tick later, somewhere else, is still the same hit.
 		var shifted = hit;
 		shifted.Position += Fixed64.FVector3.Up;
 		sink.Log.Record(shifted, S.CurrentTick - 1);
 		sink.Log.Flush(S.CurrentTick, player);
 		Check("a hit shifted by a tick and moved is not played again", player.Count(FxKind.ProjectileHit) == 1);
 	}
+
+	/// <summary>
+	/// An arrow that spawns already overlapping a wall (its shooter stands against it) gets no CCD hit --
+	/// time of impact reports an initial overlap -- so it hits by discrete contact, with no reported
+	/// surface: the hit sits at the arrow's centre and faces back along its flight.
+	/// </summary>
+	private static void FxDiscreteHitFacesBackAlongFlightTest() {
+		Console.WriteLine("--- FxDiscreteHitFacesBackAlongFlightTest ---");
+		// The arrow spawns at x = 3/4 with radius 1/4; this wall's face at x = 0.9 cuts into it.
+		var sink = StartFxSession(SimulationType.AutomaticRollbacks, static () => {
+			var wall = W.NewEntity<Default>();
+			var wallTransform = new FWorldTransform(new FPos(Fixed64.FP.FromRatio(14, 10), Fixed64.FP.One + Fixed64.FP.Half, Fixed64.FP.Zero), FQuaternion.Identity);
+			BodyOperations.CreateBody(wall, BodyType.Static, wallTransform);
+			ShapeFactory.CreateShape(wall, Shape.MakeBox(FVector3.Zero, new FVector3(FP.Half, FP.Two, FP.Two)));
+		});
+		var player = new RecordingFxPlayer();
+		Systems.GetResource<CharacterRes>().AttackDelay = Space.GameCore.Const.DeltaTime;
+
+		Advance(22);
+		S.SetPredictionInput(LocalChannel, AttackRight);
+		AdvanceAndFlush(sink, player, 10);
+		Check("the arrow hit the wall", player.Count(FxKind.ProjectileHit) == 1);
+
+		// The contact begins a tick after the spawn, so the arrow has flown 12/60 on and sits past the face.
+		var hit = player.Played.Find(p => p.Fx.Kind == FxKind.ProjectileHit).Fx;
+		var x = ToDouble(hit.Position.X);
+		Check($"the hit is placed at the arrow's centre, not on the face (x = {x:F3})", Math.Abs(x - 0.95) < 0.01);
+		Check("the hit faces back along the flight", FacesMinusX(hit.Direction));
+	}
+
+	private static double ToDouble(Fixed64.FP value) => Fixed64.FConversions.ToDouble(value);
+
+	private static bool FacesMinusX(Fixed64.FVector3 direction) =>
+		ToDouble(direction.X) < 0.0 && Math.Abs(ToDouble(direction.Y)) < 0.05 && Math.Abs(ToDouble(direction.Z)) < 0.05;
 
 	/// <summary>
 	/// A rollback over a projectile's spawn re-creates it, and a hard-reset snapshot load bumps the
