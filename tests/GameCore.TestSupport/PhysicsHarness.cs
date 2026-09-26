@@ -131,6 +131,7 @@ public static partial class Program {
 		new(nameof(FxDedupAcrossRollbackTest), "Fx", FxDedupAcrossRollbackTest),
 		new(nameof(FxMispredictNotRetractedTest), "Fx", FxMispredictNotRetractedTest),
 		new(nameof(FxHitKeyedByProjectileTest), "Fx", FxHitKeyedByProjectileTest),
+		new(nameof(FxDiscreteHitFacesBackAlongFlightTest), "Fx", FxDiscreteHitFacesBackAlongFlightTest),
 		new(nameof(FxLateGuardTest), "Fx", FxLateGuardTest),
 		new(nameof(FxPruningTest), "Fx", FxPruningTest),
 		new(nameof(FxFullSyncClearsLogTest), "Fx", FxFullSyncClearsLogTest),

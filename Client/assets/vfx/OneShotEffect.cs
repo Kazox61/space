@@ -18,12 +18,18 @@ public partial class OneShotEffect : Node3D {
 			particles.OneShot = true;
 			particles.Preprocess = skipSeconds;
 			particles.Restart();
+			// A frozen emitter never ends; it goes with the others rather than keep the effect alive.
+			if (particles.SpeedScale <= 0.0) {
+				continue;
+			}
+
 			// Without full explosiveness a one-shot emits over (1 - explosiveness) of a lifetime,
 			// so its last particle outlives the first by that much.
 			var span = particles.Lifetime * (2.0 - particles.Explosiveness);
 			duration = Mathf.Max(duration, span / particles.SpeedScale);
 		}
 
-		GetTree().CreateTimer(Mathf.Max(duration - skipSeconds, 0.0) + 0.1).Timeout += QueueFree;
+		// Not processAlways: the particles stop while the tree is paused, so the timer must too.
+		GetTree().CreateTimer(Mathf.Max(duration - skipSeconds, 0.0) + 0.1, processAlways: false).Timeout += QueueFree;
 	}
 }

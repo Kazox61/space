@@ -1,6 +1,6 @@
 [gd_scene format=3]
 
-[ext_resource type="Script" path="res://assets/player/vfx/OneShotEffect.cs" id="1_script"]
+[ext_resource type="Script" path="res://assets/vfx/OneShotEffect.cs" id="1_script"]
 [ext_resource type="Texture2D" uid="uid://cr7aac2lw320r" path="res://assets/arrow/vfx/Star01.png" id="2_star"]
 [ext_resource type="Texture2D" uid="uid://b38g5s7eeix0i" path="res://assets/arrow/vfx/huntress_ball.png" id="3_ball"]
 [ext_resource type="Texture2D" uid="uid://dvonl38r2tnvm" path="res://assets/arrow/vfx/huntress_trail.png" id="4_trail"]
