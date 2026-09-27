@@ -48,7 +48,9 @@ public static partial class Program {
 			BenchInterpolationSnapshotCost();
 		}
 
-		return BenchPhysicsBudgets();
+		var physics = BenchPhysicsBudgets();
+		var navigation = BenchNavigationBudgets();
+		return physics && navigation;
 	}
 
 	private static IReadOnlyList<PhysicsScenario> BuildScenarios() => new PhysicsScenario[] {

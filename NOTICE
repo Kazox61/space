@@ -1,0 +1,10 @@
+Space
+This product includes software derived from xpTURN Klotho
+(https://github.com/xpTURN/Klotho), licensed under the Apache License, Version 2.0.
+Derived files carry a header naming the original file; each was modified for Space.
+You may obtain a copy of the License at http://www.apache.org/licenses/LICENSE-2.0
+
+The offline navigation builder (NavBuilder/) uses DotRecast
+(https://github.com/ikpil/DotRecast), licensed under the zlib license, which is
+derived from Recast & Detour by Mikko Mononen and recast4j by Piotr Piastucki.
+DotRecast is not part of the client or server.

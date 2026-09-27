@@ -25,10 +25,13 @@ public static class GameTypes {
 	public static void Register<TWorld>() where TWorld : struct, IWorldType {
 		World<TWorld>.Types()
 			.Component<Body>()
+			.Component<CharacterMoveIntent>()
 			.Component<Contact>()
 			.Component<Health>()
 			.Component<LootDrop>()
 			.Component<Mover>()
+			.Component<NavAgent>()
+			.Component<NavZoneState>()
 			.Component<PatrolRail>()
 			.Component<PendingRespawn>()
 			.Component<PendingShot>()
@@ -39,6 +42,7 @@ public static class GameTypes {
 			.Component<Shape>()
 			.Component<Transform>()
 			.Component<ViewId>()
+			.Tag<ChasesNearestPlayer>()
 			.Tag<IsProjectile>()
 			.Tag<OutOfPhysicsBounds>()
 			.Links<Shapes>()
@@ -56,6 +60,7 @@ public static class GameTypes {
 			.Event<DeadEvent>()
 			.EntityType<Crate>()
 			.EntityType<Dummy>()
+			.EntityType<NavCharacter>()
 			.EntityType<Player>()
 			.EntityType<Projectile>();
 
@@ -66,13 +71,13 @@ public static class GameTypes {
 
 	// Mirrors the list above; only consulted by the debug-time coverage check.
 	private static readonly HashSet<Type> s_registered = [
-		typeof(Body), typeof(Contact), typeof(Health), typeof(LootDrop), typeof(Mover), typeof(PatrolRail), typeof(PendingRespawn), typeof(PendingShot),
+		typeof(Body), typeof(CharacterMoveIntent), typeof(Contact), typeof(Health), typeof(LootDrop), typeof(Mover), typeof(NavAgent), typeof(NavZoneState), typeof(PatrolRail), typeof(PendingRespawn), typeof(PendingShot),
 		typeof(PlayerInfo), typeof(ProjectileOrigin), typeof(ProjectileRange), typeof(RailSlot), typeof(Shape), typeof(Transform), typeof(ViewId),
-		typeof(IsProjectile), typeof(OutOfPhysicsBounds),
+		typeof(ChasesNearestPlayer), typeof(IsProjectile), typeof(OutOfPhysicsBounds),
 		typeof(Shapes), typeof(BodyOwner), typeof(ShapeA), typeof(ShapeB), typeof(Shooter),
 		typeof(ContactBeginTouchEvent), typeof(ContactEndTouchEvent), typeof(ContactHitEvent), typeof(ContinuousHitEvent),
 		typeof(SensorBeginTouchEvent), typeof(SensorEndTouchEvent), typeof(DamageEvent), typeof(DeadEvent),
-		typeof(Crate), typeof(Dummy), typeof(Player), typeof(Projectile),
+		typeof(Crate), typeof(Dummy), typeof(NavCharacter), typeof(Player), typeof(Projectile),
 	];
 
 	/// <summary>

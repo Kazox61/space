@@ -51,6 +51,12 @@ Asset = 6
 Scene = ExtResource("9_crate")
 PrewarmCount = 4
 
+[sub_resource type="Resource" id="Resource_nav_character"]
+script = ExtResource("2_definition")
+Asset = 7
+Scene = ExtResource("8_dummy")
+PrewarmCount = 1
+
 [resource]
 script = ExtResource("1_catalog")
-Entries = Array[ExtResource("2_definition")]([SubResource("Resource_player"), SubResource("Resource_projectile"), SubResource("Resource_sphere"), SubResource("Resource_platform"), SubResource("Resource_box"), SubResource("Resource_dummy"), SubResource("Resource_crate")])
+Entries = Array[ExtResource("2_definition")]([SubResource("Resource_player"), SubResource("Resource_projectile"), SubResource("Resource_sphere"), SubResource("Resource_platform"), SubResource("Resource_box"), SubResource("Resource_dummy"), SubResource("Resource_crate"), SubResource("Resource_nav_character")])

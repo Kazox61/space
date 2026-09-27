@@ -10,7 +10,7 @@ public abstract partial class Core<TWorld> where TWorld : struct, ISessionType, 
 	/// Queues a projectile whenever a player's attack input (<see cref="PlayerInput.AttackX"/>/
 	/// <see cref="PlayerInput.AttackY"/>, set by <c>ClientGame.OnAttack</c> client-side and zeroed again
 	/// after one tick) carries a direction, then releases it after <see cref="CharacterRes.AttackDelay"/>.
-	/// Mirrors <see cref="PlayerMoverSystem"/>'s XZ mapping of a 2D input into a 3D world direction.
+	/// Mirrors <see cref="PlayerIntentSystem"/>'s XZ mapping of a 2D input into a 3D world direction.
 	/// Reports <see cref="FxKind.AttackStarted"/> when queuing and <see cref="FxKind.ShotReleased"/> when
 	/// releasing, both keyed by the attack tick.
 	/// </summary>

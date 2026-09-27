@@ -9,6 +9,7 @@
 [ext_resource type="Script" uid="uid://d4dh3ymbrr865" path="res://level_authoring/BoxColliderComponent.cs" id="7_box_collider"]
 [ext_resource type="Script" uid="uid://crcwfs64lq55j" path="res://level_authoring/EntityComponent.cs" id="8_entity_component"]
 [ext_resource type="Script" uid="uid://eb4g86y84qna" path="res://level_authoring/HealthComponent.cs" id="9_health"]
+[ext_resource type="Script" uid="uid://dysc1e0oy7v13" path="res://level_authoring/NavZone.cs" id="10_nav_zone"]
 
 [sub_resource type="Resource" id="StrongCrateHealth"]
 script = ExtResource("9_health")
@@ -58,7 +59,14 @@ transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 1, -6)
 script = ExtResource("4_collider")
 Recipe = ExtResource("5_collider_recipe")
 Overrides = Array[ExtResource("6_collider_component")]([SubResource("TestBoxBox")])
+Navigation = 1
 
 [node name="Mesh" type="MeshInstance3D" parent="TestBox" unique_id=1400662265]
 material_override = SubResource("StandardMaterial3D_jh5dx")
 mesh = SubResource("BoxMesh")
+
+[node name="Gate" type="Node3D" parent="." unique_id=1734001122]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 4, 0.5, -6)
+script = ExtResource("10_nav_zone")
+ZoneId = "gate"
+Size = Vector3(4, 2, 6)

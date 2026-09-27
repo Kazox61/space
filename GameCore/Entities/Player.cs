@@ -10,9 +10,10 @@ public struct Player : IEntityType {
 	public ushort InputChannel;
 
 	public void OnCreate<TWorld>(World<TWorld>.Entity entity) where TWorld : struct, IWorldType {
-		// The player has no Body -- it's driven by PlayerMoverSystem via CharacterMover, which
+		// The player has no Body -- it's driven by CharacterMoverSystem via CharacterMover, which
 		// exists outside the rigid-body simulation (see box3d's Character Mover docs). Transform is
-		// sole-owned by PlayerMoverSystem; nothing else may write it.
+		// sole-owned by CharacterMoverSystem; nothing else may write it. PlayerIntentSystem turns
+		// input into the CharacterMoveIntent it executes.
 		// Transform.Position is the capsule's CENTER, not its feet -- matching box3d's own
 		// CharacterMover sample (samples/sample.cpp) and every other Body-owning entity in this
 		// project (Shape.MakeSphere/MakeBox are always given a local center of zero, so a Body's own
@@ -32,7 +33,9 @@ public struct Player : IEntityType {
 				CapsuleCenter1 = new Fixed32.FVector3(Fixed32.FP.Zero, -Fixed32.FP.Half, Fixed32.FP.Zero),
 				CapsuleCenter2 = new Fixed32.FVector3(Fixed32.FP.Zero, Fixed32.FP.Half, Fixed32.FP.Zero),
 				CapsuleRadius = Fixed32.FP.Half,
-			}
+				FilterGroup = Filter.SelfGroup(InputChannel),
+			},
+			new CharacterMoveIntent()
 		);
 	}
 }

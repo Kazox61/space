@@ -9,8 +9,13 @@ public partial class ColliderRecipe : Resource {
 	[Export]
 	public Godot.Collections.Array<ColliderComponent> Components { get; set; } = new();
 
-	public StaticBox Build(string sourcePath, Transform3D globalTransform, Godot.Collections.Array<ColliderComponent> overrides) {
-		var builder = new StaticBoxBuilder(sourcePath, LevelMarkers.ToFixed(globalTransform, sourcePath));
+	public StaticBox Build(
+		string sourcePath,
+		Transform3D globalTransform,
+		Godot.Collections.Array<ColliderComponent> overrides,
+		NavContribution navigation
+	) {
+		var builder = new StaticBoxBuilder(sourcePath, LevelMarkers.ToFixed(globalTransform, sourcePath), navigation);
 		ApplyLayer(builder, Components, sourcePath, "recipe");
 		ApplyLayer(builder, overrides, sourcePath, "overrides");
 		return builder.Build();

@@ -34,11 +34,14 @@ public partial class LevelCollider : Node3D {
 	[Export]
 	public Godot.Collections.Array<ColliderComponent> Overrides { get; set; } = new();
 
+	[Export]
+	public NavContribution Navigation { get; set; } = NavContribution.Walkable;
+
 	public StaticBox Export(string sourcePath) {
 		if (Recipe is null) {
 			throw new InvalidDataException($"{sourcePath}: collider recipe is missing.");
 		}
-		return Recipe.Build(sourcePath, GlobalTransform, Overrides);
+		return Recipe.Build(sourcePath, GlobalTransform, Overrides, Navigation);
 	}
 
 	public override string[] _GetConfigurationWarnings() => Recipe is null

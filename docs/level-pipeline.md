@@ -333,6 +333,12 @@ Doors, gates, bridges, and walls that can be destroyed at known places.
   optimisation that must still be correct after a rollback.
 - Agents whose corridor crosses a zone that just closed must repath: compare a
   per-zone version counter stored in the agent's component.
+
+Implemented (see `navigation-assessment.md`, Phase 8): the `NavZone` node, a
+zone table in level format version 5, one `NavZoneState` entity per zone, and
+`NavZoneApplySystem` as described. Instead of per-zone version counters, every
+agent stores the digest of all zone states it planned under and re-plans on
+any change.
 - The static collider of a door or destructible wall is an ECS body (it
   changes during play), not a baked static collider; `nav` metadata on it
   only controls the zone, not the bake.

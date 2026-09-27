@@ -104,7 +104,9 @@ public partial class PhysicsDebugView : MeshInstance3D, IPhysicsDebugDraw {
 
 	public void DrawBox(FWorldTransform transform, FVector3 halfExtents, PhysicsDebugColor color) {
 		var center = ToGodot(transform.Position);
-		var rotation = new Quaternion(transform.Rotation.X.ToFloat(), transform.Rotation.Y.ToFloat(), transform.Rotation.Z.ToFloat(), transform.Rotation.W.ToFloat());
+		// Fixed-point unit quaternions are not unit-length within Godot's float tolerance after
+		// conversion, and Quaternion * Vector3 throws on a non-normalized quaternion.
+		var rotation = new Quaternion(transform.Rotation.X.ToFloat(), transform.Rotation.Y.ToFloat(), transform.Rotation.Z.ToFloat(), transform.Rotation.W.ToFloat()).Normalized();
 		var extent = ToGodot(halfExtents);
 		var corners = new Vector3[8];
 		for (var i = 0; i < 8; i++) {

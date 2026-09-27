@@ -49,6 +49,7 @@ public partial class ClientGame : Node3D {
 		_viewUpdater.Initialize(_viewCatalog);
 
 		AddChild(new PhysicsDebugView());
+		AddChild(new NavDebugView { Level = _level.Data });
 	}
 
 	public override void _ExitTree() {

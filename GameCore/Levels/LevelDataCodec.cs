@@ -7,11 +7,12 @@ namespace Space.GameCore;
 
 public static class LevelDataCodec {
 	private const uint Magic = 0x4C564C53; // "SLVL" in little-endian byte order.
-	private const ushort Version = 2;
+	private const ushort Version = 5;
 	private const int HashSize = 32;
 	private const int MaximumSourcePathLength = 1024;
 	private const int MaximumEntityCount = 100_000;
 	private const int MaximumStaticBoxCount = 100_000;
+	private const int MaximumNavZoneCount = NavZoneData.MaxZones;
 	private const int MaximumPayloadSize = 64 * 1024 * 1024;
 
 	public static byte[] Serialize(LevelData level) {
@@ -23,6 +24,8 @@ public static class LevelDataCodec {
 		if (orderedBoxes.Length > MaximumStaticBoxCount) {
 			throw new InvalidDataException($"Level contains {orderedBoxes.Length} static boxes; maximum is {MaximumStaticBoxCount}.");
 		}
+		var orderedZones = OrderZones(level.NavZones);
+		ValidateNavigationZones(orderedZones, level.Navigation);
 
 		using var payloadStream = new MemoryStream();
 		using (var writer = new BinaryWriter(payloadStream, Encoding.UTF8, leaveOpen: true)) {
@@ -49,6 +52,13 @@ public static class LevelDataCodec {
 				LevelDataValidation.Validate(box);
 				WriteStaticBox(writer, box);
 			}
+
+			writer.Write(orderedZones.Length);
+			foreach (var zone in orderedZones) {
+				WriteNavZone(writer, zone);
+			}
+
+			LevelNavigationCodec.Write(writer, level.Navigation);
 		}
 
 		var payload = payloadStream.ToArray();
@@ -128,10 +138,25 @@ public static class LevelDataCodec {
 				previousSourcePath = boxes[i].SourcePath;
 				LevelDataValidation.Validate(boxes[i]);
 			}
+			var zoneCount = payloadReader.ReadInt32();
+			if (zoneCount is < 0 or > MaximumNavZoneCount) {
+				throw new InvalidDataException($"Level navigation zone count {zoneCount} is invalid.");
+			}
+			var zones = new NavZoneVolume[zoneCount];
+			for (var i = 0; i < zoneCount; i++) {
+				zones[i] = ReadNavZone(payloadReader);
+				if (i > 0 && StringComparer.Ordinal.Compare(zones[i - 1].Id, zones[i].Id) >= 0) {
+					throw new InvalidDataException("Level navigation zone ids are duplicated or not canonically ordered.");
+				}
+				LevelDataValidation.Validate(zones[i]);
+			}
+
+			var navigation = LevelNavigationCodec.Read(payloadReader);
 			if (payloadStream.Position != payloadStream.Length) {
 				throw new InvalidDataException("Level payload contains trailing data.");
 			}
-			return new LevelData(placements, boxes);
+			ValidateNavigationZones(zones, navigation);
+			return new LevelData(placements, boxes, navigation, zones);
 		} catch (EndOfStreamException exception) {
 			throw new InvalidDataException("Level data is truncated.", exception);
 		}
@@ -176,10 +201,54 @@ public static class LevelDataCodec {
 		writer.Write(box.HalfExtents.X.RawValue);
 		writer.Write(box.HalfExtents.Y.RawValue);
 		writer.Write(box.HalfExtents.Z.RawValue);
+		writer.Write((byte)box.Navigation);
 	}
 
 	private static StaticBox ReadStaticBox(BinaryReader reader, int index) => new(
 		ReadSourcePath(reader, "static box", index),
+		ReadTransform(reader),
+		new FVector3(FP.FromRaw(reader.ReadInt32()), FP.FromRaw(reader.ReadInt32()), FP.FromRaw(reader.ReadInt32())),
+		(NavContribution)reader.ReadByte()
+	);
+
+	private static NavZoneVolume[] OrderZones(IReadOnlyList<NavZoneVolume> zones) {
+		var ordered = zones.OrderBy(static zone => zone.Id, StringComparer.Ordinal).ToArray();
+		if (ordered.Length > MaximumNavZoneCount) {
+			throw new InvalidDataException($"Level contains {ordered.Length} navigation zones; maximum is {MaximumNavZoneCount}.");
+		}
+		for (var i = 0; i < ordered.Length; i++) {
+			LevelDataValidation.Validate(ordered[i]);
+			if (i > 0 && StringComparer.Ordinal.Equals(ordered[i - 1].Id, ordered[i].Id)) {
+				throw new InvalidDataException($"Navigation zone id '{ordered[i].Id}' is duplicated.");
+			}
+		}
+		return ordered;
+	}
+
+	/// <summary>A baked navmesh carries exactly the level's zones, in the same order.</summary>
+	private static void ValidateNavigationZones(IReadOnlyList<NavZoneVolume> zones, LevelNavigation? navigation) {
+		if (navigation is null) {
+			return;
+		}
+		var matches = navigation.Zones.Count == zones.Count;
+		for (var i = 0; matches && i < zones.Count; i++) {
+			matches = StringComparer.Ordinal.Equals(navigation.Zones[i].Id, zones[i].Id);
+		}
+		if (!matches) {
+			throw new InvalidDataException("Level navigation zones do not match the level's navigation zone volumes; bake the level again.");
+		}
+	}
+
+	private static void WriteNavZone(BinaryWriter writer, in NavZoneVolume zone) {
+		writer.Write(zone.Id);
+		WriteTransform(writer, zone.Transform);
+		writer.Write(zone.HalfExtents.X.RawValue);
+		writer.Write(zone.HalfExtents.Y.RawValue);
+		writer.Write(zone.HalfExtents.Z.RawValue);
+	}
+
+	private static NavZoneVolume ReadNavZone(BinaryReader reader) => new(
+		reader.ReadString(),
 		ReadTransform(reader),
 		new FVector3(FP.FromRaw(reader.ReadInt32()), FP.FromRaw(reader.ReadInt32()), FP.FromRaw(reader.ReadInt32()))
 	);

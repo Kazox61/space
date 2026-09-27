@@ -54,7 +54,10 @@ public sealed class LevelDataTests {
 
 	[Test]
 	public void CodecRoundTripsStaticBoxes() {
-		var level = new LevelData([], [Box("Map/WallB", 3), Box("Map/WallA", -5)]);
+		var level = new LevelData([], [
+			Box("Map/WallB", 3) with { Navigation = NavContribution.Excluded },
+			Box("Map/WallA", -5) with { Navigation = NavContribution.ObstacleOnly }
+		]);
 		var bytes = LevelDataCodec.Serialize(level);
 		var decoded = LevelDataCodec.Deserialize(bytes);
 
@@ -64,7 +67,28 @@ public sealed class LevelDataTests {
 			Assert.That(decoded.StaticBoxes[0].SourcePath, Is.EqualTo("Map/WallA"));
 			Assert.That(decoded.StaticBoxes[0].Transform.Position.X, Is.EqualTo(Fixed64.FP.FromRatio(-5, 1)));
 			Assert.That(decoded.StaticBoxes[0].HalfExtents, Is.EqualTo(new FVector3(40.ToFP(), 3.ToFP(), FP.One)));
+			Assert.That(decoded.StaticBoxes[0].Navigation, Is.EqualTo(NavContribution.ObstacleOnly));
+			Assert.That(decoded.StaticBoxes[1].Navigation, Is.EqualTo(NavContribution.Excluded));
 		});
+	}
+
+	[Test]
+	public void CodecRejectsInvalidNavigationContribution() {
+		var box = Box("Map/Wall", 0) with { Navigation = (NavContribution)byte.MaxValue };
+
+		Assert.That(() => LevelDataCodec.Serialize(new LevelData([], [box])),
+			Throws.TypeOf<InvalidDataException>().With.Message.Contains("Map/Wall"));
+	}
+
+	[Test]
+	public void LevelFileConnectionKeyDependsOnNavigationContribution() {
+		var walkable = LevelDataCodec.Serialize(new LevelData([], [Box("Map/Ground", 0)]));
+		var obstacle = LevelDataCodec.Serialize(new LevelData([], [
+			Box("Map/Ground", 0) with { Navigation = NavContribution.ObstacleOnly }
+		]));
+
+		Assert.That(LevelFile.Read("walkable", walkable).ConnectionKey,
+			Is.Not.EqualTo(LevelFile.Read("obstacle", obstacle).ConnectionKey));
 	}
 
 	[Test]
@@ -207,8 +231,14 @@ public sealed class LevelDataTests {
 		var level = LevelFile.ReadFromDisk(path);
 		var defaultCrate = level.Data.Entities.Single(static entity => entity.SourcePath == "DefaultCrate");
 		var strongCrate = level.Data.Entities.Single(static entity => entity.SourcePath == "StrongCrate");
+		var ground = level.Data.StaticBoxes.Single(static box => box.SourcePath == "Ground");
+		var testBox = level.Data.StaticBoxes.Single(static box => box.SourcePath == "TestBox");
 
-		Assert.That(strongCrate.Crate.Health, Is.Not.EqualTo(defaultCrate.Crate.Health));
+		Assert.Multiple(() => {
+			Assert.That(strongCrate.Crate.Health, Is.Not.EqualTo(defaultCrate.Crate.Health));
+			Assert.That(ground.Navigation, Is.EqualTo(NavContribution.Walkable));
+			Assert.That(testBox.Navigation, Is.EqualTo(NavContribution.ObstacleOnly));
+		});
 	}
 
 	[Test]

@@ -4,10 +4,10 @@ using Fixed32;
 namespace Space.GameCore;
 
 /// <summary>
-/// State for a <c>CharacterMover</c>-driven entity (currently just the player). The mover has no
-/// <see cref="Body"/>/<see cref="Shape"/> of its own -- it queries the broad phase directly each
-/// tick via <c>PlayerMoverSystem</c> -- so its capsule dimensions live here instead of on a Shape
-/// component.
+/// State for a <c>CharacterMover</c>-driven entity (the player and navigation characters). The mover
+/// has no <see cref="Body"/>/<see cref="Shape"/> of its own -- it queries the broad phase directly
+/// each tick via <c>CharacterMoverSystem</c> -- so its capsule dimensions live here instead of on a
+/// Shape component.
 /// </summary>
 public struct Mover : IComponent {
 	public FVector3 Velocity;
@@ -19,6 +19,12 @@ public struct Mover : IComponent {
 	public FVector3 CapsuleCenter2;
 
 	public FP CapsuleRadius;
+
+	/// <summary>
+	/// <see cref="Filter.GroupIndex"/> for the mover's own queries. A player uses
+	/// <see cref="Filter.SelfGroup"/> so it never collides with its own projectiles; 0 has no effect.
+	/// </summary>
+	public int FilterGroup;
 
 	/// <summary>
 	/// Whether the last pogo ray (<see cref="CharacterMover.UpdatePogoGrounding"/>) found ground

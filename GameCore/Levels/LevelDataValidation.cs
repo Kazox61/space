@@ -48,6 +48,12 @@ internal static class LevelDataValidation {
 	}
 
 	public static void Validate(in StaticBox box) {
+		if (string.IsNullOrWhiteSpace(box.SourcePath)) {
+			throw new InvalidDataException("Static box source path is required.");
+		}
+		if (!Enum.IsDefined(box.Navigation)) {
+			throw new InvalidDataException($"{box.SourcePath}: invalid navigation contribution {box.Navigation}.");
+		}
 		var extentLimit = FP.FromRatio(40, 1);
 		if (box.HalfExtents.X <= FP.Zero || box.HalfExtents.Y <= FP.Zero || box.HalfExtents.Z <= FP.Zero) {
 			throw new InvalidDataException($"{box.SourcePath}: box half-extents must be positive.");
@@ -59,6 +65,23 @@ internal static class LevelDataValidation {
 			throw new InvalidDataException($"{box.SourcePath}: rotation must be non-zero.");
 		}
 		ValidateOrigin(box.Transform.Position, box.SourcePath);
+	}
+
+	public static void Validate(in NavZoneVolume zone) {
+		if (string.IsNullOrWhiteSpace(zone.Id) || zone.Id.Length > NavZoneData.MaxIdLength) {
+			throw new InvalidDataException($"Navigation zone id '{zone.Id}' must be non-empty and at most {NavZoneData.MaxIdLength} characters.");
+		}
+		var extentLimit = FP.FromRatio(1024, 1);
+		if (zone.HalfExtents.X <= FP.Zero || zone.HalfExtents.Y <= FP.Zero || zone.HalfExtents.Z <= FP.Zero) {
+			throw new InvalidDataException($"Navigation zone '{zone.Id}': half-extents must be positive.");
+		}
+		if (zone.HalfExtents.X > extentLimit || zone.HalfExtents.Y > extentLimit || zone.HalfExtents.Z > extentLimit) {
+			throw new InvalidDataException($"Navigation zone '{zone.Id}': half-extents exceed {extentLimit}.");
+		}
+		if (FQuaternion.LengthSqr(zone.Transform.Rotation) <= FP.CalculationsEpsilonSqr) {
+			throw new InvalidDataException($"Navigation zone '{zone.Id}': rotation must be non-zero.");
+		}
+		ValidateOrigin(zone.Transform.Position, $"Navigation zone '{zone.Id}'");
 	}
 
 	private static void ValidateOrigin(Fixed.FPos position, string sourcePath) {

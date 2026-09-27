@@ -24,6 +24,8 @@ public abstract partial class Core<TWorld> where TWorld : struct, ISessionType, 
 				SpawnStaticBox(box);
 			}
 
+			SpawnNavZones(level.Navigation);
+
 			foreach (var placement in level.Entities) {
 				switch (placement.Type) {
 					case LevelEntityType.Crate:
@@ -49,6 +51,16 @@ public abstract partial class Core<TWorld> where TWorld : struct, ISessionType, 
 			BodyOperations.CreateBody(crate, placement.Crate.BodyType, placement.Transform);
 
 			ShapeFactory.CreateShape(crate, CreateCrateShape(placement.Crate));
+		}
+
+		/// <summary>One open <see cref="NavZoneState"/> per baked zone, for gameplay to switch.</summary>
+		private static void SpawnNavZones(LevelNavigation? navigation) {
+			if (navigation is null) {
+				return;
+			}
+			for (var zone = 0; zone < navigation.Zones.Count; zone++) {
+				W.NewEntity<Default>().Set(NavZoneState.Open(zone));
+			}
 		}
 
 		private static void SpawnStaticBox(in StaticBox box) {
