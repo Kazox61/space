@@ -86,7 +86,14 @@ jobs:
       - name: Restore benchmark project
         run: dotnet restore benchmarks/GameCore.Benchmarks/GameCore.Benchmarks.csproj --property:Configuration=Release
 
-      - name: Enforce timing budgets
+      # Retry each independent benchmark separately. A passing physics run must not be discarded
+      # merely because navigation hit transient runner load, or vice versa.
+      - name: Enforce physics timing budgets
         run: |
-          dotnet run --project benchmarks/GameCore.Benchmarks/GameCore.Benchmarks.csproj --configuration Release --no-restore -- --enforce || \
-            dotnet run --project benchmarks/GameCore.Benchmarks/GameCore.Benchmarks.csproj --configuration Release --no-restore -- --enforce
+          dotnet run --project benchmarks/GameCore.Benchmarks/GameCore.Benchmarks.csproj --configuration Release --no-restore -- --enforce --physics || \
+            dotnet run --project benchmarks/GameCore.Benchmarks/GameCore.Benchmarks.csproj --configuration Release --no-restore -- --enforce --physics
+
+      - name: Enforce navigation timing budgets
+        run: |
+          dotnet run --project benchmarks/GameCore.Benchmarks/GameCore.Benchmarks.csproj --configuration Release --no-restore -- --enforce --navigation || \
+            dotnet run --project benchmarks/GameCore.Benchmarks/GameCore.Benchmarks.csproj --configuration Release --no-restore -- --enforce --navigation

@@ -42,14 +42,14 @@ public static partial class Program {
 		}
 	}
 
-	public static bool RunBenchmarks(bool enforce) {
+	public static bool RunBenchmarks(bool enforce, bool runPhysics = true, bool runNavigation = true) {
 		if (!enforce) {
 			BenchResimulationCost();
 			BenchInterpolationSnapshotCost();
 		}
 
-		var physics = BenchPhysicsBudgets();
-		var navigation = BenchNavigationBudgets();
+		var physics = !runPhysics || BenchPhysicsBudgets();
+		var navigation = !runNavigation || BenchNavigationBudgets();
 		return physics && navigation;
 	}
 
