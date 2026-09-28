@@ -49,6 +49,7 @@ public static class NavMeshBaker {
 	public static LevelData BakeLevel(LevelData level, NavBakeSettings settings, out NavMeshBakeReport? report) {
 		ArgumentNullException.ThrowIfNull(level);
 		if (!level.StaticBoxes.Any(static box => box.Navigation == NavContribution.Walkable)) {
+			CollectZones(OrderZones(level.NavZones), []);
 			report = null;
 			return level.WithNavigation(null);
 		}

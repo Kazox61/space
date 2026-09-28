@@ -296,7 +296,7 @@ Phase 2 is complete:
   `NavTriangle.Create`. Area index `a` becomes `AreaMask = 1 << a`.
 - The grid covers the XZ bounds exactly, with a correction for truncating
   fixed-point division, and each triangle is bucketed by its XZ bounding box.
-- Input is validated (index and area ranges, and |X|, |Z| <= 2^20 so every
+- Input is validated (index and area ranges, and |X|, |Z| <= 2^6 so every
   predicate stays exact), and an empty result throws.
 - Tests cover off-grid snapping with exact Y, rebuild idempotence, weld
   healing adjacency, stacked floors, T-junction splits (on the edge, within
@@ -311,9 +311,10 @@ Phase 2 is complete:
 Phase 3 is complete:
 
 - `Space.NavBuilder` pins `DotRecast.Recast` 2026.3.1 (zlib), which brings
-  only `DotRecast.Core`. Detour and Crowd are not referenced. Client, server
-  and GameCore do not reference `Space.NavBuilder`, and the server build
-  output contains no DotRecast assembly.
+  only `DotRecast.Core`. Detour and Crowd are not referenced. The Debug editor
+  client references `Space.NavBuilder`; the exported runtime client, server,
+  and GameCore do not. Exported client and server outputs contain no DotRecast
+  assembly.
 - `NavBakeSettings` (in GameCore, so Phase 4 can store it in `LevelData`)
   holds voxel size and height, agent radius, height, climb and slope, region
   sizes, edge length and error, detail sampling, and the lookup cell size, all
@@ -344,8 +345,8 @@ Phase 3 is complete:
   radius, height (space under a slab), climb (a 0.3 step), and maximum slope
   (a 30 degree ramp) each change the result. Repeated bakes, including with
   the boxes in reverse order, are byte-identical; output vertices are on the
-  snap grid; a bake without walkable geometry fails; and GameCore does not
-  reference DotRecast.
+  snap grid; a bake without walkable geometry fails; and GameCore references
+  neither `Space.NavBuilder` nor DotRecast.
 
 Phase 4 is complete:
 
@@ -363,7 +364,7 @@ Phase 4 is complete:
 - Decoding checks every count against a limit (1M vertices, 1M triangles, 16M
   grid entries, `NavMesh.MaxGridCells`) and against the bytes actually left
   before allocating. It also checks vertex indices before building triangles,
-  coordinates within `NavMesh.MaxCoordinate` (2^20, now shared with the
+  coordinates within `NavMesh.MaxCoordinate` (2^6, now shared with the
   builder), area data (non-zero mask, positive cost, a 0/1 blocked byte),
   and bake settings. The resulting `NavMesh` constructor validates adjacency
   reciprocity, grid ranges, grid coverage, repeated vertices, and (new) zero XZ

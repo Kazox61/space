@@ -15,10 +15,11 @@ public sealed class NavMesh {
 	public const int MaxGridCells = 1 << 22;
 
 	/// <summary>
-	/// Largest |coordinate| a baked or decoded navmesh vertex may have. Keeps the builder's exact
-	/// predicates within 128 bits and every runtime product far from saturation.
+	/// Largest |coordinate| a baked or decoded navmesh vertex may have. Guarantees coordinate-derived
+	/// runtime products, including the squared-length products in <see cref="NavGeometry.Barycentric"/>,
+	/// remain within the <see cref="FP"/> range.
 	/// </summary>
-	public static readonly FP MaxCoordinate = (1 << 20).ToFP();
+	public static readonly FP MaxCoordinate = (1 << 6).ToFP();
 
 	private readonly FVector3[] _vertices;
 	private readonly NavTriangle[] _triangles;

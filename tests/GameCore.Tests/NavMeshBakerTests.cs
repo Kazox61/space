@@ -155,6 +155,15 @@ public sealed class NavMeshBakerTests {
 	}
 
 	[Test]
+	public void LevelWithoutWalkableGeometryRejectsZones() {
+		var zone = Zone("gate", new FPos(P(0), P(0), P(0)));
+		var level = new LevelData([], navZones: [zone]);
+
+		Assert.That(() => NavMeshBaker.BakeLevel(level, NavBakeSettings.Default, out _),
+			Throws.InstanceOf<InvalidDataException>().With.Message.Contains("covers no walkable navmesh"));
+	}
+
+	[Test]
 	public void SampleZoneSplitsTheMeshAlongItsVolume() {
 		var settings = NavBakeSettings.Default;
 		var result = NavMeshBaker.Bake(LoadSampleBoxes(), LoadSampleZones(), settings);

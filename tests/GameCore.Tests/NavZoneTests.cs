@@ -128,6 +128,10 @@ public sealed class NavZoneTests {
 			Assert.That(navigation.IsZoneBlocked(0), Is.True, "any blocked state blocks");
 			Assert.That(navigation.ZoneCostMultiplier(0), Is.EqualTo(F.FP.Two), "the highest cost wins; zero counts as one");
 		});
+
+		navigation.ResetZones();
+		navigation.AddZoneState(new NavZoneState { Zone = 0, CostMultiplier = -F.FP.One });
+		Assert.That(navigation.ZoneCostMultiplier(0), Is.EqualTo(F.FP.One), "negative costs count as one");
 	}
 
 	[Test]

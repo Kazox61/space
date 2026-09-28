@@ -79,8 +79,9 @@ public sealed class NavigationRes : IResource {
 			return;
 		}
 		_zoneBlocked[state.Zone] |= state.Blocked;
-		if (state.CostMultiplier > _zoneCost[state.Zone]) {
-			_zoneCost[state.Zone] = state.CostMultiplier;
+		var cost = FP.Max(state.CostMultiplier, FP.One);
+		if (cost > _zoneCost[state.Zone]) {
+			_zoneCost[state.Zone] = cost;
 		}
 	}
 
