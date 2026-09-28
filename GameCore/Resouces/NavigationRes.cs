@@ -58,10 +58,10 @@ public sealed class NavigationRes : IResource {
 	}
 
 	/// <summary>Whether zone <paramref name="zone"/> was blocked by the last <see cref="ApplyZones"/>.</summary>
-	public bool IsZoneBlocked(int zone) => _zoneBlocked[zone];
+	public bool IsZoneBlocked(int zone) => (uint)zone < (uint)_zoneBlocked.Length && _zoneBlocked[zone];
 
 	/// <summary>Cost multiplier zone <paramref name="zone"/> got from the last <see cref="ApplyZones"/>.</summary>
-	public FP ZoneCostMultiplier(int zone) => _zoneCost[zone];
+	public FP ZoneCostMultiplier(int zone) => (uint)zone < (uint)_zoneCost.Length ? _zoneCost[zone] : FP.One;
 
 	/// <summary>Starts a new <see cref="ApplyZones"/> pass: every zone open at its baked cost.</summary>
 	public void ResetZones() {
@@ -104,8 +104,8 @@ public sealed class NavigationRes : IResource {
 				area.CostMultiplier *= cost;
 				areas[triangle] = area;
 			}
-			signature = (signature ^ (blocked ? 1UL : 0UL)) * 1099511628211UL;
-			signature = (signature ^ (ulong)cost.RawValue) * 1099511628211UL;
+			signature = unchecked((signature ^ (blocked ? 1UL : 0UL)) * 1099511628211UL);
+			signature = unchecked((signature ^ (ulong)cost.RawValue) * 1099511628211UL);
 		}
 		ZoneSignature = signature;
 	}

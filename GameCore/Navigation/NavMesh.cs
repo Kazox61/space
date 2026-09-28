@@ -135,6 +135,11 @@ public sealed class NavMesh {
 	}
 
 	private void Validate() {
+		foreach (var vertex in _vertices) {
+			if (FP.Abs(vertex.X) > MaxCoordinate || FP.Abs(vertex.Y) > MaxCoordinate || FP.Abs(vertex.Z) > MaxCoordinate) {
+				throw new ArgumentException($"Vertex ({vertex}) exceeds the +/-{MaxCoordinate} domain.");
+			}
+		}
 		if (_areas.Length != _triangles.Length) {
 			throw new ArgumentException($"Area count {_areas.Length} does not match triangle count {_triangles.Length}.");
 		}
@@ -179,8 +184,8 @@ public sealed class NavMesh {
 		if (triangle.V0 == triangle.V1 || triangle.V1 == triangle.V2 || triangle.V2 == triangle.V0) {
 			throw new ArgumentException($"Triangle {t} repeats a vertex.");
 		}
-		if (NavGeometry.SignedArea(GetVertexXZ(triangle.V0), GetVertexXZ(triangle.V1), GetVertexXZ(triangle.V2)) == FP.Zero) {
-			throw new ArgumentException($"Triangle {t} has no area in XZ.");
+		if (FP.Abs(NavGeometry.SignedArea(GetVertexXZ(triangle.V0), GetVertexXZ(triangle.V1), GetVertexXZ(triangle.V2))) < NavGeometry.MinTriangleArea) {
+			throw new ArgumentException($"Triangle {t} is too thin in XZ.");
 		}
 
 		for (var e = 0; e < 3; e++) {

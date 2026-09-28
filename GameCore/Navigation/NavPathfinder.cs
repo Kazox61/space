@@ -168,7 +168,7 @@ public sealed class NavPathfinder {
 				_entryPoints[neighbor] = edgeMid;
 				var f = tentativeG + FVector2.Distance(edgeMid, endXZ);
 				if (queued) {
-					_open.DecreaseKey(neighbor, f);
+					_open.UpdateKey(neighbor, f);
 				} else {
 					_open.Push(neighbor, f);
 				}

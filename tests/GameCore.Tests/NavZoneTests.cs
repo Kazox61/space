@@ -135,6 +135,18 @@ public sealed class NavZoneTests {
 	}
 
 	[Test]
+	public void UnknownZoneIndexReadsAsOpenAtNormalCost() {
+		var navigation = new NavigationRes(null, NavConfig.Default);
+
+		Assert.Multiple(() => {
+			Assert.That(navigation.IsZoneBlocked(-1), Is.False);
+			Assert.That(navigation.IsZoneBlocked(1), Is.False);
+			Assert.That(navigation.ZoneCostMultiplier(-1), Is.EqualTo(F.FP.One));
+			Assert.That(navigation.ZoneCostMultiplier(1), Is.EqualTo(F.FP.One));
+		});
+	}
+
+	[Test]
 	public void ClosingAZoneReplansAroundItAndReopeningRestoresTheShortPath() {
 		CreateWorld<NavZoneTestWorld>(Level());
 		var character = TakeOverCharacter<NavZoneTestWorld>();

@@ -13,8 +13,10 @@ internal static class LevelNavigationCodec {
 	public const int MaximumTriangleCount = 1_000_000;
 	public const int MaximumGridTriangleCount = 16_000_000;
 
-	private const int VertexSize = 3 * sizeof(long);
-	private const int TriangleSize = 7 * sizeof(int) + sizeof(long) + sizeof(byte);
+	internal const int SettingsSize = 11 * sizeof(long) + 2 * sizeof(int);
+	internal const int VertexSize = 3 * sizeof(long);
+	internal const int TriangleSize = 7 * sizeof(int) + sizeof(long) + sizeof(byte);
+	internal const int MeshMetadataSize = 7 * sizeof(long) + 2 * sizeof(int);
 
 	public static void Write(BinaryWriter writer, LevelNavigation? navigation) {
 		if (navigation is null) {

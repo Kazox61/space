@@ -9,8 +9,8 @@ public readonly struct NavConfig {
 	public readonly int MaxIterations;
 
 	/// <summary>
-	/// Portal buffer for the funnel. A corridor of length <c>L</c> needs <c>L + 1</c> portals;
-	/// longer corridors are cut at the tail and the end portal is appended after the last kept edge.
+	/// Minimum portal buffer for the funnel. A corridor of length <c>L</c> needs <c>L + 1</c>
+	/// portals; the runtime always reserves enough for a full <see cref="NavAgent"/> corridor.
 	/// </summary>
 	public readonly int MaxPortals;
 

@@ -88,6 +88,24 @@ public sealed class NavMeshQueryTests {
 	}
 
 	[Test]
+	public void EndpointTieBreakPrefersPassabilityRegardlessOfCandidateOrder() {
+		var epsilon = FP.FromRaw(1);
+		FVector3[] vertices = [
+			new(FP.Zero, epsilon, FP.Zero), new(4.ToFP(), epsilon, FP.Zero), new(FP.Zero, epsilon, 4.ToFP()),
+			V(0, 0, 0), V(4, 0, 0), V(0, 0, 4),
+		];
+		NavTriangle[] triangles = [
+			NavTriangle.Create(vertices, 0, 1, 2, -1, -1, -1),
+			NavTriangle.Create(vertices, 3, 4, 5, -1, -1, -1),
+		];
+		NavTriangleArea[] areas = [NavTriangleArea.Default, NavTriangleArea.Default with { AreaMask = 2 }];
+		var mesh = new NavMesh(vertices, triangles, areas, new FAABB2(XZ(0, 0), XZ(4, 4)), [0, 2], [0, 1], 1, 1, 4.ToFP(), XZ(0, 0));
+		var query = new NavMeshQuery(mesh);
+
+		Assert.That(query.FindPassableTriangleForEndpoint(XZ(1, 1), FP.Zero, 1), Is.EqualTo(0));
+	}
+
+	[Test]
 	public void FindPassableTriangleSkipsBlockedAndMaskedTriangles() {
 		var mesh = TwoFloors();
 		mesh.Areas[0].IsBlocked = true;
@@ -184,6 +202,34 @@ public sealed class NavMeshQueryTests {
 	}
 
 	[Test]
+	public void ProjectSearchesEveryCellWithinMaxDistance() {
+		var query = new NavMeshQuery(Strip());
+
+		var projected = query.Project(XZ(16, 2), 8.ToFP(), out var triangle);
+		var extreme = query.Project(new FVector2(FP.MaxValue, FP.MaxValue), FP.MaxValue, out var extremeTriangle);
+
+		Assert.Multiple(() => {
+			Assert.That(projected, Is.EqualTo(XZ(8, 2)));
+			Assert.That(triangle, Is.EqualTo(2));
+			Assert.That(extreme, Is.EqualTo(new FVector2(FP.MaxValue, FP.MaxValue)));
+			Assert.That(extremeTriangle, Is.EqualTo(-1), "diagonal distance exceeds the maximum without overflowing");
+			Assert.That(() => query.Project(XZ(9, 2), -FP.One, out _), Throws.InstanceOf<ArgumentOutOfRangeException>());
+		});
+	}
+
+	[Test]
+	public void ClosestPointSearchesTheWholeMesh() {
+		var query = new NavMeshQuery(Strip());
+
+		var closest = query.ClosestPoint(XZ(40, 2), out var triangle);
+
+		Assert.Multiple(() => {
+			Assert.That(closest, Is.EqualTo(XZ(8, 2)));
+			Assert.That(triangle, Is.EqualTo(2));
+		});
+	}
+
+	[Test]
 	public void GeometryPrimitivesHandleEdgesAndDegenerateInput() {
 		var a = XZ(0, 0);
 		var b = XZ(4, 0);
@@ -232,6 +278,17 @@ public sealed class NavMeshQueryTests {
 			() => new NavMesh(vertices, triangles, [NavTriangleArea.Default],
 				new FAABB2(XZ(0, 0), XZ(4, 4)), [0, 1], [0], 1, 1, 2.ToFP(), XZ(0, 0)),
 			Throws.ArgumentException.With.Message.Contains("cover"));
+	}
+
+	[Test]
+	public void MeshRejectsCoordinatesOutsideTheRuntimeDomain() {
+		FVector3[] vertices = [V(0, 0, 0), V(4, 0, 0), new(FP.Zero, NavMesh.MaxCoordinate + FP.One, 4.ToFP())];
+		NavTriangle[] triangles = [NavTriangle.Create(vertices, 0, 1, 2, -1, -1, -1)];
+
+		Assert.That(
+			() => new NavMesh(vertices, triangles, [NavTriangleArea.Default],
+				new FAABB2(XZ(0, 0), XZ(4, 4)), [0, 1], [0], 1, 1, 4.ToFP(), XZ(0, 0)),
+			Throws.ArgumentException.With.Message.Contains("domain"));
 	}
 
 	/// <summary>The navmesh shipped in the committed sample level.</summary>

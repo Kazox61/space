@@ -17,10 +17,11 @@ public static partial class Program {
 	private const double NavRegularTickBudgetMs = 1.0;
 	private const double NavTypicalRollbackBudgetMs = 8.0;
 	private const double NavFullRollbackBudgetMs = 33.3;
+	private const int NavFullRollbackTicks = FullRollbackTicks - 10; // The input ring rejects the oldest tick at full capacity.
 
 	/// <summary>
 	/// Times regular ticks and rollback bursts of <see cref="TypicalRollbackTicks"/> and
-	/// <see cref="FullRollbackTicks"/> ticks, forced by a late remote input, with and without the
+	/// <see cref="NavFullRollbackTicks"/> ticks, forced by a late remote input, with and without the
 	/// navmesh. Returns whether the navigation share stays within its budgets.
 	/// </summary>
 	internal static bool BenchNavigationBudgets() {
@@ -39,7 +40,7 @@ public static partial class Program {
 		Console.WriteLine($"  {NavBenchCharacters} characters re-planning every tick; {navigation.Plans} plans per regular tick on average");
 		Report("regular tick (average)", navigation.Tick, baseline.Tick, NavRegularTickBudgetMs);
 		Report($"typical rollback burst ({TypicalRollbackTicks} ticks)", navigation.TypicalBurst, baseline.TypicalBurst, NavTypicalRollbackBudgetMs);
-		Report($"full rollback burst ({FullRollbackTicks} ticks)", navigation.FullBurst, baseline.FullBurst, NavFullRollbackBudgetMs);
+		Report($"full rollback burst ({NavFullRollbackTicks} ticks)", navigation.FullBurst, baseline.FullBurst, NavFullRollbackBudgetMs);
 		return ok;
 	}
 
@@ -70,8 +71,12 @@ public static partial class Program {
 			var sw = Stopwatch.StartNew();
 			for (var i = 0; i < sampleTicks; i++) {
 				StepBenchTick();
+				sw.Stop();
 				foreach (var agent in W.Query<All<NavAgent>>().Entities()) {
 					plans += agent.Read<NavAgent>().NextRepathTick == S.CurrentTick ? 1 : 0;
+				}
+				if (i < sampleTicks - 1) {
+					sw.Start();
 				}
 			}
 			var tick = sw.Elapsed.TotalMilliseconds / sampleTicks;
@@ -106,7 +111,7 @@ public static partial class Program {
 				return best;
 			}
 			var typical = Burst(TypicalRollbackTicks);
-			var full = Burst(FullRollbackTicks - 10);
+			var full = Burst(NavFullRollbackTicks);
 			return new NavigationSceneTiming(tick, typical, full, (double)plans / sampleTicks);
 		} finally {
 			RollbackObserver = null;

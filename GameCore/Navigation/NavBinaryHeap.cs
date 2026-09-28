@@ -15,6 +15,7 @@ internal sealed class NavBinaryHeap {
 	private int _count;
 
 	public NavBinaryHeap(int capacity) {
+		ArgumentOutOfRangeException.ThrowIfNegativeOrZero(capacity);
 		_heap = new int[capacity];
 		_scores = new FP[capacity];
 		_positions = new int[capacity];
@@ -31,6 +32,15 @@ internal sealed class NavBinaryHeap {
 	}
 
 	public void Push(int triangle, FP score) {
+		if ((uint)triangle >= (uint)_positions.Length) {
+			throw new ArgumentOutOfRangeException(nameof(triangle));
+		}
+		if (_positions[triangle] >= 0) {
+			throw new InvalidOperationException($"Triangle {triangle} is already in the heap.");
+		}
+		if (_count == _heap.Length) {
+			throw new InvalidOperationException("The heap is full.");
+		}
 		var index = _count++;
 		_heap[index] = triangle;
 		_scores[index] = score;
@@ -39,6 +49,9 @@ internal sealed class NavBinaryHeap {
 	}
 
 	public int Pop() {
+		if (_count == 0) {
+			throw new InvalidOperationException("The heap is empty.");
+		}
 		var top = _heap[0];
 		_positions[top] = -1;
 		_count--;
@@ -52,13 +65,28 @@ internal sealed class NavBinaryHeap {
 	}
 
 	public bool Contains(int triangle) {
+		ArgumentOutOfRangeException.ThrowIfNegative(triangle);
+		if (triangle >= _positions.Length) {
+			throw new ArgumentOutOfRangeException(nameof(triangle));
+		}
 		return _positions[triangle] >= 0;
 	}
 
-	public void DecreaseKey(int triangle, FP score) {
+	public void UpdateKey(int triangle, FP score) {
+		if ((uint)triangle >= (uint)_positions.Length) {
+			throw new ArgumentOutOfRangeException(nameof(triangle));
+		}
 		var index = _positions[triangle];
+		if (index < 0) {
+			throw new InvalidOperationException($"Triangle {triangle} is not in the heap.");
+		}
+		var previous = _scores[index];
 		_scores[index] = score;
-		BubbleUp(index);
+		if (score < previous) {
+			BubbleUp(index);
+		} else if (score > previous) {
+			BubbleDown(index);
+		}
 	}
 
 	private bool Less(int a, int b) {

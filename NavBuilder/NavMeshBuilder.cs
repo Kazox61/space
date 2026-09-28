@@ -42,7 +42,7 @@ public static class NavMeshBuilder {
 	public const int MaxArea = 31;
 
 	/// <summary>Triangles with |XZ area| below this are dropped.</summary>
-	public static readonly FP DegenerateAreaEpsilon = FP.FromRatio(1, 10000);
+	public static readonly FP DegenerateAreaEpsilon = NavGeometry.MinTriangleArea;
 
 	/// <summary>Perpendicular distance, in snap-grid steps, within which a vertex counts as on an edge.</summary>
 	public const long TJunctionEpsilon = 2;

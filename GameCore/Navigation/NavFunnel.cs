@@ -1,6 +1,7 @@
 // Derived from xpTURN Klotho 0.14.1 (FPNavMeshFunnel.cs), Apache-2.0.
 // Modified for Space: Fixed64 math, caller-owned output buffers, bit-exact apex comparison via
 // FVector2.Equals (Space's == is approximate), shared trace loop for paths and corners.
+using System.Diagnostics;
 using Fixed64;
 
 namespace Space.GameCore;
@@ -19,8 +20,9 @@ public sealed class NavFunnel {
 	public NavFunnel(NavMesh mesh, NavConfig config) {
 		ArgumentNullException.ThrowIfNull(mesh);
 		_mesh = mesh;
-		_portalLeft = new FVector3[config.MaxPortals];
-		_portalRight = new FVector3[config.MaxPortals];
+		var capacity = Math.Max(config.MaxPortals, NavAgent.CorridorCapacity + 2);
+		_portalLeft = new FVector3[capacity];
+		_portalRight = new FVector3[capacity];
 	}
 
 	/// <summary>
@@ -29,6 +31,7 @@ public sealed class NavFunnel {
 	/// are dropped but the end is kept.
 	/// </summary>
 	public int FindPath(ReadOnlySpan<int> corridor, FVector3 start, FVector3 end, Span<FVector3> waypoints) {
+		ValidateCorridorCapacity(corridor);
 		if (corridor.IsEmpty || waypoints.IsEmpty) {
 			return 0;
 		}
@@ -53,6 +56,7 @@ public sealed class NavFunnel {
 	/// <paramref name="corridor"/> must start at the triangle containing <paramref name="position"/>.
 	/// </summary>
 	public int FindCorners(ReadOnlySpan<int> corridor, FVector3 position, FVector3 target, Span<FVector3> corners) {
+		ValidateCorridorCapacity(corridor);
 		if (corridor.IsEmpty || corners.IsEmpty) {
 			return 0;
 		}
@@ -70,14 +74,13 @@ public sealed class NavFunnel {
 	}
 
 	/// <summary>
-	/// Portals for the corridor: the start point, each shared edge, then the end point. Corridors
-	/// longer than the portal buffer are cut at the tail.
+	/// Portals for the corridor: the start point, each shared edge, then the end point.
 	/// </summary>
 	private int BuildPortals(ReadOnlySpan<int> corridor, FVector3 start, FVector3 end) {
 		_portalLeft[0] = start;
 		_portalRight[0] = start;
 		var count = 1;
-		for (var i = 0; i < corridor.Length - 1 && count < _portalLeft.Length - 1; i++) {
+		for (var i = 0; i < corridor.Length - 1; i++) {
 			GetSharedPortal(corridor[i], corridor[i + 1], out _portalLeft[count], out _portalRight[count]);
 			count++;
 		}
@@ -86,15 +89,28 @@ public sealed class NavFunnel {
 		return count + 1;
 	}
 
+	private void ValidateCorridorCapacity(ReadOnlySpan<int> corridor) {
+		if (corridor.Length >= _portalLeft.Length) {
+			throw new ArgumentException($"Corridor of {corridor.Length} triangles needs {corridor.Length + 1} portals; capacity is {_portalLeft.Length}.", nameof(corridor));
+		}
+	}
+
 	private void GetSharedPortal(int triangle, int next, out FVector3 left, out FVector3 right) {
 		ref readonly var t = ref _mesh.Triangles[triangle];
+		left = right = default;
+		var found = false;
 		for (var e = 0; e < 3; e++) {
 			if (t.GetNeighbor(e) == next) {
 				t.GetPortal(e, out var leftIndex, out var rightIndex);
 				left = _mesh.Vertices[leftIndex];
 				right = _mesh.Vertices[rightIndex];
-				return;
+				found = true;
+				break;
 			}
+		}
+		Debug.Assert(found, $"Corridor triangles {triangle} and {next} do not share an edge.");
+		if (found) {
+			return;
 		}
 		// Not adjacent: a malformed corridor. Collapse the portal to the centroid rather than fail.
 		left = right = new FVector3(t.CenterXZ.X, t.CenterY, t.CenterXZ.Y);

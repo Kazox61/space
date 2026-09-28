@@ -42,7 +42,7 @@ public sealed class NavBinaryHeapTests {
 		heap.Push(0, 3.ToFP());
 		heap.Push(1, 2.ToFP());
 		heap.Push(2, 5.ToFP());
-		heap.DecreaseKey(2, FP.One);
+		heap.UpdateKey(2, FP.One);
 
 		Assert.That(heap.Pop(), Is.EqualTo(2));
 		Assert.That(heap.Contains(2), Is.False);
@@ -54,5 +54,30 @@ public sealed class NavBinaryHeapTests {
 
 		heap.Push(3, FP.Zero);
 		Assert.That(heap.Pop(), Is.EqualTo(3));
+	}
+
+	[Test]
+	public void InvalidOperationsFailAtTheHeapBoundary() {
+		var heap = new NavBinaryHeap(1);
+
+		Assert.That(() => heap.Pop(), Throws.InvalidOperationException.With.Message.Contains("empty"));
+		Assert.That(() => heap.UpdateKey(0, FP.Zero), Throws.InvalidOperationException.With.Message.Contains("not in"));
+		heap.Push(0, FP.One);
+		Assert.Multiple(() => {
+			Assert.That(() => heap.Push(0, FP.One), Throws.InvalidOperationException.With.Message.Contains("already"));
+			Assert.That(() => heap.Push(1, FP.One), Throws.InstanceOf<ArgumentOutOfRangeException>());
+		});
+	}
+
+	[Test]
+	public void KeyIncreaseReordersDown() {
+		var heap = new NavBinaryHeap(3);
+		heap.Push(0, FP.One);
+		heap.Push(1, FP.Two);
+		heap.Push(2, 3.ToFP());
+
+		heap.UpdateKey(0, 4.ToFP());
+
+		Assert.That(new[] { heap.Pop(), heap.Pop(), heap.Pop() }, Is.EqualTo(new[] { 1, 2, 0 }));
 	}
 }

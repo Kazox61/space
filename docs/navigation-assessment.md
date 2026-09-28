@@ -519,7 +519,7 @@ Phase 6 is complete:
   | --- | --- | --- |
   | Regular tick | 0.60 ms | 1.0 ms |
   | 30-tick rollback burst | 4.2 ms | 8.0 ms |
-  | 125-tick rollback burst | 5.6 ms | 33.3 ms |
+  | 115-tick rollback burst | 5.6 ms | 33.3 ms |
 
   This is the worst case; the default interval re-plans every 30 ticks.
   `--enforce` fails the benchmark run when a budget is exceeded.

@@ -85,14 +85,21 @@ public sealed class NavMeshQuery {
 			var surfaceY = SampleHeight(xz, triangle);
 			var distance = FP.Abs(surfaceY - y);
 			var passable = IsPassable(triangle, tieBreakMask);
-			if (distance < bestDistance) {
+			var sameSurface = best >= 0 && FP.Abs(surfaceY - bestSurfaceY) <= NavGeometry.PointInTriangleEpsilon;
+			if (best < 0 || (!sameSurface && distance < bestDistance)) {
 				bestDistance = distance;
 				bestSurfaceY = surfaceY;
 				best = triangle;
 				bestPassable = passable;
-			} else if (best >= 0 && surfaceY == bestSurfaceY && passable && !bestPassable) {
-				best = triangle;
-				bestPassable = true;
+			} else if (sameSurface) {
+				if (distance < bestDistance) {
+					bestDistance = distance;
+					bestSurfaceY = surfaceY;
+				}
+				if (passable && !bestPassable) {
+					best = triangle;
+					bestPassable = true;
+				}
 			}
 		}
 		return best;
@@ -138,17 +145,17 @@ public sealed class NavMeshQuery {
 
 	/// <summary>
 	/// The point itself when <see cref="FindTriangle(FVector2)"/> finds it, otherwise the nearest
-	/// triangle-edge point in the surrounding 3x3 grid cells. <paramref name="triangle"/> is -1 when
+	/// triangle-edge point on the mesh. <paramref name="triangle"/> is -1 when
 	/// nothing is found. A returned point is always found again by <see cref="FindTriangle(FVector2)"/>.
 	/// Ignores blocking and area masks.
 	/// </summary>
 	public FVector2 ClosestPoint(FVector2 xz, out int triangle) {
-		return ClosestPointCore(xz, filter: false, areaMask: 0, out triangle);
+		return ClosestPointCore(xz, filter: false, areaMask: 0, 0, _mesh.GridWidth - 1, 0, _mesh.GridHeight - 1, out triangle);
 	}
 
 	/// <summary><see cref="ClosestPoint"/> restricted to triangles passable for <paramref name="areaMask"/>.</summary>
 	public FVector2 ClosestPassablePoint(FVector2 xz, int areaMask, out int triangle) {
-		return ClosestPointCore(xz, filter: true, areaMask, out triangle);
+		return ClosestPointCore(xz, filter: true, areaMask, 0, _mesh.GridWidth - 1, 0, _mesh.GridHeight - 1, out triangle);
 	}
 
 	/// <summary>
@@ -165,36 +172,54 @@ public sealed class NavMeshQuery {
 	}
 
 	private FVector2 ProjectCore(FVector2 xz, FP maxDistance, bool filter, int areaMask, out int triangle) {
-		var closest = ClosestPointCore(xz, filter, areaMask, out triangle);
+		if (maxDistance < FP.Zero) {
+			throw new ArgumentOutOfRangeException(nameof(maxDistance), "Must not be negative.");
+		}
+		GetCellRange(xz.X, _mesh.GridOrigin.X, maxDistance, _mesh.GridWidth, out var minCol, out var maxCol);
+		GetCellRange(xz.Y, _mesh.GridOrigin.Y, maxDistance, _mesh.GridHeight, out var minRow, out var maxRow);
+		var closest = ClosestPointCore(xz, filter, areaMask, minCol, maxCol, minRow, maxRow, out triangle);
 		if (triangle < 0) {
 			return xz;
 		}
-		if (FVector2.DistanceSqr(xz, closest) > maxDistance * maxDistance) {
+		if (!WithinDistance(xz, closest, maxDistance)) {
 			triangle = -1;
 			return xz;
 		}
 		return closest;
 	}
 
-	private FVector2 ClosestPointCore(FVector2 xz, bool filter, int areaMask, out int triangle) {
+	private static bool WithinDistance(FVector2 a, FVector2 b, FP maxDistance) {
+		var dx = (Int128)a.X.RawValue - b.X.RawValue;
+		var dy = (Int128)a.Y.RawValue - b.Y.RawValue;
+		dx = dx < 0 ? -dx : dx;
+		dy = dy < 0 ? -dy : dy;
+		var limit = (Int128)maxDistance.RawValue;
+		return dx <= limit && dy <= limit && dx * dx + dy * dy <= limit * limit;
+	}
+
+	private void GetCellRange(FP coordinate, FP origin, FP maxDistance, int cellCount, out int min, out int max) {
+		var cellSize = (Int128)_mesh.GridCellSize.RawValue;
+		var relative = (Int128)coordinate.RawValue - origin.RawValue;
+		// Include one conservative cell on each side because integer division truncates toward zero.
+		var first = (relative - maxDistance.RawValue) / cellSize - 1;
+		var last = (relative + maxDistance.RawValue) / cellSize + 1;
+		min = first <= 0 ? 0 : first >= cellCount ? cellCount : (int)first;
+		max = last < 0 ? -1 : last >= cellCount ? cellCount - 1 : (int)last;
+	}
+
+	private FVector2 ClosestPointCore(FVector2 xz, bool filter, int areaMask, int minCol, int maxCol, int minRow, int maxRow, out int triangle) {
 		triangle = filter ? FindPassableTriangle(xz, areaMask) : FindTriangle(xz);
 		if (triangle >= 0) {
 			return xz;
 		}
 
-		_mesh.GetCellCoords(xz, out var centerCol, out var centerRow);
 		NextGeneration();
 
 		var bestDistanceSqr = FP.MaxValue;
 		var bestPoint = xz;
 		var bestTriangle = -1;
-		for (var dr = -1; dr <= 1; dr++) {
-			for (var dc = -1; dc <= 1; dc++) {
-				var col = centerCol + dc;
-				var row = centerRow + dr;
-				if (!_mesh.IsCellValid(col, row)) {
-					continue;
-				}
+		for (var row = minRow; row <= maxRow; row++) {
+			for (var col = minCol; col <= maxCol; col++) {
 				foreach (var candidate in _mesh.GetCellTriangles(col, row)) {
 					if (_visited[candidate] == _generation) {
 						continue;

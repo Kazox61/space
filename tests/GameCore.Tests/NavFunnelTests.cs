@@ -130,6 +130,28 @@ public sealed class NavFunnelTests {
 		Assert.That(again[..againCount], Is.EqualTo(first[..firstCount]));
 	}
 
+	[Test]
+	public void AgentCorridorsAreNotTruncatedByASmallConfiguredPortalBuffer() {
+		var mesh = Ring();
+		var corridor = FindCorridor(mesh);
+		var funnel = new NavFunnel(mesh, new NavConfig(128, 2));
+		var waypoints = new FVector3[8];
+
+		var count = funnel.FindPath(corridor, s_ringStart, s_ringEnd, waypoints);
+
+		Assert.That(waypoints[..count], Is.EqualTo(new[] { s_ringStart, V(4, 0, 2), s_ringEnd }));
+	}
+
+	[Test]
+	public void OversizedCorridorFailsEvenWhenOutputIsEmpty() {
+		var funnel = new NavFunnel(Strip(), new NavConfig(128, 2));
+		var corridor = new int[NavAgent.CorridorCapacity + 2];
+
+		Assert.That(
+			() => funnel.FindPath(corridor, V(1, 0, 1), V(7, 0, 1), []),
+			Throws.ArgumentException.With.Message.Contains("portals"));
+	}
+
 	private static int[] FindCorridor(NavMesh mesh) {
 		var pathfinder = new NavPathfinder(new NavMeshQuery(mesh), NavConfig.Default);
 		var corridor = new int[32];

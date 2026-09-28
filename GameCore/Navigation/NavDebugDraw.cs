@@ -316,8 +316,8 @@ public abstract partial class Core<TWorld> where TWorld : struct, ISessionType, 
 				}
 			}
 			if (agent.Status == NavAgentStatus.Moving) {
-				// The corner NavAgentSystem steers at, found the same way.
-				Span<FVector3> corner = stackalloc FVector3[1];
+				// Match the system's buffer so target appending and near-corner pruning are identical.
+				Span<FVector3> corner = stackalloc FVector3[3];
 				if (_funnel.FindCorners(ahead, start, agent.PathTarget, corner) > 0) {
 					draw.DrawSegment(feet, corner[0], NavDebugColor.Steering);
 				}

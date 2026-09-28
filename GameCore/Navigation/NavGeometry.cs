@@ -9,7 +9,11 @@ public static class NavGeometry {
 	/// <summary>Tolerance for point-in-triangle tests, so points on shared edges belong to both sides.</summary>
 	public static readonly FP PointInTriangleEpsilon = FP.FromRatio(1, 10000);
 
-	private static readonly FP s_barycentricDenominatorEpsilon = FP.FromRatio(1, 10000);
+	/// <summary>Smallest supported absolute triangle area in the XZ plane.</summary>
+	public static readonly FP MinTriangleArea = FP.FromRatio(1, 10000);
+
+	// The Gram determinant is four times the squared triangle area.
+	private static readonly FP s_barycentricDenominatorEpsilon = MinTriangleArea * MinTriangleArea * 4;
 
 	public static FVector2 ToXZ(FVector3 v) {
 		return new FVector2(v.X, v.Z);

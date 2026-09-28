@@ -8,7 +8,9 @@ namespace Space.GameCore;
 public static class LevelDataCodec {
 	private const uint Magic = 0x4C564C53; // "SLVL" in little-endian byte order.
 	private const ushort Version = 5;
-	private const int HashSize = 32;
+	internal const int HashSize = 32;
+	internal const int HashOffset = sizeof(uint) + sizeof(ushort) + sizeof(int);
+	internal const int EnvelopeSize = HashOffset + HashSize;
 	private const int MaximumSourcePathLength = 1024;
 	private const int MaximumEntityCount = 100_000;
 	private const int MaximumStaticBoxCount = 100_000;
@@ -66,7 +68,7 @@ public static class LevelDataCodec {
 			throw new InvalidDataException($"Level payload exceeds the {MaximumPayloadSize}-byte limit.");
 		}
 		var hash = SHA256.HashData(payload);
-		using var output = new MemoryStream(payload.Length + 42);
+		using var output = new MemoryStream(payload.Length + EnvelopeSize);
 		using var envelope = new BinaryWriter(output, Encoding.UTF8, leaveOpen: true);
 		envelope.Write(Magic);
 		envelope.Write(Version);
@@ -77,7 +79,7 @@ public static class LevelDataCodec {
 	}
 
 	public static LevelData Deserialize(ReadOnlySpan<byte> bytes) {
-		if (bytes.Length > MaximumPayloadSize + 42) {
+		if (bytes.Length > MaximumPayloadSize + EnvelopeSize) {
 			throw new InvalidDataException($"Level data exceeds the {MaximumPayloadSize}-byte payload limit.");
 		}
 		try {
