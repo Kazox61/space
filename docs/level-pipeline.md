@@ -209,15 +209,42 @@ client: --level <name>, default level_pipeline_test → res://maps/<name>.level.
 - The `.level.bytes` files are committed until CI can run the headless
   exporter. Re-export after changing a map; the scene is not read at runtime,
   so an edit without re-export has no effect.
-- Static box colliders are in the format (version 2) and load as static ECS
-  bodies (`LevelLoader`). `SpawnSphereSystem` no longer builds the ground; the
+- Static geometry is in the format and loads as static ECS bodies
+  (`LevelLoader`). `SpawnSphereSystem` no longer builds the ground; the
   old test arena lives in `maps/level_pipeline_test.tscn`.
 - The client instances `res://maps/<name>.tscn` for visuals.
-- Static colliders are authored like entities: a `LevelCollider` marker with a
-  `ColliderRecipe` and overrides (`BoxColliderComponent` for the size). This
-  replaces the `StaticBody3D` / `CollisionShape3D` convention below: the
-  exporter refuses Godot physics nodes, and markers draw their box as lines in
-  the editor only.
+- Static geometry is an entity placement: an `EntitySpawn` whose recipe has
+  `EntityType = StaticGeometry`, a static `BodyComponent`, a
+  `BoxShapeComponent` for the size and a `NavigationComponent`
+  (`maps/static_box_recipe.tres`). This replaces the `StaticBody3D` /
+  `CollisionShape3D` convention below: the exporter refuses Godot physics
+  nodes, and markers draw their box as lines in the editor only. (Until format
+  version 6 this was a separate `LevelCollider` marker and file section.)
+- Format version 6 stores every placement the same way: source path, type
+  byte, transform, a presence mask with one bit per
+  `LevelEntityComponentKind`, then the present components in that order.
+  Unknown mask bits are rejected. Version 7 widens the mask to 16 bits and
+  adds ZoneLink (a zone id, which must name one of the level's zone volumes)
+  and DoorMotion (open offset, speed, starts open) for the `Door` and
+  `PressurePlate` types. Version 8 adds `RailMotion` (travel offset, speed,
+  starts at end) and the `Platform` type. Version 7 files remain readable.
+  The file is: placements, zone volumes, navigation. Validation checks each
+  type's components:
+
+  | Type | Required | Not allowed | Body |
+  | --- | --- | --- | --- |
+  | `Crate` | Health, Loot, Body, BoxShape, View | Navigation, RailMotion | Dynamic or Kinematic |
+  | `StaticGeometry` | Body, BoxShape, Navigation | Health, Loot, View, RailMotion | Static |
+  | `Door` | Body, BoxShape, View, ZoneLink, DoorMotion | Health, Loot, Navigation, RailMotion | Kinematic |
+  | `PressurePlate` | Body, BoxShape, ZoneLink | Health, Loot, View, Navigation, DoorMotion, RailMotion | Static |
+  | `Platform` | Body, BoxShape, View, Navigation, ZoneLink, RailMotion | Health, Loot, DoorMotion | Kinematic |
+
+  A platform's navigation box is baked only at its authored start pose and does
+  not create a duplicate static body at runtime. Rails dwell for three seconds
+  at each endpoint so agents can board and cross while the linked zone is open.
+
+  `LevelLoader` spawns static geometry first, then one entity per navigation
+  zone, then everything else, each group in `LevelData.Entities` order.
 - Cost of static colliders as ECS bodies, measured on a 212-box test map:
   about 1.4 KB of rollback snapshot per box (314 KB vs 15 KB), 14 us to write
   and 59 us to load a snapshot, simulation 0.30 ms per tick (0.23 ms before).
@@ -333,6 +360,12 @@ Doors, gates, bridges, and walls that can be destroyed at known places.
   optimisation that must still be correct after a rollback.
 - Agents whose corridor crosses a zone that just closed must repath: compare a
   per-zone version counter stored in the agent's component.
+
+Implemented (see `navigation-assessment.md`, Phase 8): the `NavZone` node, a
+zone table in level format version 5, one `NavZoneState` entity per zone, and
+`NavZoneApplySystem` as described. Instead of per-zone version counters, every
+agent stores the digest of all zone states it planned under and re-plans on
+any change.
 - The static collider of a door or destructible wall is an ECS body (it
   changes during play), not a baked static collider; `nav` metadata on it
   only controls the zone, not the bake.

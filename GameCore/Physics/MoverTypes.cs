@@ -45,7 +45,7 @@ public struct MoverPlane {
 /// call. Matches box3d's own fixed <c>m_planeCapacity = 8</c> (<c>samples/sample.h</c>'s
 /// <c>CharacterMover</c>) and this codebase's own <c>ContactSolverSystem.ContactConstraint</c>
 /// Point0-3 idiom for the identical "small, bounded, no heap allocation" need -- a plain value type
-/// living on the stack as a <c>PlayerMoverSystem</c>-local, never touching ECS/resource state (so it
+/// living on the stack as a <c>CharacterMoverSystem</c>-local, never touching ECS/resource state (so it
 /// needs no rollback-serialization consideration at all).
 /// </summary>
 public struct MoverPlaneBuffer {

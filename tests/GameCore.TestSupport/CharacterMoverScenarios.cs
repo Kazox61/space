@@ -66,7 +66,7 @@ public static partial class Program {
 	}
 
 	/// <summary>
-	/// Runs one CharacterMover step exactly as PlayerMoverSystem does per tick (see its remarks):
+	/// Runs one CharacterMover step exactly as CharacterMoverSystem does per tick (see its remarks):
 	/// collide -&gt; solve -&gt; cast -&gt; move, repeated up to 5 times, then the dynamic-body push impulse
 	/// and velocity clip. Standalone here since these are plain functions over BroadPhase/Capsule --
 	/// no ECS Transform/Mover components or Session needed, so the algorithm is testable directly.
@@ -96,7 +96,7 @@ public static partial class Program {
 	}
 
 	/// <summary>
-	/// Same as <see cref="StepMover"/> but mirrors PlayerMoverSystem's full per-tick logic including
+	/// Same as <see cref="StepMover"/> but mirrors CharacterMoverSystem's full per-tick logic including
 	/// gravity, box3d's pogo-stick ground check, and the jump-cooldown gate (see
 	/// Mover.JumpCooldown's remarks) that keeps a fresh jump from being immediately re-grounded and
 	/// zeroed out one tick later.
@@ -143,7 +143,7 @@ public static partial class Program {
 	}
 
 	/// <summary>
-	/// Regression test for gravity/ground-detection/jump (PlayerMoverSystem): a mover dropped above
+	/// Regression test for gravity/ground-detection/jump (CharacterMoverSystem): a mover dropped above
 	/// the ground falls and settles feet-flush with the pogo suspension's equilibrium height (see
 	/// CharacterMover.UpdatePogoGrounding's remarks on why this project uses
 	/// <c>pogoRestLength = radius</c>, not box3d's literal <c>3*radius</c>), and is reported

@@ -15,5 +15,7 @@
 
   <ItemGroup>
     <ProjectReference Include="../GameCore.TestSupport/GameCore.TestSupport.csproj" />
+    <ProjectReference Include="../../NavBuilder/Space.NavBuilder.csproj" />
+    <ProjectReference Include="../../static-rollback-litenetlib/Runtime/Shenanicode.Rollback.LiteNetLib.csproj" />
   </ItemGroup>
 </Project>

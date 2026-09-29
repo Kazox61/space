@@ -3,27 +3,98 @@
 [ext_resource type="Script" uid="uid://bunjjm6vn7d3h" path="res://level_authoring/EntitySpawn.cs" id="1_spawn"]
 [ext_resource type="Resource" uid="uid://do3lqdeifscq8" path="res://maps/crate_recipe.tres" id="2_recipe"]
 [ext_resource type="Material" uid="uid://crh4edqr4kdta" path="res://material/grid_mat.tres" id="3_grid"]
-[ext_resource type="Script" uid="uid://g1k55xspht3p" path="res://level_authoring/LevelCollider.cs" id="4_collider"]
-[ext_resource type="Resource" uid="uid://b0vu13fjtjuch" path="res://maps/static_box_recipe.tres" id="5_collider_recipe"]
-[ext_resource type="Script" uid="uid://xgjvft0g5vnd" path="res://level_authoring/ColliderComponent.cs" id="6_collider_component"]
-[ext_resource type="Script" uid="uid://d4dh3ymbrr865" path="res://level_authoring/BoxColliderComponent.cs" id="7_box_collider"]
+[ext_resource type="Resource" uid="uid://b0vu13fjtjuch" path="res://maps/static_box_recipe.tres" id="5_static_recipe"]
+[ext_resource type="Script" uid="uid://d3ws8oeafa2hk" path="res://level_authoring/BoxShapeComponent.cs" id="7_box_shape"]
 [ext_resource type="Script" uid="uid://crcwfs64lq55j" path="res://level_authoring/EntityComponent.cs" id="8_entity_component"]
 [ext_resource type="Script" uid="uid://eb4g86y84qna" path="res://level_authoring/HealthComponent.cs" id="9_health"]
+[ext_resource type="Script" uid="uid://dysc1e0oy7v13" path="res://level_authoring/NavZone.cs" id="10_nav_zone"]
+[ext_resource type="Script" uid="uid://dho3jcli7i2b7" path="res://level_authoring/NavigationComponent.cs" id="11_navigation"]
+[ext_resource type="Resource" path="res://maps/door_recipe.tres" id="12_door_recipe"]
+[ext_resource type="Resource" path="res://maps/pressure_plate_recipe.tres" id="13_plate_recipe"]
+[ext_resource type="Script" uid="uid://qq1bsrwdjxl6" path="res://level_authoring/ZoneLinkComponent.cs" id="14_zone_link"]
+[ext_resource type="Resource" path="res://maps/platform_recipe.tres" id="15_platform_recipe"]
 
 [sub_resource type="Resource" id="StrongCrateHealth"]
 script = ExtResource("9_health")
 Value = 250
 
 [sub_resource type="Resource" id="GroundBox"]
-script = ExtResource("7_box_collider")
-Size = Vector3(80, 1, 80)
+script = ExtResource("7_box_shape")
+Size = Vector3(26, 1, 80)
 
 [sub_resource type="BoxMesh" id="GroundMesh"]
-size = Vector3(80, 1, 80)
+size = Vector3(26, 1, 80)
+
+[sub_resource type="Resource" id="GroundEastBox"]
+script = ExtResource("7_box_shape")
+Size = Vector3(50, 1, 80)
+
+[sub_resource type="BoxMesh" id="GroundEastMesh"]
+size = Vector3(50, 1, 80)
+
+[sub_resource type="Resource" id="GroundSouthBox"]
+script = ExtResource("7_box_shape")
+Size = Vector3(4, 1, 46)
+
+[sub_resource type="BoxMesh" id="GroundSouthMesh"]
+size = Vector3(4, 1, 46)
+
+[sub_resource type="Resource" id="GroundNorthBox"]
+script = ExtResource("7_box_shape")
+Size = Vector3(4, 1, 30)
+
+[sub_resource type="BoxMesh" id="GroundNorthMesh"]
+size = Vector3(4, 1, 30)
 
 [sub_resource type="Resource" id="TestBoxBox"]
-script = ExtResource("7_box_collider")
+script = ExtResource("7_box_shape")
 Size = Vector3(4, 1, 4)
+
+[sub_resource type="Resource" id="TestBoxNavigation"]
+script = ExtResource("11_navigation")
+Value = 1
+
+[sub_resource type="Resource" id="VaultLink"]
+script = ExtResource("14_zone_link")
+ZoneId = "vault"
+
+[sub_resource type="Resource" id="ElevatorLink"]
+script = ExtResource("14_zone_link")
+ZoneId = "elevator"
+
+[sub_resource type="Resource" id="WallNavigation"]
+script = ExtResource("11_navigation")
+Value = 1
+
+[sub_resource type="StandardMaterial3D" id="WallMaterial"]
+albedo_color = Color(0.55, 0.55, 0.6, 1)
+
+[sub_resource type="Resource" id="WallSideBox"]
+script = ExtResource("7_box_shape")
+Size = Vector3(0.5, 2, 3)
+
+[sub_resource type="BoxMesh" id="WallSideMesh"]
+size = Vector3(0.5, 2, 3)
+
+[sub_resource type="Resource" id="WallLongBox"]
+script = ExtResource("7_box_shape")
+Size = Vector3(8, 2, 0.5)
+
+[sub_resource type="BoxMesh" id="WallLongMesh"]
+size = Vector3(8, 2, 0.5)
+
+[sub_resource type="Resource" id="WallEastBox"]
+script = ExtResource("7_box_shape")
+Size = Vector3(0.5, 2, 9)
+
+[sub_resource type="BoxMesh" id="WallEastMesh"]
+size = Vector3(0.5, 2, 9)
+
+[sub_resource type="StandardMaterial3D" id="PlateMaterial"]
+albedo_color = Color(0.8, 0.15, 0.1, 1)
+
+[sub_resource type="BoxMesh" id="PlateMesh"]
+size = Vector3(2, 0.1, 2)
 
 [sub_resource type="StandardMaterial3D" id="StandardMaterial3D_jh5dx"]
 albedo_color = Color(1, 0.6, 0, 1)
@@ -45,20 +116,153 @@ Recipe = ExtResource("2_recipe")
 Overrides = Array[ExtResource("8_entity_component")]([SubResource("StrongCrateHealth")])
 
 [node name="Ground" type="Node3D" parent="." unique_id=1150829718]
-script = ExtResource("4_collider")
-Recipe = ExtResource("5_collider_recipe")
-Overrides = Array[ExtResource("6_collider_component")]([SubResource("GroundBox")])
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, -27, 0, 0)
+script = ExtResource("1_spawn")
+Recipe = ExtResource("5_static_recipe")
+Overrides = Array[ExtResource("8_entity_component")]([SubResource("GroundBox")])
 
 [node name="Mesh" type="MeshInstance3D" parent="Ground" unique_id=407939433]
 material_override = ExtResource("3_grid")
 mesh = SubResource("GroundMesh")
 
+[node name="GroundEast" type="Node3D" parent="."]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 15, 0, 0)
+script = ExtResource("1_spawn")
+Recipe = ExtResource("5_static_recipe")
+Overrides = Array[ExtResource("8_entity_component")]([SubResource("GroundEastBox")])
+
+[node name="Mesh" type="MeshInstance3D" parent="GroundEast"]
+material_override = ExtResource("3_grid")
+mesh = SubResource("GroundEastMesh")
+
+[node name="GroundSouth" type="Node3D" parent="."]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, -12, 0, -17)
+script = ExtResource("1_spawn")
+Recipe = ExtResource("5_static_recipe")
+Overrides = Array[ExtResource("8_entity_component")]([SubResource("GroundSouthBox")])
+
+[node name="Mesh" type="MeshInstance3D" parent="GroundSouth"]
+material_override = ExtResource("3_grid")
+mesh = SubResource("GroundSouthMesh")
+
+[node name="GroundNorth" type="Node3D" parent="."]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, -12, 0, 25)
+script = ExtResource("1_spawn")
+Recipe = ExtResource("5_static_recipe")
+Overrides = Array[ExtResource("8_entity_component")]([SubResource("GroundNorthBox")])
+
+[node name="Mesh" type="MeshInstance3D" parent="GroundNorth"]
+material_override = ExtResource("3_grid")
+mesh = SubResource("GroundNorthMesh")
+
 [node name="TestBox" type="Node3D" parent="." unique_id=962479745]
 transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 1, -6)
-script = ExtResource("4_collider")
-Recipe = ExtResource("5_collider_recipe")
-Overrides = Array[ExtResource("6_collider_component")]([SubResource("TestBoxBox")])
+script = ExtResource("1_spawn")
+Recipe = ExtResource("5_static_recipe")
+Overrides = Array[ExtResource("8_entity_component")]([SubResource("TestBoxBox"), SubResource("TestBoxNavigation")])
 
 [node name="Mesh" type="MeshInstance3D" parent="TestBox" unique_id=1400662265]
 material_override = SubResource("StandardMaterial3D_jh5dx")
 mesh = SubResource("BoxMesh")
+
+[node name="Gate" type="Node3D" parent="." unique_id=1734001122]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 4, 0.5, -6)
+script = ExtResource("10_nav_zone")
+ZoneId = "gate"
+Size = Vector3(4, 2, 6)
+
+[node name="ElevatorZone" type="Node3D" parent="." unique_id=1734001136]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, -12, 0.5, 8)
+script = ExtResource("10_nav_zone")
+ZoneId = "elevator"
+Size = Vector3(4, 2, 4)
+
+[node name="ElevatorPlatform" type="Node3D" parent="." unique_id=1734001137]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, -12, 0.25, 8)
+script = ExtResource("1_spawn")
+Recipe = ExtResource("15_platform_recipe")
+Overrides = Array[ExtResource("8_entity_component")]([SubResource("ElevatorLink")])
+
+[node name="VaultWallWestSouth" type="Node3D" parent="." unique_id=1734001130]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 15.75, 1.5, -3)
+script = ExtResource("1_spawn")
+Recipe = ExtResource("5_static_recipe")
+Overrides = Array[ExtResource("8_entity_component")]([SubResource("WallSideBox"), SubResource("WallNavigation")])
+
+[node name="Mesh" type="MeshInstance3D" parent="VaultWallWestSouth" unique_id=1734001230]
+material_override = SubResource("WallMaterial")
+mesh = SubResource("WallSideMesh")
+
+[node name="VaultWallWestNorth" type="Node3D" parent="." unique_id=1734001131]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 15.75, 1.5, 3)
+script = ExtResource("1_spawn")
+Recipe = ExtResource("5_static_recipe")
+Overrides = Array[ExtResource("8_entity_component")]([SubResource("WallSideBox"), SubResource("WallNavigation")])
+
+[node name="Mesh" type="MeshInstance3D" parent="VaultWallWestNorth" unique_id=1734001231]
+material_override = SubResource("WallMaterial")
+mesh = SubResource("WallSideMesh")
+
+[node name="VaultWallNorth" type="Node3D" parent="." unique_id=1734001132]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 20, 1.5, 4.25)
+script = ExtResource("1_spawn")
+Recipe = ExtResource("5_static_recipe")
+Overrides = Array[ExtResource("8_entity_component")]([SubResource("WallLongBox"), SubResource("WallNavigation")])
+
+[node name="Mesh" type="MeshInstance3D" parent="VaultWallNorth" unique_id=1734001232]
+material_override = SubResource("WallMaterial")
+mesh = SubResource("WallLongMesh")
+
+[node name="VaultWallSouth" type="Node3D" parent="." unique_id=1734001133]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 20, 1.5, -4.25)
+script = ExtResource("1_spawn")
+Recipe = ExtResource("5_static_recipe")
+Overrides = Array[ExtResource("8_entity_component")]([SubResource("WallLongBox"), SubResource("WallNavigation")])
+
+[node name="Mesh" type="MeshInstance3D" parent="VaultWallSouth" unique_id=1734001233]
+material_override = SubResource("WallMaterial")
+mesh = SubResource("WallLongMesh")
+
+[node name="VaultWallEast" type="Node3D" parent="." unique_id=1734001134]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 24.25, 1.5, 0)
+script = ExtResource("1_spawn")
+Recipe = ExtResource("5_static_recipe")
+Overrides = Array[ExtResource("8_entity_component")]([SubResource("WallEastBox"), SubResource("WallNavigation")])
+
+[node name="Mesh" type="MeshInstance3D" parent="VaultWallEast" unique_id=1734001234]
+material_override = SubResource("WallMaterial")
+mesh = SubResource("WallEastMesh")
+
+[node name="Vault" type="Node3D" parent="." unique_id=1734001135]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 15.75, 0.5, 0)
+script = ExtResource("10_nav_zone")
+ZoneId = "vault"
+Size = Vector3(2, 2, 3)
+
+[node name="VaultDoor" type="Node3D" parent="." unique_id=1734001123]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 15.75, 1.5, 0)
+script = ExtResource("1_spawn")
+Recipe = ExtResource("12_door_recipe")
+Overrides = Array[ExtResource("8_entity_component")]([SubResource("VaultLink")])
+
+[node name="VaultPlate" type="Node3D" parent="." unique_id=1734001124]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, -7, 0.5, 0)
+script = ExtResource("1_spawn")
+Recipe = ExtResource("13_plate_recipe")
+Overrides = Array[ExtResource("8_entity_component")]([SubResource("VaultLink")])
+
+[node name="Mesh" type="MeshInstance3D" parent="VaultPlate" unique_id=1734001125]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 0.05, 0)
+material_override = SubResource("PlateMaterial")
+mesh = SubResource("PlateMesh")
+
+[node name="VaultPlateInside" type="Node3D" parent="." unique_id=1734001126]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 22, 0.5, 0)
+script = ExtResource("1_spawn")
+Recipe = ExtResource("13_plate_recipe")
+Overrides = Array[ExtResource("8_entity_component")]([SubResource("VaultLink")])
+
+[node name="Mesh" type="MeshInstance3D" parent="VaultPlateInside" unique_id=1734001127]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 0.05, 0)
+material_override = SubResource("PlateMaterial")
+mesh = SubResource("PlateMesh")

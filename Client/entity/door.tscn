@@ -1,0 +1,28 @@
+[gd_scene load_steps=6 format=3]
+
+[ext_resource type="Script" path="res://synchronizer/EntityView.cs" id="1_view"]
+[ext_resource type="Script" path="res://synchronizer/view_behavior/TransformViewBehavior.cs" id="2_transform"]
+[ext_resource type="Script" path="res://synchronizer/view_behavior/BoxShapeSizeBehavior.cs" id="3_size"]
+
+[sub_resource type="StandardMaterial3D" id="Material_door"]
+albedo_color = Color(0.25, 0.4, 0.6, 1)
+
+[sub_resource type="BoxMesh" id="Mesh_door"]
+size = Vector3(1, 1, 1)
+
+[node name="Door" type="Node3D" node_paths=PackedStringArray("_entityBehaviours")]
+script = ExtResource("1_view")
+_entityBehaviours = [NodePath("TransformViewBehavior"), NodePath("BoxShapeSizeBehavior")]
+
+[node name="MeshInstance3D" type="MeshInstance3D" parent="."]
+material_override = SubResource("Material_door")
+mesh = SubResource("Mesh_door")
+
+[node name="TransformViewBehavior" type="Node" parent="." node_paths=PackedStringArray("_targetNodePosition", "_targetNodeRotation")]
+script = ExtResource("2_transform")
+_targetNodePosition = NodePath("..")
+_targetNodeRotation = NodePath("..")
+
+[node name="BoxShapeSizeBehavior" type="Node" parent="." node_paths=PackedStringArray("_target")]
+script = ExtResource("3_size")
+_target = NodePath("../MeshInstance3D")

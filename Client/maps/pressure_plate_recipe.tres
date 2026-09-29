@@ -1,0 +1,19 @@
+[gd_resource type="Resource" script_class="EntityRecipe" format=3]
+
+[ext_resource type="Script" uid="uid://crcwfs64lq55j" path="res://level_authoring/EntityComponent.cs" id="1_component"]
+[ext_resource type="Script" uid="uid://b82fwi3vurpa0" path="res://level_authoring/EntityRecipe.cs" id="2_recipe"]
+[ext_resource type="Script" uid="uid://8hu2s5xd7r4i" path="res://level_authoring/BodyComponent.cs" id="3_body"]
+[ext_resource type="Script" uid="uid://d3ws8oeafa2hk" path="res://level_authoring/BoxShapeComponent.cs" id="4_box"]
+
+[sub_resource type="Resource" id="Body"]
+script = ExtResource("3_body")
+Type = 0
+
+[sub_resource type="Resource" id="Box"]
+script = ExtResource("4_box")
+Size = Vector3(2, 0.5, 2)
+
+[resource]
+script = ExtResource("2_recipe")
+EntityType = 4
+Components = Array[ExtResource("1_component")]([SubResource("Body"), SubResource("Box")])

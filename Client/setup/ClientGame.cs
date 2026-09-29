@@ -1,6 +1,7 @@
 using System;
 using System.Collections.Generic;
 using System.IO;
+using System.Linq;
 using Fixed64;
 using Godot;
 using Shenanicode.Rollback;
@@ -33,7 +34,7 @@ public partial class ClientGame : Node3D {
 			SetProcess(false);
 			return;
 		}
-		GD.Print($"Level: {_level.Name} entities={_level.Data.Entities.Count} staticBoxes={_level.Data.StaticBoxes.Count} sha256={_level.ContentHash}");
+		GD.Print($"Level: {_level.Name} entities={_level.Data.Entities.Count} staticGeometry={_level.Data.Entities.Count(static entity => entity.Type == LevelEntityType.StaticGeometry)} sha256={_level.ContentHash}");
 		AddMapVisuals(_level.Name);
 
 		if (offline && !OfflineServer.TryStart(_level, port)) {
@@ -49,6 +50,7 @@ public partial class ClientGame : Node3D {
 		_viewUpdater.Initialize(_viewCatalog);
 
 		AddChild(new PhysicsDebugView());
+		AddChild(new NavDebugView { Level = _level.Data });
 	}
 
 	public override void _ExitTree() {
@@ -111,7 +113,7 @@ public partial class ClientGame : Node3D {
 	}
 
 	/// <summary>
-	/// Instances <c>res://maps/&lt;name&gt;.tscn</c> for its visuals. Its <c>LevelCollider</c>s draw nothing in the
+	/// Instances <c>res://maps/&lt;name&gt;.tscn</c> for its visuals. Its <c>EntitySpawn</c>s draw nothing in the
 	/// game; the simulation collides against the level file.
 	/// </summary>
 	private void AddMapVisuals(string name) {

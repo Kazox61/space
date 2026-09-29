@@ -44,7 +44,13 @@ public abstract partial class Core<TWorld> where TWorld : struct, ISessionType, 
 
 			var dummy = W.NewEntity<Dummy>();
 			dummy.Set(transform);
-			dummy.Set(new PatrolRail { Min = res.RailMin, Max = res.RailMax });
+			dummy.Set(new PatrolRail {
+				Start = new FPos(res.RailMin, position.Y, position.Z),
+				End = new FPos(res.RailMax, position.Y, position.Z),
+				Speed = res.Speed.To32(),
+				MovingToEnd = direction > Fixed64.FP.Zero,
+				Zone = -1,
+			});
 			dummy.Set(new RailSlot { Index = index });
 
 			BodyOperations.CreateBody(dummy, BodyType.Kinematic, worldTransform);

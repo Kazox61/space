@@ -3,24 +3,25 @@ using Fixed32;
 
 namespace Space.GameCore;
 
+/// <summary>A placement component; its value is the component's bit in the level file's presence mask.</summary>
 public enum LevelEntityComponentKind : byte {
 	Health,
 	Loot,
 	Body,
 	BoxShape,
 	View,
+	Navigation,
+	/// <summary>The id of the <see cref="NavZoneVolume"/> a door blocks or a pressure plate switches.</summary>
+	ZoneLink,
+	DoorMotion,
+	RailMotion,
 }
 
 public sealed class EntityPlacementBuilder {
 	private readonly string _sourcePath;
 	private readonly LevelEntityType _type;
 	private readonly FWorldTransform _transform;
-	private int? _health;
-	private LootKind? _loot;
-	private BodyType? _bodyType;
-	private FVector3? _boxHalfExtents;
-	private FP? _density;
-	private ViewAsset? _view;
+	private PlacementComponents _components;
 
 	public EntityPlacementBuilder(string sourcePath, LevelEntityType type, FWorldTransform transform) {
 		_sourcePath = sourcePath;
@@ -28,44 +29,19 @@ public sealed class EntityPlacementBuilder {
 		_transform = transform;
 	}
 
-	public void SetHealth(int health) => _health = health;
-	public void SetLoot(LootKind loot) => _loot = loot;
-	public void SetBody(BodyType bodyType) => _bodyType = bodyType;
-	public void SetBoxShape(FVector3 halfExtents, FP density) {
-		_boxHalfExtents = halfExtents;
-		_density = density;
-	}
-	public void SetView(ViewAsset view) => _view = view;
+	public void SetHealth(int health) => _components = _components with { Health = health };
+	public void SetLoot(LootKind loot) => _components = _components with { Loot = loot };
+	public void SetBody(BodyType bodyType) => _components = _components with { Body = bodyType };
+	public void SetBoxShape(FVector3 halfExtents, FP density) => _components = _components with { BoxShape = new BoxShapeData(halfExtents, density) };
+	public void SetView(ViewAsset view) => _components = _components with { View = view };
+	public void SetNavigation(NavContribution navigation) => _components = _components with { Navigation = navigation };
+	public void SetZoneLink(string zoneId) => _components = _components with { ZoneLink = zoneId };
+	public void SetDoorMotion(FVector3 openOffset, FP speed, bool startsOpen) => _components = _components with { DoorMotion = new DoorMotionData(openOffset, speed, startsOpen) };
+	public void SetRailMotion(FVector3 travelOffset, FP speed, bool startsAtEnd) => _components = _components with { RailMotion = new RailMotionData(travelOffset, speed, startsAtEnd) };
 
+	/// <summary>The placement with the components that were set; validation rejects missing and forbidden ones.</summary>
 	public EntityPlacement Build() {
-		var missing = new List<string>();
-		if (!_health.HasValue)
-			missing.Add(nameof(LevelEntityComponentKind.Health));
-		if (!_loot.HasValue)
-			missing.Add(nameof(LevelEntityComponentKind.Loot));
-		if (!_bodyType.HasValue)
-			missing.Add(nameof(LevelEntityComponentKind.Body));
-		if (!_boxHalfExtents.HasValue || !_density.HasValue)
-			missing.Add(nameof(LevelEntityComponentKind.BoxShape));
-		if (!_view.HasValue)
-			missing.Add(nameof(LevelEntityComponentKind.View));
-		if (missing.Count > 0) {
-			throw new InvalidDataException($"{_sourcePath}: missing required entity components: {string.Join(", ", missing)}.");
-		}
-
-		var placement = new EntityPlacement(
-			_sourcePath,
-			_type,
-			_transform,
-			new CratePlacementData(
-				_health.GetValueOrDefault(),
-				_loot.GetValueOrDefault(),
-				_bodyType.GetValueOrDefault(),
-				_boxHalfExtents.GetValueOrDefault(),
-				_density.GetValueOrDefault(),
-				_view.GetValueOrDefault()
-			)
-		);
+		var placement = new EntityPlacement(_sourcePath, _type, _transform, _components);
 		LevelDataValidation.Validate(placement);
 		return placement;
 	}

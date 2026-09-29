@@ -29,6 +29,18 @@ public struct Filter {
 		GroupIndex = 0,
 	};
 
+	/// <summary>Category of a character's <see cref="SensorProxy"/> capsule; it only pairs with <see cref="TriggerCategory"/>.</summary>
+	public const ulong SensorProxyCategory = 1ul << 62;
+
+	/// <summary>Category of trigger sensors such as pressure plates; they only pair with <see cref="SensorProxyCategory"/>.</summary>
+	public const ulong TriggerCategory = 1ul << 61;
+
+	/// <summary>A character's sensor proxy: touches triggers, but no other proxy.</summary>
+	public static Filter SensorProxy => new() { CategoryBits = SensorProxyCategory, MaskBits = TriggerCategory };
+
+	/// <summary>A trigger sensor: touched by character proxies, but no other trigger.</summary>
+	public static Filter Trigger => new() { CategoryBits = TriggerCategory, MaskBits = SensorProxyCategory };
+
 	/// <summary>
 	/// A negative group index unique to one player's input channel, so a player's own shapes (once
 	/// they have any) and their own projectiles never collide with each other -- see

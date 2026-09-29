@@ -1,12 +1,22 @@
-[gd_resource type="Resource" script_class="ColliderRecipe" format=3 uid="uid://b0vu13fjtjuch"]
+[gd_resource type="Resource" script_class="EntityRecipe" format=3 uid="uid://b0vu13fjtjuch"]
 
-[ext_resource type="Script" uid="uid://xgjvft0g5vnd" path="res://level_authoring/ColliderComponent.cs" id="1_component"]
-[ext_resource type="Script" uid="uid://b5bdfa2qht7et" path="res://level_authoring/ColliderRecipe.cs" id="2_recipe"]
-[ext_resource type="Script" uid="uid://d4dh3ymbrr865" path="res://level_authoring/BoxColliderComponent.cs" id="3_box"]
+[ext_resource type="Script" uid="uid://crcwfs64lq55j" path="res://level_authoring/EntityComponent.cs" id="1_component"]
+[ext_resource type="Script" uid="uid://b82fwi3vurpa0" path="res://level_authoring/EntityRecipe.cs" id="2_recipe"]
+[ext_resource type="Script" uid="uid://8hu2s5xd7r4i" path="res://level_authoring/BodyComponent.cs" id="3_body"]
+[ext_resource type="Script" uid="uid://d3ws8oeafa2hk" path="res://level_authoring/BoxShapeComponent.cs" id="4_box"]
+[ext_resource type="Script" uid="uid://dho3jcli7i2b7" path="res://level_authoring/NavigationComponent.cs" id="5_navigation"]
+
+[sub_resource type="Resource" id="Body"]
+script = ExtResource("3_body")
+Type = 0
 
 [sub_resource type="Resource" id="Box"]
-script = ExtResource("3_box")
+script = ExtResource("4_box")
+
+[sub_resource type="Resource" id="Navigation"]
+script = ExtResource("5_navigation")
 
 [resource]
 script = ExtResource("2_recipe")
-Components = Array[ExtResource("1_component")]([SubResource("Box")])
+EntityType = 2
+Components = Array[ExtResource("1_component")]([SubResource("Body"), SubResource("Box"), SubResource("Navigation")])

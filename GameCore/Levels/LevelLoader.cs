@@ -1,4 +1,5 @@
 using FFS.Libraries.StaticEcs;
+using Fixed;
 using Fixed32;
 using Shenanicode.Rollback;
 
@@ -10,24 +11,43 @@ public abstract partial class Core<TWorld> where TWorld : struct, ISessionType, 
 			// Validate every physics object before mutating the world so a bad level cannot load partially.
 			foreach (var placement in level.Entities) {
 				LevelDataValidation.Validate(placement);
-				if (placement.Type == LevelEntityType.Crate) {
-					var shape = CreateCrateShape(placement.Crate);
-					PhysicsValidation.ValidateShape(shape, placement.Crate.BodyType, placement.Transform, placement.SourcePath);
+				var components = placement.Components;
+				PhysicsValidation.ValidateShape(CreateBoxShape(components.BoxShape!.Value), components.Body!.Value, placement.Transform, placement.SourcePath);
+				if (components.DoorMotion is { } motion) {
+					// A door must be valid at both ends of its travel.
+					PhysicsValidation.ValidateShape(CreateBoxShape(components.BoxShape.Value), components.Body.Value, OpenTransform(placement.Transform, motion), placement.SourcePath);
+				}
+				if (components.RailMotion is { } rail) {
+					PhysicsValidation.ValidateShape(CreateBoxShape(components.BoxShape.Value), components.Body.Value, RailEndTransform(placement.Transform, rail), placement.SourcePath);
 				}
 			}
-			foreach (var box in level.StaticBoxes) {
-				LevelDataValidation.Validate(box);
-				PhysicsValidation.ValidateShape(CreateStaticBoxShape(box), BodyType.Static, box.Transform, box.SourcePath);
+			LevelDataValidation.ValidateZoneLinks(level.Entities, level.NavZones);
+			var zoneIds = level.NavZones.Select(static zone => zone.Id).Order(StringComparer.Ordinal).ToArray();
+
+			// Static geometry first, then zones, then the rest, so entity ids stay in this order.
+			foreach (var placement in level.Entities) {
+				if (placement.Type == LevelEntityType.StaticGeometry) {
+					SpawnStaticGeometry(placement);
+				}
 			}
 
-			foreach (var box in level.StaticBoxes) {
-				SpawnStaticBox(box);
-			}
+			SpawnNavZones(level.Navigation);
 
 			foreach (var placement in level.Entities) {
 				switch (placement.Type) {
+					case LevelEntityType.StaticGeometry:
+						break;
 					case LevelEntityType.Crate:
 						SpawnCrate(placement);
+						break;
+					case LevelEntityType.Door:
+						SpawnDoor(placement, ZoneIndex(zoneIds, placement));
+						break;
+					case LevelEntityType.PressurePlate:
+						SpawnPressurePlate(placement, ZoneIndex(zoneIds, placement));
+						break;
+					case LevelEntityType.Platform:
+						SpawnPlatform(placement, ZoneIndex(zoneIds, placement));
 						break;
 					default:
 						throw new InvalidDataException($"{placement.SourcePath}: unsupported entity type {placement.Type}.");
@@ -36,36 +56,119 @@ public abstract partial class Core<TWorld> where TWorld : struct, ISessionType, 
 		}
 
 		private static void SpawnCrate(in EntityPlacement placement) {
-			LevelDataValidation.Validate(placement);
+			var components = placement.Components;
 			var crate = W.NewEntity(new Crate {
-				InitialHealth = placement.Crate.Health,
-				Loot = placement.Crate.Loot,
-				View = placement.Crate.View,
+				InitialHealth = components.Health!.Value,
+				Loot = components.Loot!.Value,
+				View = components.View!.Value,
 			});
 
 			var transform = new Transform();
 			transform.SetFromWorldTransform(placement.Transform);
 			crate.Set(transform);
-			BodyOperations.CreateBody(crate, placement.Crate.BodyType, placement.Transform);
+			BodyOperations.CreateBody(crate, components.Body!.Value, placement.Transform);
 
-			ShapeFactory.CreateShape(crate, CreateCrateShape(placement.Crate));
+			ShapeFactory.CreateShape(crate, CreateBoxShape(components.BoxShape!.Value));
 		}
 
-		private static void SpawnStaticBox(in StaticBox box) {
+		private static void SpawnDoor(in EntityPlacement placement, int zone) {
+			var components = placement.Components;
+			var motion = components.DoorMotion!.Value;
+			var openTransform = OpenTransform(placement.Transform, motion);
+			var door = W.NewEntity(new Door {
+				State = new DoorState {
+					Zone = zone,
+					ClosedPosition = placement.Transform.Position,
+					OpenOffset = openTransform.Position - placement.Transform.Position,
+					Speed = motion.Speed,
+					Open = motion.StartsOpen,
+					FullyOpen = motion.StartsOpen,
+				},
+			});
+
+			var start = motion.StartsOpen ? openTransform : placement.Transform;
+			var transform = new Transform();
+			transform.SetFromWorldTransform(start);
+			door.Set(transform);
+			BodyOperations.CreateBody(door, components.Body!.Value, start);
+			ShapeFactory.CreateShape(door, CreateBoxShape(components.BoxShape!.Value));
+		}
+
+		private static void SpawnPressurePlate(in EntityPlacement placement, int zone) {
+			// No ViewId: like static geometry, the map scene draws the plate.
+			var plate = W.NewEntity(new PressurePlate { Zone = zone });
+			var transform = new Transform();
+			transform.SetFromWorldTransform(placement.Transform);
+			plate.Set(transform);
+			BodyOperations.CreateBody(plate, placement.Components.Body!.Value, placement.Transform);
+			var shape = CreateBoxShape(placement.Components.BoxShape!.Value);
+			shape.IsSensor = true;
+			shape.EnableSensorEvents = true;
+			shape.Filter = Filter.Trigger;
+			ShapeFactory.CreateShape(plate, shape);
+		}
+
+		private static void SpawnPlatform(in EntityPlacement placement, int zone) {
+			var components = placement.Components;
+			var motion = components.RailMotion!.Value;
+			var end = RailEndTransform(placement.Transform, motion);
+			var startTransform = motion.StartsAtEnd ? end : placement.Transform;
+			var platform = W.NewEntity<Default>();
+			var transform = new Transform();
+			transform.SetFromWorldTransform(startTransform);
+			platform.Set(transform);
+			platform.Set(new ViewId { Value = components.View!.Value });
+			platform.Set(new PatrolRail {
+				Start = placement.Transform.Position,
+				End = end.Position,
+				Speed = motion.Speed,
+				MovingToEnd = !motion.StartsAtEnd,
+				DwellTicksRemaining = RailMotionSystem.EndpointDwellSeconds * S.TickRate,
+				Zone = zone,
+			});
+			BodyOperations.CreateBody(platform, components.Body!.Value, startTransform);
+			ShapeFactory.CreateShape(platform, CreateBoxShape(components.BoxShape!.Value));
+		}
+
+		/// <summary>The door's open pose: its placed pose moved by the open offset, turned into world space.</summary>
+		private static FWorldTransform OpenTransform(in FWorldTransform closed, in DoorMotionData motion) {
+			var offset = FQuaternion.Normalize(closed.Rotation) * motion.OpenOffset;
+			return new FWorldTransform(closed.Position + offset, closed.Rotation);
+		}
+
+		private static FWorldTransform RailEndTransform(in FWorldTransform start, in RailMotionData motion) {
+			var offset = FQuaternion.Normalize(start.Rotation) * motion.TravelOffset;
+			return new FWorldTransform(start.Position + offset, start.Rotation);
+		}
+
+		/// <summary>The linked zone's index among the level's zone ids in ordinal order; see <see cref="DoorState.Zone"/>.</summary>
+		private static int ZoneIndex(string[] zoneIds, in EntityPlacement placement) {
+			return Array.IndexOf(zoneIds, placement.Components.ZoneLink!);
+		}
+
+		/// <summary>One open <see cref="NavZoneState"/> per baked zone, for gameplay to switch.</summary>
+		private static void SpawnNavZones(LevelNavigation? navigation) {
+			if (navigation is null) {
+				return;
+			}
+			for (var zone = 0; zone < navigation.Zones.Count; zone++) {
+				W.NewEntity<Default>().Set(NavZoneState.Open(zone));
+			}
+		}
+
+		private static void SpawnStaticGeometry(in EntityPlacement placement) {
 			// No ViewId: the client draws static geometry from the map scene itself.
 			var entity = W.NewEntity<Default>();
 			var transform = new Transform();
-			transform.SetFromWorldTransform(box.Transform);
+			transform.SetFromWorldTransform(placement.Transform);
 			entity.Set(transform);
-			BodyOperations.CreateBody(entity, BodyType.Static, box.Transform);
-			ShapeFactory.CreateShape(entity, CreateStaticBoxShape(box));
+			BodyOperations.CreateBody(entity, placement.Components.Body!.Value, placement.Transform);
+			ShapeFactory.CreateShape(entity, CreateBoxShape(placement.Components.BoxShape!.Value));
 		}
 
-		private static Shape CreateStaticBoxShape(in StaticBox box) => Shape.MakeBox(FVector3.Zero, box.HalfExtents);
-
-		private static Shape CreateCrateShape(in CratePlacementData crate) {
-			var shape = Shape.MakeBox(FVector3.Zero, crate.BoxHalfExtents);
-			shape.Density = crate.Density;
+		private static Shape CreateBoxShape(in BoxShapeData box) {
+			var shape = Shape.MakeBox(FVector3.Zero, box.HalfExtents);
+			shape.Density = box.Density;
 			return shape;
 		}
 	}
