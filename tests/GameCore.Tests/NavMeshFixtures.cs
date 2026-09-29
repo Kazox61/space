@@ -78,6 +78,15 @@ internal static class NavMeshFixtures {
 		);
 	}
 
+	/// <summary>Two routes between T0 and T2: short upper T1, geometrically long lower T3.</summary>
+	public static NavMesh DiscountDiamond() {
+		return Build(
+			[V(0, 0, 0), V(-1, 0, 1), V(1, 0, 1), V(-1, 0, -10), new FVector3(FP.FromRatio(1, 5), FP.Zero, FP.FromRatio(-1, 5))],
+			[0, 3, 1, 0, 1, 2, 0, 2, 4, 0, 4, 3],
+			cellSize: 4
+		);
+	}
+
 	public static FVector3 V(int x, int y, int z) {
 		return new FVector3(x.ToFP(), y.ToFP(), z.ToFP());
 	}
@@ -116,12 +125,10 @@ internal static class NavMeshFixtures {
 		var gridTriangles = new List<int>();
 		for (var row = 0; row < height; row++) {
 			for (var col = 0; col < width; col++) {
-				var cellMin = min + new FVector2(cell * col, cell * row);
-				var cellMax = cellMin + new FVector2(cell, cell);
 				var cellIndex = row * width + col;
 				gridCells[cellIndex * 2] = gridTriangles.Count;
 				for (var t = 0; t < triangleCount; t++) {
-					if (Overlaps(vertices, indices, t, cellMin, cellMax)) {
+					if (OccupiesCell(vertices, indices, t, min, cell, width, height, col, row)) {
 						gridTriangles.Add(t);
 					}
 				}
@@ -150,7 +157,7 @@ internal static class NavMeshFixtures {
 		return -1;
 	}
 
-	private static bool Overlaps(FVector3[] vertices, int[] indices, int triangle, FVector2 cellMin, FVector2 cellMax) {
+	private static bool OccupiesCell(FVector3[] vertices, int[] indices, int triangle, FVector2 origin, FP cellSize, int width, int height, int col, int row) {
 		var a = vertices[indices[triangle * 3]];
 		var b = vertices[indices[triangle * 3 + 1]];
 		var c = vertices[indices[triangle * 3 + 2]];
@@ -158,6 +165,10 @@ internal static class NavMeshFixtures {
 		var maxX = FP.Max(a.X, FP.Max(b.X, c.X));
 		var minZ = FP.Min(a.Z, FP.Min(b.Z, c.Z));
 		var maxZ = FP.Max(a.Z, FP.Max(b.Z, c.Z));
-		return minX <= cellMax.X && maxX >= cellMin.X && minZ <= cellMax.Y && maxZ >= cellMin.Y;
+		var colMin = Math.Max(0, ((minX - origin.X) / cellSize).ToInt());
+		var colMax = Math.Min(width - 1, ((maxX - origin.X) / cellSize).ToInt());
+		var rowMin = Math.Max(0, ((minZ - origin.Y) / cellSize).ToInt());
+		var rowMax = Math.Min(height - 1, ((maxZ - origin.Y) / cellSize).ToInt());
+		return col >= colMin && col <= colMax && row >= rowMin && row <= rowMax;
 	}
 }

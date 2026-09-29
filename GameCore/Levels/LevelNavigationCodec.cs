@@ -66,7 +66,7 @@ internal static class LevelNavigationCodec {
 		}
 		var zones = new NavZoneData[count];
 		for (var z = 0; z < count; z++) {
-			var id = reader.ReadString();
+			var id = LevelDataCodec.ReadBoundedString(reader, NavZoneData.MaxIdLength, $"Level navigation zone {z} id");
 			var length = ReadCount(reader, "zone triangle", triangleCount, sizeof(int));
 			var triangles = new int[length];
 			for (var i = 0; i < length; i++) {

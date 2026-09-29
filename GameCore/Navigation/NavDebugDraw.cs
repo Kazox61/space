@@ -303,7 +303,7 @@ public abstract partial class Core<TWorld> where TWorld : struct, ISessionType, 
 			draw.DrawPoint(agent.PathTarget, NavDebugColor.PathTarget);
 
 			// The agent moved after the tick located it, so start the path where it stands now.
-			var start = NavAgentSystem.Locate(_query!, feet, out var located);
+			var start = NavAgentSystem.Locate(_query!, feet, agent.AreaMask, agent.StartSnapDistance, out var located);
 			var from = ahead.IndexOf(located);
 			if (from > 0) {
 				ahead = ahead[from..];

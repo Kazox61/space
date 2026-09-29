@@ -168,16 +168,28 @@ public sealed class NavMeshQuery {
 
 	/// <summary><see cref="Project"/> restricted to triangles passable for <paramref name="areaMask"/>.</summary>
 	public FVector2 ProjectToPassable(FVector2 xz, FP maxDistance, int areaMask, out int triangle) {
-		return ProjectCore(xz, maxDistance, filter: true, areaMask, out triangle);
+		return ProjectCore(xz, maxDistance, filter: true, areaMask, targetY: null, out triangle);
+	}
+
+	/// <summary>
+	/// <see cref="ProjectToPassable(FVector2, FP, int, out int)"/> with the requested height included
+	/// in candidate ranking, so overlapping floors do not resolve by triangle order.
+	/// </summary>
+	public FVector2 ProjectToPassable(FVector2 xz, FP y, FP maxDistance, int areaMask, out int triangle) {
+		return ProjectCore(xz, maxDistance, filter: true, areaMask, y, out triangle);
 	}
 
 	private FVector2 ProjectCore(FVector2 xz, FP maxDistance, bool filter, int areaMask, out int triangle) {
+		return ProjectCore(xz, maxDistance, filter, areaMask, targetY: null, out triangle);
+	}
+
+	private FVector2 ProjectCore(FVector2 xz, FP maxDistance, bool filter, int areaMask, FP? targetY, out int triangle) {
 		if (maxDistance < FP.Zero) {
 			throw new ArgumentOutOfRangeException(nameof(maxDistance), "Must not be negative.");
 		}
 		GetCellRange(xz.X, _mesh.GridOrigin.X, maxDistance, _mesh.GridWidth, out var minCol, out var maxCol);
 		GetCellRange(xz.Y, _mesh.GridOrigin.Y, maxDistance, _mesh.GridHeight, out var minRow, out var maxRow);
-		var closest = ClosestPointCore(xz, filter, areaMask, minCol, maxCol, minRow, maxRow, out triangle);
+		var closest = ClosestPointCore(xz, filter, areaMask, minCol, maxCol, minRow, maxRow, out triangle, targetY);
 		if (triangle < 0) {
 			return xz;
 		}
@@ -207,8 +219,8 @@ public sealed class NavMeshQuery {
 		max = last < 0 ? -1 : last >= cellCount ? cellCount - 1 : (int)last;
 	}
 
-	private FVector2 ClosestPointCore(FVector2 xz, bool filter, int areaMask, int minCol, int maxCol, int minRow, int maxRow, out int triangle) {
-		triangle = filter ? FindPassableTriangle(xz, areaMask) : FindTriangle(xz);
+	private FVector2 ClosestPointCore(FVector2 xz, bool filter, int areaMask, int minCol, int maxCol, int minRow, int maxRow, out int triangle, FP? targetY = null) {
+		triangle = targetY.HasValue ? -1 : filter ? FindPassableTriangle(xz, areaMask) : FindTriangle(xz);
 		if (triangle >= 0) {
 			return xz;
 		}
@@ -216,6 +228,7 @@ public sealed class NavMeshQuery {
 		NextGeneration();
 
 		var bestDistanceSqr = FP.MaxValue;
+		var bestDistanceSqr3D = UInt128.MaxValue;
 		var bestPoint = xz;
 		var bestTriangle = -1;
 		for (var row = minRow; row <= maxRow; row++) {
@@ -237,9 +250,18 @@ public sealed class NavMeshQuery {
 					var a = _mesh.GetVertexXZ(t.V0);
 					var b = _mesh.GetVertexXZ(t.V1);
 					var c = _mesh.GetVertexXZ(t.V2);
-					CheckEdge(xz, a, b, candidate, ref bestDistanceSqr, ref bestPoint, ref bestTriangle);
-					CheckEdge(xz, b, c, candidate, ref bestDistanceSqr, ref bestPoint, ref bestTriangle);
-					CheckEdge(xz, c, a, candidate, ref bestDistanceSqr, ref bestPoint, ref bestTriangle);
+					if (targetY.HasValue) {
+						if (Contains(candidate, xz)) {
+							CheckPoint3D(xz, targetY.Value, xz, candidate, ref bestDistanceSqr3D, ref bestPoint, ref bestTriangle);
+						}
+						CheckEdge3D(xz, targetY.Value, a, b, candidate, ref bestDistanceSqr3D, ref bestPoint, ref bestTriangle);
+						CheckEdge3D(xz, targetY.Value, b, c, candidate, ref bestDistanceSqr3D, ref bestPoint, ref bestTriangle);
+						CheckEdge3D(xz, targetY.Value, c, a, candidate, ref bestDistanceSqr3D, ref bestPoint, ref bestTriangle);
+					} else {
+						CheckEdge(xz, a, b, candidate, ref bestDistanceSqr, ref bestPoint, ref bestTriangle);
+						CheckEdge(xz, b, c, candidate, ref bestDistanceSqr, ref bestPoint, ref bestTriangle);
+						CheckEdge(xz, c, a, candidate, ref bestDistanceSqr, ref bestPoint, ref bestTriangle);
+					}
 				}
 			}
 		}
@@ -270,5 +292,27 @@ public sealed class NavMeshQuery {
 			bestPoint = closest;
 			bestTriangle = triangle;
 		}
+	}
+
+	private void CheckEdge3D(FVector2 p, FP y, FVector2 a, FVector2 b, int triangle, ref UInt128 bestDistanceSqr, ref FVector2 bestPoint, ref int bestTriangle) {
+		var closest = NavGeometry.ClosestPointOnSegment(p, a, b);
+		CheckPoint3D(p, y, closest, triangle, ref bestDistanceSqr, ref bestPoint, ref bestTriangle);
+	}
+
+	private void CheckPoint3D(FVector2 p, FP y, FVector2 closest, int triangle, ref UInt128 bestDistanceSqr, ref FVector2 bestPoint, ref int bestTriangle) {
+		var dx = AbsDifference(p.X.RawValue, closest.X.RawValue);
+		var dy = AbsDifference(y.RawValue, SampleHeight(closest, triangle).RawValue);
+		var dz = AbsDifference(p.Y.RawValue, closest.Y.RawValue);
+		var distanceSqr = dx * dx + dy * dy + dz * dz;
+		if (distanceSqr < bestDistanceSqr) {
+			bestDistanceSqr = distanceSqr;
+			bestPoint = closest;
+			bestTriangle = triangle;
+		}
+	}
+
+	private static UInt128 AbsDifference(long a, long b) {
+		var difference = (Int128)a - b;
+		return (UInt128)(difference < 0 ? -difference : difference);
 	}
 }

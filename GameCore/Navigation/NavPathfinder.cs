@@ -43,6 +43,7 @@ public sealed class NavPathfinder {
 	private readonly NavMesh _mesh;
 	private readonly NavMeshQuery _query;
 	private readonly NavConfig _config;
+	private readonly FP _heuristicScale;
 
 	private readonly NavBinaryHeap _open;
 	private readonly FP[] _gScores;
@@ -57,6 +58,7 @@ public sealed class NavPathfinder {
 		_query = query;
 		_mesh = query.Mesh;
 		_config = config;
+		_heuristicScale = MinimumCostMultiplier(_mesh.Areas);
 
 		var count = _mesh.TriangleCount;
 		_open = new NavBinaryHeap(count);
@@ -129,7 +131,7 @@ public sealed class NavPathfinder {
 		Touch(startTriangle);
 		_entryPoints[startTriangle] = startXZ;
 		_gScores[startTriangle] = FP.Zero;
-		_open.Push(startTriangle, FVector2.Distance(startXZ, endXZ));
+		_open.Push(startTriangle, FVector2.Distance(startXZ, endXZ) * _heuristicScale);
 
 		var triangles = _mesh.Triangles;
 		var iterations = 0;
@@ -157,7 +159,11 @@ public sealed class NavPathfinder {
 				Touch(neighbor);
 				currentTriangle.GetEdgeVertices(e, out var va, out var vb);
 				var edgeMid = (_mesh.GetVertexXZ(va) + _mesh.GetVertexXZ(vb)) * FP.Half;
-				var tentativeG = _gScores[current] + FVector2.Distance(_entryPoints[current], edgeMid) * areas[neighbor].CostMultiplier;
+				var costMultiplier = areas[neighbor].CostMultiplier;
+				if (costMultiplier <= FP.Zero) {
+					throw new InvalidOperationException("Navigation area cost multipliers must be positive.");
+				}
+				var tentativeG = _gScores[current] + FVector2.Distance(_entryPoints[current], edgeMid) * costMultiplier;
 
 				var queued = _open.Contains(neighbor);
 				if (queued && tentativeG >= _gScores[neighbor]) {
@@ -166,7 +172,7 @@ public sealed class NavPathfinder {
 				_gScores[neighbor] = tentativeG;
 				_cameFrom[neighbor] = current;
 				_entryPoints[neighbor] = edgeMid;
-				var f = tentativeG + FVector2.Distance(edgeMid, endXZ);
+				var f = tentativeG + FVector2.Distance(edgeMid, endXZ) * _heuristicScale;
 				if (queued) {
 					_open.UpdateKey(neighbor, f);
 				} else {
@@ -176,6 +182,17 @@ public sealed class NavPathfinder {
 		}
 
 		return _open.Count == 0 ? NavPathStatus.NoRoute : NavPathStatus.IterationLimit;
+	}
+
+	private static FP MinimumCostMultiplier(ReadOnlySpan<NavTriangleArea> areas) {
+		var minimum = FP.One;
+		foreach (ref readonly var area in areas) {
+			if (area.CostMultiplier <= FP.Zero) {
+				throw new InvalidOperationException("Navigation area cost multipliers must be positive.");
+			}
+			minimum = FP.Min(minimum, area.CostMultiplier);
+		}
+		return minimum;
 	}
 
 	private void Reset() {

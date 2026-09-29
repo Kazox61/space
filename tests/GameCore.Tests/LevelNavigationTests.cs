@@ -82,6 +82,24 @@ public sealed class LevelNavigationTests {
 	}
 
 	[Test]
+	public void LevelNavigationRejectsInvalidBakeSettingsAtConstruction() {
+		Assert.That(
+			() => new LevelNavigation(default, Baked().Navigation!.Mesh),
+			Throws.InstanceOf<ArgumentOutOfRangeException>());
+	}
+
+	[Test]
+	public void MalformedZoneStringLengthIsReportedAsInvalidData() {
+		var zone = Baked().NavZones[0];
+		var bytes = LevelDataCodec.Serialize(new LevelData([], navZones: [zone]));
+		var zoneIdOffset = LevelDataCodec.EnvelopeSize + 3 * sizeof(int);
+		new byte[] { 0xFF, 0xFF, 0xFF, 0xFF, 0x10 }.CopyTo(bytes, zoneIdOffset);
+		Rehash(bytes);
+
+		Assert.That(() => LevelDataCodec.Deserialize(bytes), Throws.TypeOf<InvalidDataException>());
+	}
+
+	[Test]
 	public void LevelWithoutNavigationRoundTrips() {
 		var level = new LevelData([], TestLevels());
 		var bytes = LevelDataCodec.Serialize(level);

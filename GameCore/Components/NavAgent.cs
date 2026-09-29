@@ -39,6 +39,9 @@ public struct NavAgent : IComponent {
 	/// <summary>How far an off-mesh destination may be snapped onto passable ground.</summary>
 	public FP DestinationSnapDistance;
 
+	/// <summary>How far a displaced agent may be snapped back onto the mesh.</summary>
+	public FP StartSnapDistance;
+
 	/// <summary>Ticks between periodic re-plans while the agent has a destination.</summary>
 	public int RepathIntervalTicks;
 
@@ -83,12 +86,19 @@ public struct NavAgent : IComponent {
 
 	public NavCorridor Corridor;
 
-	public static NavAgent Create(FP speed, FP arrivalRadius, FP destinationSnapDistance, int repathIntervalTicks, int areaMask = ~0) {
+	public static NavAgent Create(FP speed, FP arrivalRadius, FP destinationSnapDistance, int repathIntervalTicks, int areaMask = ~0, FP? startSnapDistance = null) {
+		var resolvedStartSnapDistance = startSnapDistance ?? destinationSnapDistance;
 		if (speed <= FP.Zero) {
 			throw new ArgumentOutOfRangeException(nameof(speed), "Must be positive.");
 		}
-		if (arrivalRadius < FP.Zero || destinationSnapDistance < FP.Zero) {
-			throw new ArgumentOutOfRangeException(nameof(arrivalRadius), "Distances must not be negative.");
+		if (arrivalRadius < FP.Zero) {
+			throw new ArgumentOutOfRangeException(nameof(arrivalRadius), "Must not be negative.");
+		}
+		if (destinationSnapDistance < FP.Zero) {
+			throw new ArgumentOutOfRangeException(nameof(destinationSnapDistance), "Must not be negative.");
+		}
+		if (resolvedStartSnapDistance < FP.Zero) {
+			throw new ArgumentOutOfRangeException(nameof(startSnapDistance), "Must not be negative.");
 		}
 		if (repathIntervalTicks <= 0) {
 			throw new ArgumentOutOfRangeException(nameof(repathIntervalTicks), "Must be positive.");
@@ -97,6 +107,7 @@ public struct NavAgent : IComponent {
 			Speed = speed,
 			ArrivalRadius = arrivalRadius,
 			DestinationSnapDistance = destinationSnapDistance,
+			StartSnapDistance = resolvedStartSnapDistance,
 			RepathIntervalTicks = repathIntervalTicks,
 			AreaMask = areaMask,
 			CurrentTriangle = -1,

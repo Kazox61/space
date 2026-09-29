@@ -155,6 +155,22 @@ public sealed class NavMeshBakerTests {
 	}
 
 	[Test]
+	public void BakeRejectsSourceOutsideTheRuntimeDomainBeforeRasterization() {
+		var ground = Box("FarGround", new FPos(P(70), P(0), P(0)), new FVector3(2.ToFP(), FP.Half, 2.ToFP()), NavContribution.Walkable);
+
+		Assert.That(() => NavMeshBaker.Bake([ground], NavBakeSettings.Default),
+			Throws.InstanceOf<InvalidDataException>().With.Message.Contains("source vertex"));
+	}
+
+	[Test]
+	public void BakeRejectsAnOversizedHeightfieldBeforeAllocation() {
+		var settings = NavBakeSettings.Default with { VoxelSize = F64.FP.FromRatio(1, 4096) };
+
+		Assert.That(() => NavMeshBaker.Bake([Ground()], settings),
+			Throws.InstanceOf<InvalidDataException>().With.Message.Contains("heightfield"));
+	}
+
+	[Test]
 	public void LevelWithoutWalkableGeometryRejectsZones() {
 		var zone = Zone("gate", new FPos(P(0), P(0), P(0)));
 		var level = new LevelData([], navZones: [zone]);
@@ -227,6 +243,17 @@ public sealed class NavMeshBakerTests {
 			Assert.That(() => NavMeshBaker.Bake(boxes, [Zone("a", new FPos(P(-5), P(0), P(0))), Zone("a", new FPos(P(5), P(0), P(0)))], NavBakeSettings.Default),
 				Throws.InstanceOf<InvalidDataException>().With.Message.Contains("duplicated"));
 			Assert.That(() => NavMeshBaker.Bake(boxes, many, NavBakeSettings.Default), Throws.InstanceOf<InvalidDataException>());
+		});
+	}
+
+	[Test]
+	public void NavigationZonesRejectPitchAndRoll() {
+		var pitched = Zone("pitched", new FPos(P(0), P(1, 2), P(0)), FQuaternion.AxisAngleDegrees(FVector3.Right, 15.ToFP()));
+		var yawed = Zone("yawed", new FPos(P(0), P(1, 2), P(0)), FQuaternion.AxisAngleDegrees(FVector3.Up, 30.ToFP()));
+
+		Assert.Multiple(() => {
+			Assert.That(() => pitched.Validate(), Throws.InstanceOf<InvalidDataException>().With.Message.Contains("Y axis"));
+			Assert.That(() => yawed.Validate(), Throws.Nothing);
 		});
 	}
 

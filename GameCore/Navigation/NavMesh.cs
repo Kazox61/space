@@ -143,8 +143,25 @@ public sealed class NavMesh {
 		if (_areas.Length != _triangles.Length) {
 			throw new ArgumentException($"Area count {_areas.Length} does not match triangle count {_triangles.Length}.");
 		}
+		for (var t = 0; t < _areas.Length; t++) {
+			if (_areas[t].AreaMask == 0 || _areas[t].CostMultiplier <= FP.Zero) {
+				throw new ArgumentException($"Triangle {t} has invalid area data.");
+			}
+		}
 		for (var t = 0; t < _triangles.Length; t++) {
 			ValidateTriangle(t);
+		}
+		if (_vertices.Length > 0) {
+			var min = NavGeometry.ToXZ(_vertices[0]);
+			var max = min;
+			foreach (var vertex in _vertices) {
+				var xz = NavGeometry.ToXZ(vertex);
+				min = FVector2.MinComponents(min, xz);
+				max = FVector2.MaxComponents(max, xz);
+			}
+			if (!BoundsXZ.Min.Equals(min) || !BoundsXZ.Max.Equals(max)) {
+				throw new ArgumentException("The XZ bounds must exactly match the mesh vertices.");
+			}
 		}
 
 		if (GridWidth <= 0 || GridHeight <= 0 || (long)GridWidth * GridHeight > MaxGridCells) {
@@ -153,6 +170,14 @@ public sealed class NavMesh {
 		if (GridCellSize <= FP.Zero) {
 			throw new ArgumentException("Grid cell size must be positive.");
 		}
+		if (!GridOrigin.Equals(BoundsXZ.Min)) {
+			throw new ArgumentException("The lookup grid origin must equal the XZ bounds minimum.");
+		}
+		var expectedWidth = CellsToCover(BoundsXZ.Size.X, GridCellSize);
+		var expectedHeight = CellsToCover(BoundsXZ.Size.Y, GridCellSize);
+		if (GridWidth != expectedWidth || GridHeight != expectedHeight) {
+			throw new ArgumentException($"Grid size {GridWidth}x{GridHeight} does not canonically cover the XZ bounds; expected {expectedWidth}x{expectedHeight}.");
+		}
 		var gridMax = GridOrigin + new FVector2(GridCellSize * GridWidth, GridCellSize * GridHeight);
 		if (BoundsXZ.Min.X < GridOrigin.X || BoundsXZ.Min.Y < GridOrigin.Y || BoundsXZ.Max.X > gridMax.X || BoundsXZ.Max.Y > gridMax.Y) {
 			throw new ArgumentException("The lookup grid must cover the XZ bounds.");
@@ -160,19 +185,63 @@ public sealed class NavMesh {
 		if ((long)GridWidth * GridHeight * 2 != _gridCells.Length) {
 			throw new ArgumentException($"Grid cell array length {_gridCells.Length} does not match {GridWidth}x{GridHeight} cells.");
 		}
+		long expectedMemberships = 0;
+		for (var t = 0; t < _triangles.Length; t++) {
+			GetTriangleCellRange(t, out var minCol, out var maxCol, out var minRow, out var maxRow);
+			expectedMemberships += (long)(maxCol - minCol + 1) * (maxRow - minRow + 1);
+		}
+		var nextStart = 0;
 		for (var cell = 0; cell < _gridCells.Length; cell += 2) {
 			var start = _gridCells[cell];
 			var count = _gridCells[cell + 1];
 			if (start < 0 || count < 0 || start > _gridTriangles.Length - count) {
 				throw new ArgumentException($"Grid cell {cell / 2} range [{start}, +{count}) is out of range.");
 			}
-		}
-		foreach (var triangle in _gridTriangles) {
-			if ((uint)triangle >= (uint)_triangles.Length) {
-				throw new ArgumentException($"Grid references triangle {triangle}, which does not exist.");
+			if (start != nextStart) {
+				throw new ArgumentException($"Grid cell {cell / 2} membership does not begin at the canonical offset {nextStart}.");
 			}
+			var col = cell / 2 % GridWidth;
+			var row = cell / 2 / GridWidth;
+			var previous = -1;
+			for (var i = start; i < start + count; i++) {
+				var triangle = _gridTriangles[i];
+				if ((uint)triangle >= (uint)_triangles.Length) {
+					throw new ArgumentException($"Grid references triangle {triangle}, which does not exist.");
+				}
+				if (triangle <= previous) {
+					throw new ArgumentException($"Grid cell {cell / 2} membership must be unique and ordered.");
+				}
+				GetTriangleCellRange(triangle, out var minCol, out var maxCol, out var minRow, out var maxRow);
+				if (col < minCol || col > maxCol || row < minRow || row > maxRow) {
+					throw new ArgumentException($"Grid cell {cell / 2} has non-canonical membership for triangle {triangle}.");
+				}
+				previous = triangle;
+			}
+			nextStart += count;
+		}
+		if (nextStart != _gridTriangles.Length || expectedMemberships != _gridTriangles.Length) {
+			throw new ArgumentException($"Grid membership count {_gridTriangles.Length} does not match the canonical count {expectedMemberships}.");
 		}
 	}
+
+	private void GetTriangleCellRange(int triangle, out int minCol, out int maxCol, out int minRow, out int maxRow) {
+		ref readonly var t = ref _triangles[triangle];
+		var a = GetVertexXZ(t.V0) - BoundsXZ.Min;
+		var b = GetVertexXZ(t.V1) - BoundsXZ.Min;
+		var c = GetVertexXZ(t.V2) - BoundsXZ.Min;
+		var min = FVector2.MinComponents(FVector2.MinComponents(a, b), c);
+		var max = FVector2.MaxComponents(FVector2.MaxComponents(a, b), c);
+		minCol = (int)Math.Clamp(CellIndex(min.X, GridCellSize), 0, GridWidth - 1L);
+		maxCol = (int)Math.Clamp(CellIndex(max.X, GridCellSize), 0, GridWidth - 1L);
+		minRow = (int)Math.Clamp(CellIndex(min.Y, GridCellSize), 0, GridHeight - 1L);
+		maxRow = (int)Math.Clamp(CellIndex(max.Y, GridCellSize), 0, GridHeight - 1L);
+	}
+
+	private static long CellsToCover(FP size, FP cellSize) {
+		return Math.Max(1, CellIndex(size, cellSize) + (size.RawValue % cellSize.RawValue == 0 ? 0 : 1));
+	}
+
+	private static long CellIndex(FP coordinate, FP cellSize) => coordinate.RawValue / cellSize.RawValue;
 
 	private void ValidateTriangle(int t) {
 		var triangle = _triangles[t];

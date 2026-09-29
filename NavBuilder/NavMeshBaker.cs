@@ -32,6 +32,7 @@ public static class NavMeshBaker {
 
 	/// <summary>Recast area id of the first zone; zone <c>i</c> is marked with this plus <c>i</c>.</summary>
 	private const int FirstZoneRecastArea = 1;
+	private const int MaxHeightfieldCells = NavMesh.MaxGridCells;
 
 	public static NavMeshBakeResult Bake(IEnumerable<StaticBox> boxes, NavBakeSettings settings) {
 		return Bake(StaticBoxTriangulator.Build(boxes), [], settings);
@@ -75,6 +76,7 @@ public static class NavMeshBaker {
 			throw new InvalidDataException("Navmesh bake has no source geometry.");
 		}
 
+		ValidateSourceGeometry(soup.Vertices, settings.VoxelSize);
 		var vertices = ToFloats(soup.Vertices);
 		var triangles = soup.Indices.ToArray();
 		var triangleCount = triangles.Length / 3;
@@ -164,7 +166,36 @@ public static class NavMeshBaker {
 			max = RcVec3f.Max(max, v);
 		}
 		RcRecast.CalcGridSize(min, max, config.Cs, out var width, out var height);
+		if (width <= 0 || height <= 0 || checked((long)width * height) > MaxHeightfieldCells) {
+			throw new InvalidDataException($"Recast heightfield {width}x{height} must be positive and at most {MaxHeightfieldCells} cells; use a larger voxel size.");
+		}
 		return new RcHeightfield(width, height, min, max, config.Cs, config.Ch, config.BorderSize);
+	}
+
+	private static void ValidateSourceGeometry(IReadOnlyList<FVector3> vertices, FP voxelSize) {
+		var minX = vertices[0].X;
+		var maxX = minX;
+		var minZ = vertices[0].Z;
+		var maxZ = minZ;
+		foreach (var vertex in vertices) {
+			if (FP.Abs(vertex.X) > NavMesh.MaxCoordinate || FP.Abs(vertex.Y) > NavMesh.MaxCoordinate || FP.Abs(vertex.Z) > NavMesh.MaxCoordinate) {
+				throw new InvalidDataException($"Navmesh source vertex ({vertex}) exceeds the +/-{NavMesh.MaxCoordinate} bake domain.");
+			}
+			minX = FP.Min(minX, vertex.X);
+			maxX = FP.Max(maxX, vertex.X);
+			minZ = FP.Min(minZ, vertex.Z);
+			maxZ = FP.Max(maxZ, vertex.Z);
+		}
+
+		var width = CellsForBudget(maxX.RawValue - minX.RawValue, voxelSize.RawValue);
+		var height = CellsForBudget(maxZ.RawValue - minZ.RawValue, voxelSize.RawValue);
+		if (width <= 0 || height <= 0 || width > int.MaxValue || height > int.MaxValue || width * height > MaxHeightfieldCells) {
+			throw new InvalidDataException($"Recast heightfield requires at least {width}x{height} cells; maximum is {MaxHeightfieldCells}; use a larger voxel size.");
+		}
+	}
+
+	private static long CellsForBudget(long extentRaw, long cellRaw) {
+		return extentRaw / cellRaw + (extentRaw % cellRaw == 0 ? 0 : 1);
 	}
 
 	/// <summary>

@@ -38,7 +38,7 @@ public abstract partial class Core<TWorld> where TWorld : struct, ISessionType, 
 
 				var feet = Feet(entity.Read<Transform>(), entity.Read<Mover>());
 
-				var onMesh = Locate(navigation.Query!, feet, out var located);
+				var onMesh = Locate(navigation.Query!, feet, agent.AreaMask, agent.StartSnapDistance, out var located);
 				agent.CurrentTriangle = located;
 				if (located < 0) {
 					Fail(ref agent, NavPathStatus.StartOffMesh, tick, navigation.ZoneSignature);
@@ -86,11 +86,15 @@ public abstract partial class Core<TWorld> where TWorld : struct, ISessionType, 
 		/// The triangle under <paramref name="feet"/>, or the nearest one when the agent stands off the
 		/// mesh; returns the matching point on the surface.
 		/// </summary>
-		internal static FVector3 Locate(NavMeshQuery query, FVector3 feet, out int triangle) {
+		internal static FVector3 Locate(NavMeshQuery query, FVector3 feet, int areaMask, FP maxSnapDistance, out int triangle) {
 			var xz = NavGeometry.ToXZ(feet);
-			triangle = query.FindTriangle(xz, feet.Y);
+			triangle = query.FindTriangleForEndpoint(xz, feet.Y, areaMask);
 			if (triangle < 0) {
-				xz = query.ClosestPoint(xz, out triangle);
+				xz = query.Project(xz, maxSnapDistance, out triangle);
+				if (triangle < 0) {
+					return feet;
+				}
+				triangle = query.FindTriangleForEndpoint(xz, feet.Y, areaMask);
 				if (triangle < 0) {
 					return feet;
 				}
@@ -128,7 +132,7 @@ public abstract partial class Core<TWorld> where TWorld : struct, ISessionType, 
 			var destinationXZ = NavGeometry.ToXZ(agent.Destination);
 			var endTriangle = query.FindPassableTriangleForEndpoint(destinationXZ, agent.Destination.Y, agent.AreaMask);
 			if (endTriangle < 0) {
-				destinationXZ = query.ProjectToPassable(destinationXZ, agent.DestinationSnapDistance, agent.AreaMask, out endTriangle);
+				destinationXZ = query.ProjectToPassable(destinationXZ, agent.Destination.Y, agent.DestinationSnapDistance, agent.AreaMask, out endTriangle);
 				if (endTriangle < 0) {
 					Fail(ref agent, NavPathStatus.EndOffMesh, tick, zoneSignature);
 					return;

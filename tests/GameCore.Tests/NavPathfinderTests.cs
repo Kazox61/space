@@ -154,6 +154,23 @@ public sealed class NavPathfinderTests {
 	}
 
 	[Test]
+	public void CostMultiplierBelowOneStillFindsTheCheapestRoute() {
+		var mesh = DiscountDiamond();
+		mesh.Areas[2].CostMultiplier = FP.FromRatio(1, 100);
+		mesh.Areas[3].CostMultiplier = FP.FromRatio(1, 100);
+		var pathfinder = new NavPathfinder(new NavMeshQuery(mesh), NavConfig.Default);
+		var corridor = new int[8];
+
+		var status = pathfinder.FindPath(
+			new FVector3(FP.FromRatio(-1, 10), FP.Zero, FP.FromRatio(-1, 10)), 0,
+			new FVector3(FP.FromRatio(1, 10), FP.Zero, FP.FromRatio(-9, 100)), 2,
+			1, corridor, out var length);
+
+		Assert.That(status, Is.EqualTo(NavPathStatus.Found));
+		Assert.That(corridor[..length], Is.EqualTo(new[] { 0, 3, 2 }));
+	}
+
+	[Test]
 	public void EveryCorridorStepCrossesASharedEdge() {
 		var mesh = Ring();
 		FindPath(mesh, s_ringStart, s_ringEnd, 1, out var corridor);

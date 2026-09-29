@@ -81,6 +81,11 @@ internal static class LevelDataValidation {
 		if (FQuaternion.LengthSqr(zone.Transform.Rotation) <= FP.CalculationsEpsilonSqr) {
 			throw new InvalidDataException($"Navigation zone '{zone.Id}': rotation must be non-zero.");
 		}
+		var up = FQuaternion.Normalize(zone.Transform.Rotation) * FVector3.Up;
+		var rotationTolerance = FP.FromRatio(1, 1000);
+		if (FP.Abs(up.X) > rotationTolerance || FP.Abs(up.Z) > rotationTolerance || up.Y < FP.One - rotationTolerance) {
+			throw new InvalidDataException($"Navigation zone '{zone.Id}': rotation may only be about the Y axis.");
+		}
 		ValidateOrigin(zone.Transform.Position, $"Navigation zone '{zone.Id}'");
 	}
 

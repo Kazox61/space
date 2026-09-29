@@ -6,6 +6,8 @@ using Fixed32;
 namespace Space.GameCore;
 
 public static class LevelDataCodec {
+	private static readonly Encoding s_strictUtf8 = new UTF8Encoding(encoderShouldEmitUTF8Identifier: false, throwOnInvalidBytes: true);
+
 	private const uint Magic = 0x4C564C53; // "SLVL" in little-endian byte order.
 	private const ushort Version = 5;
 	internal const int HashSize = 32;
@@ -161,6 +163,12 @@ public static class LevelDataCodec {
 			return new LevelData(placements, boxes, navigation, zones);
 		} catch (EndOfStreamException exception) {
 			throw new InvalidDataException("Level data is truncated.", exception);
+		} catch (FormatException exception) {
+			throw new InvalidDataException("Level data contains malformed encoded data.", exception);
+		} catch (DecoderFallbackException exception) {
+			throw new InvalidDataException("Level data contains invalid UTF-8.", exception);
+		} catch (IOException exception) {
+			throw new InvalidDataException("Level data could not be decoded.", exception);
 		}
 	}
 
@@ -250,17 +258,41 @@ public static class LevelDataCodec {
 	}
 
 	private static NavZoneVolume ReadNavZone(BinaryReader reader) => new(
-		reader.ReadString(),
+		ReadBoundedString(reader, NavZoneData.MaxIdLength, "Level navigation zone id"),
 		ReadTransform(reader),
 		new FVector3(FP.FromRaw(reader.ReadInt32()), FP.FromRaw(reader.ReadInt32()), FP.FromRaw(reader.ReadInt32()))
 	);
 
 	private static string ReadSourcePath(BinaryReader reader, string kind, int index) {
-		var sourcePath = reader.ReadString();
+		var sourcePath = ReadBoundedString(reader, MaximumSourcePathLength, $"Level {kind} {index} source path");
 		if (string.IsNullOrWhiteSpace(sourcePath) || sourcePath.Length > MaximumSourcePathLength) {
 			throw new InvalidDataException($"Level {kind} {index} has an invalid source path.");
 		}
 		return sourcePath;
+	}
+
+	internal static string ReadBoundedString(BinaryReader reader, int maximumCharacters, string context) {
+		var byteLength = 0;
+		for (var shift = 0; shift < 35; shift += 7) {
+			var value = reader.ReadByte();
+			if (shift == 28 && (value & 0xF8) != 0) {
+				throw new InvalidDataException($"{context} has a malformed length prefix.");
+			}
+			byteLength |= (value & 0x7F) << shift;
+			if ((value & 0x80) == 0) {
+				var maximumBytes = Encoding.UTF8.GetMaxByteCount(maximumCharacters);
+				if (byteLength > maximumBytes || byteLength > reader.BaseStream.Length - reader.BaseStream.Position) {
+					throw new InvalidDataException($"{context} length is invalid.");
+				}
+				var bytes = reader.ReadBytes(byteLength);
+				var text = s_strictUtf8.GetString(bytes);
+				if (text.Length > maximumCharacters) {
+					throw new InvalidDataException($"{context} exceeds {maximumCharacters} characters.");
+				}
+				return text;
+			}
+		}
+		throw new InvalidDataException($"{context} has a malformed length prefix.");
 	}
 
 	private static void WriteTransform(BinaryWriter writer, in FWorldTransform transform) {

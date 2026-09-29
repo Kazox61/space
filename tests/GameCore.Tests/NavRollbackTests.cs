@@ -49,7 +49,7 @@ public sealed class NavRollbackTests {
 		var character = FindCharacter<NavRollbackWorldA>();
 		ref var agent = ref character.Ref<NavAgent>();
 		// Distinct non-zero values everywhere, including every corridor slot.
-		agent = NavAgent.Create(F.FP.FromRatio(13, 7), F.FP.FromRatio(5, 3), F.FP.FromRatio(11, 4), 17, 0x5A5A);
+		agent = NavAgent.Create(F.FP.FromRatio(13, 7), F.FP.FromRatio(5, 3), F.FP.FromRatio(11, 4), 17, 0x5A5A, F.FP.FromRatio(13, 5));
 		agent.SetDestination(new F.FVector3(F.FP.FromRatio(-7, 3), F.FP.FromRatio(1, 9), F.FP.FromRatio(22, 7)));
 		agent.Status = NavAgentStatus.Moving;
 		agent.PathStatus = NavPathStatus.FoundTruncated;
@@ -145,7 +145,7 @@ public sealed class NavRollbackTests {
 			$"(NavAgent {System.Runtime.CompilerServices.Unsafe.SizeOf<NavAgent>()}), room for {capacity} characters in the {Core<NavRollbackWorldA>.GameWorldRollback.WorldSnapshotLength}-byte frame");
 
 		Assert.Multiple(() => {
-			Assert.That(System.Runtime.CompilerServices.Unsafe.SizeOf<NavAgent>(), Is.EqualTo(392), "update the documented snapshot cost");
+			Assert.That(System.Runtime.CompilerServices.Unsafe.SizeOf<NavAgent>(), Is.EqualTo(400), "update the documented snapshot cost");
 			Assert.That(perAgent, Is.LessThan(1024));
 			Assert.That(capacity, Is.GreaterThanOrEqualTo(256), "rollback frames must hold at least 256 navigation characters");
 		});

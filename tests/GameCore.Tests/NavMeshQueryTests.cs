@@ -77,6 +77,26 @@ public sealed class NavMeshQueryTests {
 	}
 
 	[Test]
+	public void AgentLocationPrefersPassableTriangleOnSameSurface() {
+		var mesh = Strip();
+		mesh.Areas[0].IsBlocked = true;
+		var query = new NavMeshQuery(mesh);
+
+		Core<NavAgentTestWorldA>.NavAgentSystem.Locate(query, V(2, 0, 2), 1, FP.One, out var triangle);
+
+		Assert.That(triangle, Is.EqualTo(1));
+	}
+
+	[Test]
+	public void AgentLocationRejectsAnOffMeshStartBeyondItsSnapDistance() {
+		var query = new NavMeshQuery(Strip());
+
+		Core<NavAgentTestWorldA>.NavAgentSystem.Locate(query, V(40, 0, 2), 1, FP.One, out var triangle);
+
+		Assert.That(triangle, Is.EqualTo(-1));
+	}
+
+	[Test]
 	public void EndpointTieBreakNeverSwapsFloors() {
 		var mesh = TwoFloors();
 		mesh.Areas[0].AreaMask = 2;
@@ -218,6 +238,20 @@ public sealed class NavMeshQueryTests {
 	}
 
 	[Test]
+	public void HeightAwarePassableProjectionStaysOnTheNearestFloor() {
+		var mesh = TwoFloors();
+		mesh.Areas[2].IsBlocked = true;
+		var query = new NavMeshQuery(mesh);
+
+		var projected = query.ProjectToPassable(XZ(3, 1), 3.ToFP(), 2.ToFP(), 1, out var triangle);
+
+		Assert.Multiple(() => {
+			Assert.That(triangle, Is.EqualTo(3));
+			Assert.That(query.SampleHeight(projected, triangle), Is.EqualTo(3.ToFP()));
+		});
+	}
+
+	[Test]
 	public void ClosestPointSearchesTheWholeMesh() {
 		var query = new NavMeshQuery(Strip());
 
@@ -289,6 +323,30 @@ public sealed class NavMeshQueryTests {
 			() => new NavMesh(vertices, triangles, [NavTriangleArea.Default],
 				new FAABB2(XZ(0, 0), XZ(4, 4)), [0, 1], [0], 1, 1, 4.ToFP(), XZ(0, 0)),
 			Throws.ArgumentException.With.Message.Contains("domain"));
+	}
+
+	[Test]
+	public void MeshRejectsBoundsThatDoNotMatchItsVertices() {
+		FVector3[] vertices = [V(0, 0, 0), V(4, 0, 0), V(0, 0, 4)];
+		NavTriangle[] triangles = [NavTriangle.Create(vertices, 0, 1, 2, -1, -1, -1)];
+
+		Assert.That(
+			() => new NavMesh(vertices, triangles, [NavTriangleArea.Default],
+				new FAABB2(XZ(0, 0), XZ(5, 4)), [0, 1], [0], 1, 1, 5.ToFP(), XZ(0, 0)),
+			Throws.ArgumentException.With.Message.Contains("bounds"));
+	}
+
+	[TestCase(false, TestName = "MeshRejectsMissingGridMembership")]
+	[TestCase(true, TestName = "MeshRejectsDuplicateGridMembership")]
+	public void MeshRejectsNonCanonicalGridMembership(bool duplicate) {
+		FVector3[] vertices = [V(0, 0, 0), V(4, 0, 0), V(0, 0, 4)];
+		NavTriangle[] triangles = [NavTriangle.Create(vertices, 0, 1, 2, -1, -1, -1)];
+		var gridTriangles = duplicate ? new[] { 0, 0 } : Array.Empty<int>();
+
+		Assert.That(
+			() => new NavMesh(vertices, triangles, [NavTriangleArea.Default],
+				new FAABB2(XZ(0, 0), XZ(4, 4)), [0, gridTriangles.Length], gridTriangles, 1, 1, 4.ToFP(), XZ(0, 0)),
+			Throws.ArgumentException.With.Message.Contains("membership"));
 	}
 
 	/// <summary>The navmesh shipped in the committed sample level.</summary>

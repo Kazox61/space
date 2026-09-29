@@ -77,6 +77,7 @@ public sealed class NavZoneData {
 public sealed class LevelNavigation {
 	public LevelNavigation(NavBakeSettings settings, NavMeshData mesh, IEnumerable<NavZoneData>? zones = null) {
 		ArgumentNullException.ThrowIfNull(mesh);
+		settings.Validate();
 		Settings = settings;
 		Mesh = mesh;
 		Zones = zones?.ToArray() ?? [];
