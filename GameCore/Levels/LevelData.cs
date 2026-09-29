@@ -11,6 +11,8 @@ public enum LevelEntityType : byte {
 	Door = 3,
 	/// <summary>A static sensor box; a character stepping onto it toggles the doors of its zone.</summary>
 	PressurePlate = 4,
+	/// <summary>A kinematic box that patrols between two stops and can represent a navigation link.</summary>
+	Platform = 5,
 }
 
 public enum LootKind : byte {
@@ -33,6 +35,8 @@ public readonly record struct BoxShapeData(FVector3 HalfExtents, FP Density);
 /// </summary>
 public readonly record struct DoorMotionData(FVector3 OpenOffset, FP Speed, bool StartsOpen);
 
+public readonly record struct RailMotionData(FVector3 TravelOffset, FP Speed, bool StartsAtEnd);
+
 /// <summary>
 /// The components a placement carries; null when absent. Which ones an entity type requires or forbids is
 /// checked by validation.
@@ -45,7 +49,8 @@ public readonly record struct PlacementComponents(
 	ViewAsset? View = null,
 	NavContribution? Navigation = null,
 	string? ZoneLink = null,
-	DoorMotionData? DoorMotion = null
+	DoorMotionData? DoorMotion = null,
+	RailMotionData? RailMotion = null
 ) {
 	public bool Has(LevelEntityComponentKind kind) => kind switch {
 		LevelEntityComponentKind.Health => Health.HasValue,
@@ -56,6 +61,7 @@ public readonly record struct PlacementComponents(
 		LevelEntityComponentKind.Navigation => Navigation.HasValue,
 		LevelEntityComponentKind.ZoneLink => ZoneLink is not null,
 		LevelEntityComponentKind.DoorMotion => DoorMotion.HasValue,
+		LevelEntityComponentKind.RailMotion => RailMotion.HasValue,
 		_ => false,
 	};
 }
@@ -98,7 +104,7 @@ public sealed class LevelData {
 	public IReadOnlyList<EntityPlacement> Entities { get; }
 
 	/// <summary>
-	/// The <see cref="LevelEntityType.StaticGeometry"/> placements as bake input, ordinal by source path.
+	/// The static geometry and platform start poses used as bake input, ordinal by source path.
 	/// Placements without a box shape or navigation are left out; validation rejects them.
 	/// </summary>
 	public IReadOnlyList<NavSourceBox> NavigationSources { get; }
@@ -116,7 +122,7 @@ public sealed class LevelData {
 	) {
 		Entities = entities.ToArray();
 		NavigationSources = Entities
-			.Where(static placement => placement.Type == LevelEntityType.StaticGeometry
+			.Where(static placement => (placement.Type is LevelEntityType.StaticGeometry or LevelEntityType.Platform)
 				&& placement.Components is { BoxShape: not null, Navigation: not null })
 			.Select(static placement => new NavSourceBox(
 				placement.SourcePath,

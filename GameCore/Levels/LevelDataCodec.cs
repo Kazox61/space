@@ -9,7 +9,8 @@ public static class LevelDataCodec {
 	private static readonly Encoding s_strictUtf8 = new UTF8Encoding(encoderShouldEmitUTF8Identifier: false, throwOnInvalidBytes: true);
 
 	private const uint Magic = 0x4C564C53; // "SLVL" in little-endian byte order.
-	private const ushort Version = 7;
+	private const ushort Version = 8;
+	private const ushort PreviousVersion = 7;
 	internal const int HashSize = 32;
 	internal const int HashOffset = sizeof(uint) + sizeof(ushort) + sizeof(int);
 	internal const int EnvelopeSize = HashOffset + HashSize;
@@ -17,8 +18,9 @@ public static class LevelDataCodec {
 	private const int MaximumEntityCount = 100_000;
 	private const int MaximumNavZoneCount = NavZoneData.MaxZones;
 	private const int MaximumPayloadSize = 64 * 1024 * 1024;
-	private const int ComponentKindCount = (int)LevelEntityComponentKind.DoorMotion + 1;
+	private const int ComponentKindCount = (int)LevelEntityComponentKind.RailMotion + 1;
 	private const int KnownComponentMask = (1 << ComponentKindCount) - 1;
+	private const int PreviousKnownComponentMask = (1 << (int)LevelEntityComponentKind.RailMotion) - 1;
 
 	public static byte[] Serialize(LevelData level) {
 		var ordered = level.Entities.OrderBy(static entity => entity.SourcePath, StringComparer.Ordinal).ToArray();
@@ -77,8 +79,8 @@ public static class LevelDataCodec {
 				throw new InvalidDataException("Level has an invalid magic header.");
 			}
 			var version = reader.ReadUInt16();
-			if (version != Version) {
-				throw new InvalidDataException($"Level version {version} is unsupported; expected {Version}.");
+			if (version is not Version and not PreviousVersion) {
+				throw new InvalidDataException($"Level version {version} is unsupported; expected {PreviousVersion} or {Version}.");
 			}
 
 			var payloadLength = reader.ReadInt32();
@@ -104,7 +106,7 @@ public static class LevelDataCodec {
 			var placements = new EntityPlacement[count];
 			string? previousSourcePath = null;
 			for (var i = 0; i < count; i++) {
-				placements[i] = ReadPlacement(payloadReader, i);
+				placements[i] = ReadPlacement(payloadReader, i, version);
 				if (previousSourcePath is not null
 					&& StringComparer.Ordinal.Compare(previousSourcePath, placements[i].SourcePath) >= 0) {
 					throw new InvalidDataException("Level entity source paths are duplicated or not canonically ordered.");
@@ -193,14 +195,22 @@ public static class LevelDataCodec {
 			writer.Write(motion.Speed.RawValue);
 			writer.Write(motion.StartsOpen);
 		}
+		if (components.RailMotion is { } rail) {
+			writer.Write(rail.TravelOffset.X.RawValue);
+			writer.Write(rail.TravelOffset.Y.RawValue);
+			writer.Write(rail.TravelOffset.Z.RawValue);
+			writer.Write(rail.Speed.RawValue);
+			writer.Write(rail.StartsAtEnd);
+		}
 	}
 
-	private static EntityPlacement ReadPlacement(BinaryReader reader, int index) {
+	private static EntityPlacement ReadPlacement(BinaryReader reader, int index, ushort version) {
 		var sourcePath = ReadSourcePath(reader, "entity", index);
 		var type = (LevelEntityType)reader.ReadByte();
 		var transform = ReadTransform(reader);
 		var mask = reader.ReadUInt16();
-		if ((mask & ~KnownComponentMask) != 0) {
+		var knownMask = version == PreviousVersion ? PreviousKnownComponentMask : KnownComponentMask;
+		if ((mask & ~knownMask) != 0) {
 			throw new InvalidDataException($"{sourcePath}: unknown entity components in mask 0x{mask:X4}.");
 		}
 		bool Has(LevelEntityComponentKind kind) => (mask & (1 << (int)kind)) != 0;
@@ -225,6 +235,17 @@ public static class LevelDataCodec {
 						0 => false,
 						1 => true,
 						var value => throw new InvalidDataException($"{sourcePath}: invalid door start state {value}."),
+					}
+				)
+				: null,
+			RailMotion: Has(LevelEntityComponentKind.RailMotion)
+				? new RailMotionData(
+					new FVector3(FP.FromRaw(reader.ReadInt32()), FP.FromRaw(reader.ReadInt32()), FP.FromRaw(reader.ReadInt32())),
+					FP.FromRaw(reader.ReadInt32()),
+					reader.ReadByte() switch {
+						0 => false,
+						1 => true,
+						var value => throw new InvalidDataException($"{sourcePath}: invalid rail start state {value}."),
 					}
 				)
 				: null

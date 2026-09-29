@@ -69,4 +69,26 @@ public static class TestLevels {
 			ZoneLink: zoneId
 		)
 	);
+
+	public static EntityPlacement Platform(
+		string path,
+		FWorldTransform start,
+		FVector3 halfExtents,
+		string zoneId,
+		FVector3 travelOffset,
+		FP speed,
+		bool startsAtEnd = false
+	) => new(
+		path,
+		LevelEntityType.Platform,
+		start,
+		new PlacementComponents(
+			Body: BodyType.Kinematic,
+			BoxShape: new BoxShapeData(halfExtents, FP.One),
+			View: ViewAsset.Platform,
+			Navigation: NavContribution.Walkable,
+			ZoneLink: zoneId,
+			RailMotion: new RailMotionData(travelOffset, speed, startsAtEnd)
+		)
+	);
 }

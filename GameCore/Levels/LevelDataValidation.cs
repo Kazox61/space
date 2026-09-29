@@ -11,28 +11,34 @@ internal static class LevelDataValidation {
 
 	private static readonly TypeRules s_crate = new(
 		[LevelEntityComponentKind.Health, LevelEntityComponentKind.Loot, LevelEntityComponentKind.Body, LevelEntityComponentKind.BoxShape, LevelEntityComponentKind.View],
-		[LevelEntityComponentKind.Navigation],
+		[LevelEntityComponentKind.Navigation, LevelEntityComponentKind.RailMotion],
 		[BodyType.Dynamic, BodyType.Kinematic]
 	);
 
 	// No View: the client draws static geometry from the map scene itself, so a view would draw it twice.
 	private static readonly TypeRules s_staticGeometry = new(
 		[LevelEntityComponentKind.Body, LevelEntityComponentKind.BoxShape, LevelEntityComponentKind.Navigation],
-		[LevelEntityComponentKind.Health, LevelEntityComponentKind.Loot, LevelEntityComponentKind.View],
+		[LevelEntityComponentKind.Health, LevelEntityComponentKind.Loot, LevelEntityComponentKind.View, LevelEntityComponentKind.RailMotion],
 		[BodyType.Static]
 	);
 
 	private static readonly TypeRules s_door = new(
 		[LevelEntityComponentKind.Body, LevelEntityComponentKind.BoxShape, LevelEntityComponentKind.View, LevelEntityComponentKind.ZoneLink, LevelEntityComponentKind.DoorMotion],
-		[LevelEntityComponentKind.Health, LevelEntityComponentKind.Loot, LevelEntityComponentKind.Navigation],
+		[LevelEntityComponentKind.Health, LevelEntityComponentKind.Loot, LevelEntityComponentKind.Navigation, LevelEntityComponentKind.RailMotion],
 		[BodyType.Kinematic]
 	);
 
 	// No View, like static geometry: a plate never moves, so the map scene draws it.
 	private static readonly TypeRules s_pressurePlate = new(
 		[LevelEntityComponentKind.Body, LevelEntityComponentKind.BoxShape, LevelEntityComponentKind.ZoneLink],
-		[LevelEntityComponentKind.Health, LevelEntityComponentKind.Loot, LevelEntityComponentKind.View, LevelEntityComponentKind.Navigation, LevelEntityComponentKind.DoorMotion],
+		[LevelEntityComponentKind.Health, LevelEntityComponentKind.Loot, LevelEntityComponentKind.View, LevelEntityComponentKind.Navigation, LevelEntityComponentKind.DoorMotion, LevelEntityComponentKind.RailMotion],
 		[BodyType.Static]
+	);
+
+	private static readonly TypeRules s_platform = new(
+		[LevelEntityComponentKind.Body, LevelEntityComponentKind.BoxShape, LevelEntityComponentKind.View, LevelEntityComponentKind.Navigation, LevelEntityComponentKind.ZoneLink, LevelEntityComponentKind.RailMotion],
+		[LevelEntityComponentKind.Health, LevelEntityComponentKind.Loot, LevelEntityComponentKind.DoorMotion],
+		[BodyType.Kinematic]
 	);
 
 	public static void Validate(in EntityPlacement placement) {
@@ -44,6 +50,7 @@ internal static class LevelDataValidation {
 			LevelEntityType.StaticGeometry => s_staticGeometry,
 			LevelEntityType.Door => s_door,
 			LevelEntityType.PressurePlate => s_pressurePlate,
+			LevelEntityType.Platform => s_platform,
 			_ => throw new InvalidDataException($"{placement.SourcePath}: unsupported entity type {placement.Type}."),
 		};
 		var components = placement.Components;
@@ -87,6 +94,16 @@ internal static class LevelDataValidation {
 				throw new InvalidDataException($"{placement.SourcePath}: door speed must be in (0, 20].");
 			}
 		}
+		if (components.RailMotion is { } rail) {
+			var travelLimit = FP.FromRatio(80, 1);
+			if (rail.TravelOffset == FVector3.Zero
+				|| FP.Abs(rail.TravelOffset.X) > travelLimit || FP.Abs(rail.TravelOffset.Y) > travelLimit || FP.Abs(rail.TravelOffset.Z) > travelLimit) {
+				throw new InvalidDataException($"{placement.SourcePath}: rail travel offset must be non-zero and at most {travelLimit} per axis.");
+			}
+			if (rail.Speed <= FP.Zero || rail.Speed > FP.FromRatio(20, 1)) {
+				throw new InvalidDataException($"{placement.SourcePath}: rail speed must be in (0, 20].");
+			}
+		}
 		if (FQuaternion.LengthSqr(placement.Transform.Rotation) <= FP.CalculationsEpsilonSqr) {
 			throw new InvalidDataException($"{placement.SourcePath}: rotation must be non-zero.");
 		}
@@ -96,9 +113,18 @@ internal static class LevelDataValidation {
 
 	/// <summary>Every <see cref="PlacementComponents.ZoneLink"/> must name one of the level's zone volumes.</summary>
 	public static void ValidateZoneLinks(IEnumerable<EntityPlacement> placements, IReadOnlyList<NavZoneVolume> zones) {
-		foreach (var placement in placements) {
+		var materialized = placements as IReadOnlyList<EntityPlacement> ?? placements.ToArray();
+		foreach (var placement in materialized) {
 			if (placement.Components.ZoneLink is { } zoneLink && !zones.Any(zone => StringComparer.Ordinal.Equals(zone.Id, zoneLink))) {
 				throw new InvalidDataException($"{placement.SourcePath}: zone link '{zoneLink}' names no navigation zone in the level.");
+			}
+		}
+
+		foreach (var zone in zones) {
+			var linked = materialized.Where(placement => StringComparer.Ordinal.Equals(placement.Components.ZoneLink, zone.Id)).ToArray();
+			if (linked.Any(static placement => placement.Type == LevelEntityType.Door)
+				&& linked.Any(static placement => placement.Type == LevelEntityType.Platform)) {
+				throw new InvalidDataException($"Navigation zone '{zone.Id}' cannot be controlled by both doors and platforms.");
 			}
 		}
 	}

@@ -4,6 +4,7 @@ using Fixed;
 using Fixed32;
 using NUnit.Framework;
 using Shenanicode.Rollback;
+using Space.NavBuilder;
 using static Space.GameCore.Core<Space.GameCore.Tests.LevelTestWorld>;
 
 namespace Space.GameCore.Tests;
@@ -46,6 +47,38 @@ public sealed class LevelDataTests {
 		var bytes = LevelDataCodec.Serialize(new LevelData([Placement("Map/A", 100, LootKind.None, Fixed64.FP.Zero)]));
 		bytes[4] = 99;
 		Assert.That(() => LevelDataCodec.Deserialize(bytes), Throws.TypeOf<InvalidDataException>());
+	}
+
+	[Test]
+	public void CodecReadsVersion7EntitiesZonesAndNavigation() {
+		var zone = new NavZoneVolume(
+			"gate",
+			new FWorldTransform(new FPos(Fixed64.FP.Zero, Fixed64.FP.Half, Fixed64.FP.Zero), FQuaternion.Identity),
+			new FVector3(FP.Two, FP.One, FP.Two));
+		var source = NavMeshBaker.BakeLevel(
+			new LevelData([
+				PhysicsSmokeTest.TestLevels.StaticBox(
+					"Map/Ground",
+					new FWorldTransform(new FPos(Fixed64.FP.Zero, Fixed64.FP.Zero, Fixed64.FP.Zero), FQuaternion.Identity),
+					new FVector3(10.ToFP(), FP.Half, 10.ToFP()))
+			], navZones: [zone]),
+			NavBakeSettings.Default,
+			out _);
+		// Version 7 and 8 have identical envelopes and payloads when the new RailMotion bit is absent.
+		var bytes = LevelDataCodec.Serialize(source);
+		bytes[sizeof(uint)] = 7;
+		bytes[sizeof(uint) + 1] = 0;
+
+		var decoded = LevelDataCodec.Deserialize(bytes);
+
+		Assert.Multiple(() => {
+			Assert.That(decoded.Entities, Is.EqualTo(source.Entities));
+			Assert.That(decoded.NavZones, Is.EqualTo(source.NavZones));
+			Assert.That(decoded.Navigation, Is.Not.Null);
+			Assert.That(decoded.Navigation!.Mesh.Vertices.ToArray(), Is.EqualTo(source.Navigation!.Mesh.Vertices.ToArray()));
+			Assert.That(decoded.Navigation.Zones.Single().Id, Is.EqualTo("gate"));
+			Assert.That(decoded.Navigation.Zones.Single().Triangles.ToArray(), Is.EqualTo(source.Navigation.Zones.Single().Triangles.ToArray()));
+		});
 	}
 
 	[Test]
@@ -187,6 +220,23 @@ public sealed class LevelDataTests {
 	}
 
 	[Test]
+	public void CodecRoundTripsRailPlatforms() {
+		var platform = Platform("Map/Elevator");
+		var level = new LevelData([platform], navZones: [GateZone()]);
+		var bytes = LevelDataCodec.Serialize(level);
+		var decoded = LevelDataCodec.Deserialize(bytes);
+
+		Assert.Multiple(() => {
+			Assert.That(LevelDataCodec.Serialize(decoded), Is.EqualTo(bytes));
+			Assert.That(decoded.Entities.Single().Type, Is.EqualTo(LevelEntityType.Platform));
+			Assert.That(decoded.Entities.Single().Components, Is.EqualTo(platform.Components));
+			Assert.That(decoded.NavigationSources, Is.EqualTo(new[] {
+				new NavSourceBox(platform.SourcePath, platform.Transform, platform.Components.BoxShape!.Value.HalfExtents, NavContribution.Walkable),
+			}));
+		});
+	}
+
+	[Test]
 	public void ZoneLinksMustNameALevelZone() {
 		Assert.Multiple(() => {
 			Assert.That(() => LevelDataCodec.Serialize(new LevelData([Door("Map/Door")])),
@@ -196,6 +246,14 @@ public sealed class LevelDataTests {
 			Assert.That(() => LevelDataCodec.Serialize(new LevelData([unlinked], navZones: [GateZone()])),
 				Throws.TypeOf<InvalidDataException>().With.Message.Contains("missing").And.Message.Contains("ZoneLink"));
 		});
+	}
+
+	[Test]
+	public void OneZoneCannotMixDoorAndPlatformControllers() {
+		var level = new LevelData([Door("Map/Door"), Platform("Map/Platform")], navZones: [GateZone()]);
+
+		Assert.That(() => LevelDataCodec.Serialize(level),
+			Throws.TypeOf<InvalidDataException>().With.Message.Contains("both doors and platforms"));
 	}
 
 	[Test]
@@ -211,18 +269,22 @@ public sealed class LevelDataTests {
 				Throws.TypeOf<InvalidDataException>().With.Message.Contains("View not allowed on PressurePlate"));
 			Assert.That(() => LevelDataValidation.Validate(plate with { Components = plate.Components with { Body = BodyType.Kinematic } }),
 				Throws.TypeOf<InvalidDataException>().With.Message.Contains("Static body"));
+			Assert.That(() => LevelDataValidation.Validate(door with { Components = door.Components with { RailMotion = new RailMotionData(FVector3.Up, FP.One, false) } }),
+				Throws.TypeOf<InvalidDataException>().With.Message.Contains("RailMotion not allowed on Door"));
 		});
 	}
 
 	[Test]
-	public void NavigationSourcesAreStaticGeometryOrderedBySourcePath() {
+	public void NavigationSourcesIncludeStaticGeometryAndPlatformStartPosesOrderedBySourcePath() {
 		var level = new LevelData([
 			Box("Map/WallB", 3, NavContribution.ObstacleOnly),
 			Placement("Map/Crate", 100, LootKind.None, Fixed64.FP.Zero),
+			Platform("Map/Platform"),
 			Box("Map/WallA", -5),
 		]);
 
 		Assert.That(level.NavigationSources, Is.EqualTo(new[] {
+			new NavSourceBox("Map/Platform", Platform("Map/Platform").Transform, new FVector3(FP.Two, FP.Quarter, FP.Two), NavContribution.Walkable),
 			new NavSourceBox("Map/WallA", Box("Map/WallA", -5).Transform, new FVector3(40.ToFP(), 3.ToFP(), FP.One), NavContribution.Walkable),
 			new NavSourceBox("Map/WallB", Box("Map/WallB", 3).Transform, new FVector3(40.ToFP(), 3.ToFP(), FP.One), NavContribution.ObstacleOnly),
 		}));
@@ -357,6 +419,15 @@ public sealed class LevelDataTests {
 			Assert.That(ground.Components.Navigation, Is.EqualTo(NavContribution.Walkable));
 			Assert.That(testBox.Type, Is.EqualTo(LevelEntityType.StaticGeometry));
 			Assert.That(testBox.Components.Navigation, Is.EqualTo(NavContribution.ObstacleOnly));
+			Assert.That(level.Data.Entities.Single(static entity => entity.SourcePath == "ElevatorPlatform").Type, Is.EqualTo(LevelEntityType.Platform));
+			Assert.That(level.Data.Entities.Single(static entity => entity.SourcePath == "ElevatorPlatform").Components.ZoneLink, Is.EqualTo("elevator"));
+			Assert.That(level.Data.Entities.Single(static entity => entity.SourcePath == "ElevatorPlatform").Components.Navigation, Is.EqualTo(NavContribution.Walkable));
+			Assert.That(level.Data.Entities.Where(static entity => entity.Type == LevelEntityType.StaticGeometry).Any(static entity =>
+				entity.Transform.Position.X - entity.Components.BoxShape!.Value.HalfExtents.X.To64() < Fixed64.FP.FromRatio(-12, 1)
+				&& entity.Transform.Position.X + entity.Components.BoxShape.Value.HalfExtents.X.To64() > Fixed64.FP.FromRatio(-12, 1)
+				&& entity.Transform.Position.Z - entity.Components.BoxShape.Value.HalfExtents.Z.To64() < Fixed64.FP.FromRatio(8, 1)
+				&& entity.Transform.Position.Z + entity.Components.BoxShape.Value.HalfExtents.Z.To64() > Fixed64.FP.FromRatio(8, 1)), Is.False,
+				"no static collider fills the elevator shaft");
 			Assert.That(level.Data.Entities.Single(static entity => entity.SourcePath == "VaultDoor").Components.ZoneLink, Is.EqualTo("vault"));
 			Assert.That(level.Data.Entities.Single(static entity => entity.SourcePath == "VaultPlate").Type, Is.EqualTo(LevelEntityType.PressurePlate));
 		});
@@ -434,6 +505,15 @@ public sealed class LevelDataTests {
 		new FWorldTransform(new FPos(Fixed64.FP.FromRatio(-7, 1), Fixed64.FP.Half, Fixed64.FP.Zero), FQuaternion.Identity),
 		new FVector3(FP.One, FP.Quarter, FP.One),
 		"gate"
+	);
+
+	private static EntityPlacement Platform(string path) => PhysicsSmokeTest.TestLevels.Platform(
+		path,
+		new FWorldTransform(new FPos(Fixed64.FP.FromRatio(4, 1), Fixed64.FP.One, Fixed64.FP.FromRatio(-6, 1)), FQuaternion.Identity),
+		new FVector3(FP.Two, FP.Quarter, FP.Two),
+		"gate",
+		new FVector3(FP.Zero, 4.ToFP(), FP.Zero),
+		FP.One
 	);
 
 	private static EntityPlacement Box(string path, int x, NavContribution navigation = NavContribution.Walkable) => PhysicsSmokeTest.TestLevels.StaticBox(

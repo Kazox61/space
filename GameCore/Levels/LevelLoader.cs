@@ -17,6 +17,9 @@ public abstract partial class Core<TWorld> where TWorld : struct, ISessionType, 
 					// A door must be valid at both ends of its travel.
 					PhysicsValidation.ValidateShape(CreateBoxShape(components.BoxShape.Value), components.Body.Value, OpenTransform(placement.Transform, motion), placement.SourcePath);
 				}
+				if (components.RailMotion is { } rail) {
+					PhysicsValidation.ValidateShape(CreateBoxShape(components.BoxShape.Value), components.Body.Value, RailEndTransform(placement.Transform, rail), placement.SourcePath);
+				}
 			}
 			LevelDataValidation.ValidateZoneLinks(level.Entities, level.NavZones);
 			var zoneIds = level.NavZones.Select(static zone => zone.Id).Order(StringComparer.Ordinal).ToArray();
@@ -42,6 +45,9 @@ public abstract partial class Core<TWorld> where TWorld : struct, ISessionType, 
 						break;
 					case LevelEntityType.PressurePlate:
 						SpawnPressurePlate(placement, ZoneIndex(zoneIds, placement));
+						break;
+					case LevelEntityType.Platform:
+						SpawnPlatform(placement, ZoneIndex(zoneIds, placement));
 						break;
 					default:
 						throw new InvalidDataException($"{placement.SourcePath}: unsupported entity type {placement.Type}.");
@@ -102,10 +108,37 @@ public abstract partial class Core<TWorld> where TWorld : struct, ISessionType, 
 			ShapeFactory.CreateShape(plate, shape);
 		}
 
+		private static void SpawnPlatform(in EntityPlacement placement, int zone) {
+			var components = placement.Components;
+			var motion = components.RailMotion!.Value;
+			var end = RailEndTransform(placement.Transform, motion);
+			var startTransform = motion.StartsAtEnd ? end : placement.Transform;
+			var platform = W.NewEntity<Default>();
+			var transform = new Transform();
+			transform.SetFromWorldTransform(startTransform);
+			platform.Set(transform);
+			platform.Set(new ViewId { Value = components.View!.Value });
+			platform.Set(new PatrolRail {
+				Start = placement.Transform.Position,
+				End = end.Position,
+				Speed = motion.Speed,
+				MovingToEnd = !motion.StartsAtEnd,
+				DwellTicksRemaining = RailMotionSystem.EndpointDwellSeconds * S.TickRate,
+				Zone = zone,
+			});
+			BodyOperations.CreateBody(platform, components.Body!.Value, startTransform);
+			ShapeFactory.CreateShape(platform, CreateBoxShape(components.BoxShape!.Value));
+		}
+
 		/// <summary>The door's open pose: its placed pose moved by the open offset, turned into world space.</summary>
 		private static FWorldTransform OpenTransform(in FWorldTransform closed, in DoorMotionData motion) {
 			var offset = FQuaternion.Normalize(closed.Rotation) * motion.OpenOffset;
 			return new FWorldTransform(closed.Position + offset, closed.Rotation);
+		}
+
+		private static FWorldTransform RailEndTransform(in FWorldTransform start, in RailMotionData motion) {
+			var offset = FQuaternion.Normalize(start.Rotation) * motion.TravelOffset;
+			return new FWorldTransform(start.Position + offset, start.Rotation);
 		}
 
 		/// <summary>The linked zone's index among the level's zone ids in ordinal order; see <see cref="DoorState.Zone"/>.</summary>

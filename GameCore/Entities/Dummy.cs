@@ -4,7 +4,7 @@ namespace Space.GameCore;
 
 /// <summary>
 /// A one-hit-kill target. Kinematic (not static) so it can slide along a <see cref="PatrolRail"/> --
-/// see <see cref="Core{TWorld}.DummyPatrolSystem"/>. Only the components independent of a spawn
+/// see <see cref="Core{TWorld}.RailMotionSystem"/>. Only the components independent of a spawn
 /// position/rail -- its <see cref="Body"/>, transform and velocity, its <see cref="Shape"/> (via
 /// <c>ShapeFactory.CreateShape</c>), and <see cref="PatrolRail"/> -- are set by whichever system
 /// spawns it (see <c>Core&lt;TWorld&gt;.SpawnDummySystem</c>), since <c>ShapeFactory</c> needs

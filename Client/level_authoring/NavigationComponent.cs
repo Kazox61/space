@@ -3,7 +3,7 @@ using Space.GameCore;
 
 namespace Space.Client.LevelAuthoring;
 
-/// <summary>How static geometry contributes to the offline navmesh bake. Required on static geometry, not allowed elsewhere.</summary>
+/// <summary>How static geometry or a platform's start pose contributes to the offline navmesh bake.</summary>
 [Tool, GlobalClass]
 public partial class NavigationComponent : EntityComponent {
 	[Export]

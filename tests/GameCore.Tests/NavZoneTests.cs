@@ -64,10 +64,10 @@ public sealed class NavZoneTests {
 		}
 
 		Assert.Multiple(() => {
-			Assert.That(navigation.Zones.Select(static zone => zone.Id), Is.EqualTo(new[] { "gate", "vault" }));
-			Assert.That(navigation.FindZone("gate"), Is.Zero);
+			Assert.That(navigation.Zones.Select(static zone => zone.Id), Is.EqualTo(new[] { "elevator", "gate", "vault" }));
+			Assert.That(navigation.FindZone("gate"), Is.EqualTo(GateZoneIndex));
 			Assert.That(navigation.FindZone("missing"), Is.EqualTo(-1));
-			Assert.That(states, Is.EqualTo(new[] { NavZoneState.Open(0), NavZoneState.Open(1) }));
+			Assert.That(states, Is.EqualTo(new[] { NavZoneState.Open(0), NavZoneState.Open(1), NavZoneState.Open(2) }));
 			Assert.That(AreaBytes(navigation.Mesh!), Is.EqualTo(BakedAreaBytes()));
 		});
 	}
@@ -80,7 +80,7 @@ public sealed class NavZoneTests {
 		var baked = Level().Navigation!.Mesh.Areas.ToArray();
 		var openSignature = navigation.ZoneSignature;
 
-		ZoneEntity<NavZoneTestWorld>().Ref<NavZoneState>().Blocked = true;
+		GateZoneEntity<NavZoneTestWorld>().Ref<NavZoneState>().Blocked = true;
 		Step<NavZoneTestWorld>();
 		var closedSignature = navigation.ZoneSignature;
 		var areas = navigation.Mesh!.Areas.ToArray();
@@ -90,10 +90,10 @@ public sealed class NavZoneTests {
 				Assert.That(areas[t].CostMultiplier, Is.EqualTo(baked[t].CostMultiplier), $"triangle {t} cost");
 			}
 			Assert.That(closedSignature, Is.Not.EqualTo(openSignature));
-			Assert.That(navigation.IsZoneBlocked(0), Is.True);
+			Assert.That(navigation.IsZoneBlocked(GateZoneIndex), Is.True);
 		});
 
-		ref var state = ref ZoneEntity<NavZoneTestWorld>().Ref<NavZoneState>();
+		ref var state = ref GateZoneEntity<NavZoneTestWorld>().Ref<NavZoneState>();
 		state.Blocked = false;
 		state.CostMultiplier = F.FP.FromRatio(3, 1);
 		Step<NavZoneTestWorld>();
@@ -106,7 +106,7 @@ public sealed class NavZoneTests {
 			Assert.That(navigation.ZoneSignature, Is.Not.EqualTo(openSignature).And.Not.EqualTo(closedSignature));
 		});
 
-		ZoneEntity<NavZoneTestWorld>().Ref<NavZoneState>() = NavZoneState.Open(0);
+		GateZoneEntity<NavZoneTestWorld>().Ref<NavZoneState>() = NavZoneState.Open(GateZoneIndex);
 		Step<NavZoneTestWorld>();
 		Assert.Multiple(() => {
 			Assert.That(AreaBytes(navigation.Mesh!), Is.EqualTo(BakedAreaBytes()), "an open zone restores the baked areas");
@@ -118,20 +118,20 @@ public sealed class NavZoneTests {
 	public void ZoneStatesCombineWithoutDependingOnOrder() {
 		CreateWorld<NavZoneTestWorld>(Level());
 		var navigation = Navigation<NavZoneTestWorld>();
-		ZoneEntity<NavZoneTestWorld>().Ref<NavZoneState>().CostMultiplier = F.FP.Two;
-		Core<NavZoneTestWorld>.W.NewEntity<Default>().Set(new NavZoneState { Zone = 0, Blocked = true, CostMultiplier = F.FP.Zero });
+		GateZoneEntity<NavZoneTestWorld>().Ref<NavZoneState>().CostMultiplier = F.FP.Two;
+		Core<NavZoneTestWorld>.W.NewEntity<Default>().Set(new NavZoneState { Zone = GateZoneIndex, Blocked = true, CostMultiplier = F.FP.Zero });
 		Core<NavZoneTestWorld>.W.NewEntity<Default>().Set(new NavZoneState { Zone = 7, Blocked = true, CostMultiplier = F.FP.FromRatio(3, 1) });
 
 		Step<NavZoneTestWorld>();
 
 		Assert.Multiple(() => {
-			Assert.That(navigation.IsZoneBlocked(0), Is.True, "any blocked state blocks");
-			Assert.That(navigation.ZoneCostMultiplier(0), Is.EqualTo(F.FP.Two), "the highest cost wins; zero counts as one");
+			Assert.That(navigation.IsZoneBlocked(GateZoneIndex), Is.True, "any blocked state blocks");
+			Assert.That(navigation.ZoneCostMultiplier(GateZoneIndex), Is.EqualTo(F.FP.Two), "the highest cost wins; zero counts as one");
 		});
 
 		navigation.ResetZones();
-		navigation.AddZoneState(new NavZoneState { Zone = 0, CostMultiplier = -F.FP.One });
-		Assert.That(navigation.ZoneCostMultiplier(0), Is.EqualTo(F.FP.One), "negative costs count as one");
+		navigation.AddZoneState(new NavZoneState { Zone = GateZoneIndex, CostMultiplier = -F.FP.One });
+		Assert.That(navigation.ZoneCostMultiplier(GateZoneIndex), Is.EqualTo(F.FP.One), "negative costs count as one");
 	}
 
 	[Test]
@@ -158,7 +158,7 @@ public sealed class NavZoneTests {
 		Assert.That(open.Status, Is.EqualTo(NavAgentStatus.Moving));
 		Assert.That(Corridor(open).Any(zone.Contains), Is.True, "the short route passes the box on the gate side");
 
-		ZoneEntity<NavZoneTestWorld>().Ref<NavZoneState>().Blocked = true;
+		GateZoneEntity<NavZoneTestWorld>().Ref<NavZoneState>().Blocked = true;
 		Step<NavZoneTestWorld>();
 		var closed = character.Read<NavAgent>();
 		Assert.Multiple(() => {
@@ -168,7 +168,7 @@ public sealed class NavZoneTests {
 			Assert.That(Corridor(closed).Any(zone.Contains), Is.False, "the new route avoids the closed zone");
 		});
 
-		ZoneEntity<NavZoneTestWorld>().Ref<NavZoneState>().Blocked = false;
+		GateZoneEntity<NavZoneTestWorld>().Ref<NavZoneState>().Blocked = false;
 		Step<NavZoneTestWorld>();
 		var reopened = character.Read<NavAgent>();
 		Assert.Multiple(() => {
@@ -182,7 +182,7 @@ public sealed class NavZoneTests {
 		CreateWorld<NavZoneTestWorld>(Level());
 		var character = TakeOverCharacter<NavZoneTestWorld>();
 		var zone = GateTriangles();
-		ZoneEntity<NavZoneTestWorld>().Ref<NavZoneState>().Blocked = true;
+		GateZoneEntity<NavZoneTestWorld>().Ref<NavZoneState>().Blocked = true;
 		character.Ref<NavAgent>().SetDestination(Point(4, 0));
 
 		var enteredZone = false;
@@ -203,7 +203,7 @@ public sealed class NavZoneTests {
 		var character = TakeOverCharacter<NavZoneTestWorld>();
 		var zone = GateTriangles();
 		character.Ref<Transform>().Position = new F.FVector3(F.FP.FromRatio(4, 1), F.FP.FromRatio(3, 2), F.FP.FromRatio(-6, 1));
-		ZoneEntity<NavZoneTestWorld>().Ref<NavZoneState>().Blocked = true;
+		GateZoneEntity<NavZoneTestWorld>().Ref<NavZoneState>().Blocked = true;
 		character.Ref<NavAgent>().SetDestination(Point(12, -6));
 
 		Step<NavZoneTestWorld>();
@@ -246,7 +246,7 @@ public sealed class NavZoneTests {
 	public void FullSyncWithAClosedZoneRederivesTheMesh() {
 		CreateWorld<NavZoneSyncSourceWorld>(Level());
 		AddPlayers<NavZoneSyncSourceWorld>();
-		ZoneEntity<NavZoneSyncSourceWorld>().Ref<NavZoneState>().Blocked = true;
+		GateZoneEntity<NavZoneSyncSourceWorld>().Ref<NavZoneState>().Blocked = true;
 		for (var i = 0; i < 30; i++) {
 			StepWithInput<NavZoneSyncSourceWorld>();
 		}
@@ -267,18 +267,22 @@ public sealed class NavZoneTests {
 			Assert.That(WorldHash<NavZoneSyncTargetWorld>(ref writerB), Is.EqualTo(WorldHash<NavZoneSyncSourceWorld>(ref writerA)), $"world hash after tick {tick}");
 			Assert.That(AreaBytes(Navigation<NavZoneSyncTargetWorld>().Mesh!), Is.EqualTo(AreaBytes(Navigation<NavZoneSyncSourceWorld>().Mesh!)), $"areas after tick {tick}");
 		}
-		Assert.That(Navigation<NavZoneSyncTargetWorld>().IsZoneBlocked(0), Is.True);
+		Assert.That(Navigation<NavZoneSyncTargetWorld>().IsZoneBlocked(GateZoneIndex), Is.True);
 	}
 
 	private static NavigationRes Navigation<TWorld>() where TWorld : struct, IWorldType, ISessionType {
 		return Core<TWorld>.Systems.GetResource<NavigationRes>();
 	}
 
-	private static World<TWorld>.Entity ZoneEntity<TWorld>() where TWorld : struct, IWorldType {
+	private static int GateZoneIndex => Level().Navigation!.Zones.ToList().FindIndex(static zone => zone.Id == "gate");
+
+	private static World<TWorld>.Entity GateZoneEntity<TWorld>() where TWorld : struct, IWorldType {
 		foreach (var entity in World<TWorld>.Query<All<NavZoneState>>().Entities()) {
-			return entity;
+			if (entity.Read<NavZoneState>().Zone == GateZoneIndex) {
+				return entity;
+			}
 		}
-		throw new AssertionException("no zone entity was spawned");
+		throw new AssertionException("no gate zone entity was spawned");
 	}
 
 	private static HashSet<int> GateTriangles() {

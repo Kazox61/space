@@ -18,9 +18,9 @@ public struct NavigationTestWorldB : IWorldType, ISessionType;
 public sealed class LevelNavigationTests {
 	private static LevelData? s_baked;
 
-	/// <summary>The sample level's static geometry and zones with navigation baked by the offline pipeline.</summary>
+	/// <summary>The sample level's bake sources and zones with navigation baked by the offline pipeline.</summary>
 	private static LevelData Baked() {
-		var sample = NavTestSession.Level();
+		var sample = NavTestSession.DoorLevel();
 		return s_baked ??= NavMeshBaker.BakeLevel(new LevelData(sample.Entities, navZones: sample.NavZones), NavBakeSettings.Default, out _);
 	}
 
@@ -118,7 +118,7 @@ public sealed class LevelNavigationTests {
 			Assert.That(NavMeshBytes.Of(navigation.Mesh.CreateMesh()), Is.EqualTo(NavMeshBytes.Of(Baked().Navigation!.Mesh.CreateMesh())),
 				"the committed navmesh differs from a fresh bake of the committed colliders; re-export the sample level");
 			Assert.That(ZoneTable(navigation), Is.EqualTo(ZoneTable(Baked().Navigation!)), "the committed zone table differs from a fresh bake");
-			Assert.That(navigation.Zones.Select(static zone => zone.Id), Is.EqualTo(new[] { "gate", "vault" }));
+			Assert.That(navigation.Zones.Select(static zone => zone.Id), Is.EqualTo(new[] { "elevator", "gate", "vault" }));
 		});
 	}
 

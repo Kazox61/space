@@ -57,7 +57,7 @@ public sealed class NavDebugDrawTests {
 			Assert.That(draw.Triangles.Select(t => t.Color).Distinct(), Is.EqualTo(new[] { NavDebugColor.WalkableArea }), "the sample ships one walkable area");
 			Assert.That(draw.Segments(NavDebugColor.ObstacleSource), Has.Count.EqualTo(6 * 12), "the test box and the five vault walls are outlined as obstacle-only");
 			Assert.That(draw.Segments(NavDebugColor.ObstacleClearance), Has.Count.EqualTo(6 * 4), "each obstacle gets a clearance ring");
-			Assert.That(draw.Segments(NavDebugColor.WalkableSource), Has.Count.EqualTo(12), "the ground is outlined as walkable");
+			Assert.That(draw.Segments(NavDebugColor.WalkableSource), Has.Count.EqualTo(4 * 12), "the four ground boxes around the shaft are outlined as walkable");
 			Assert.That(clearance, Has.Count.EqualTo(4));
 			Assert.That(clearance.SelectMany(s => new[] { s.A, s.B }).Select(p => (Math.Round(ToDouble(p.X), 3), Math.Round(ToDouble(p.Z), 3))).Distinct(),
 				Is.EquivalentTo(new[] { (-2.5, -8.5), (2.5, -8.5), (2.5, -3.5), (-2.5, -3.5) }), "footprint grown by the baked agent radius");
@@ -235,10 +235,11 @@ public sealed class NavDebugDrawTests {
 		overlay.Draw(closed, NavDebugDrawFlags.Triangles | NavDebugDrawFlags.Sources);
 
 		var zoneTriangles = Level().Navigation!.Zones.Sum(static zone => zone.Triangles.Length);
+		var zoneSegments = Level().Navigation!.Zones.Count * 12;
 		Assert.Multiple(() => {
-			Assert.That(open.Segments(NavDebugColor.OpenZone), Has.Count.EqualTo(2 * 12), "the gate and vault volumes are outlined as open");
+			Assert.That(open.Segments(NavDebugColor.OpenZone), Has.Count.EqualTo(zoneSegments), "every zone volume is outlined as open");
 			Assert.That(open.Segments(NavDebugColor.BlockedZone), Is.Empty);
-			Assert.That(closed.Segments(NavDebugColor.BlockedZone), Has.Count.EqualTo(2 * 12), "and as blocked once closed");
+			Assert.That(closed.Segments(NavDebugColor.BlockedZone), Has.Count.EqualTo(zoneSegments), "and as blocked once closed");
 			Assert.That(closed.Triangles.Count(t => t.Color == NavDebugColor.BlockedArea), Is.EqualTo(zoneTriangles), "its triangles are drawn blocked");
 		});
 	}

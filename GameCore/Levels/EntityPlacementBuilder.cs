@@ -14,6 +14,7 @@ public enum LevelEntityComponentKind : byte {
 	/// <summary>The id of the <see cref="NavZoneVolume"/> a door blocks or a pressure plate switches.</summary>
 	ZoneLink,
 	DoorMotion,
+	RailMotion,
 }
 
 public sealed class EntityPlacementBuilder {
@@ -36,6 +37,7 @@ public sealed class EntityPlacementBuilder {
 	public void SetNavigation(NavContribution navigation) => _components = _components with { Navigation = navigation };
 	public void SetZoneLink(string zoneId) => _components = _components with { ZoneLink = zoneId };
 	public void SetDoorMotion(FVector3 openOffset, FP speed, bool startsOpen) => _components = _components with { DoorMotion = new DoorMotionData(openOffset, speed, startsOpen) };
+	public void SetRailMotion(FVector3 travelOffset, FP speed, bool startsAtEnd) => _components = _components with { RailMotion = new RailMotionData(travelOffset, speed, startsAtEnd) };
 
 	/// <summary>The placement with the components that were set; validation rejects missing and forbidden ones.</summary>
 	public EntityPlacement Build() {

@@ -53,4 +53,10 @@ public struct Mover : IComponent {
 	/// hitting that reset), not edge-triggered like this project's.
 	/// </summary>
 	public FP JumpCooldown;
+
+	/// <summary>Velocity of the body currently supporting this mover. Zero while airborne.</summary>
+	public FVector3 SupportVelocity;
+
+	/// <summary>Support velocity retained after jumping or walking off a moving body.</summary>
+	public FVector3 InheritedVelocity;
 }

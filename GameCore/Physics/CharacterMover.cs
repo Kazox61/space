@@ -34,7 +34,7 @@ public abstract partial class Core<TWorld> where TWorld : struct, ISessionType, 
 			return CastMover(broadPhase, moverXf, capsule, translation, maxFraction, Filter.Default);
 		}
 
-		public static FP CastMover(BroadPhase broadPhase, FWorldTransform moverXf, Capsule capsule, FVector3 translation, FP maxFraction, Filter filter) {
+		public static FP CastMover(BroadPhase broadPhase, FWorldTransform moverXf, Capsule capsule, FVector3 translation, FP maxFraction, Filter filter, FP predictionTime = default) {
 			PhysicsValidation.ValidateCapsuleQuery(moverXf, capsule, translation);
 			if (maxFraction < FP.Zero || maxFraction > FP.One)
 				throw new ArgumentOutOfRangeException(nameof(maxFraction), "Mover cast fraction must be in [0, 1].");
@@ -50,7 +50,7 @@ public abstract partial class Core<TWorld> where TWorld : struct, ISessionType, 
 
 			var bestFraction = maxFraction;
 			for (var i = 0; i < candidates.Count; i++) {
-				if (!candidates[i].TryUnpack<TWorld>(out var shapeEntity) || !TryGetShapeAndTransform(shapeEntity, out var shape, out var candidateXf)) {
+				if (!candidates[i].TryUnpack<TWorld>(out var shapeEntity) || !TryGetShapeAndTransform(shapeEntity, predictionTime, out var shape, out var candidateXf)) {
 					continue;
 				}
 
@@ -90,6 +90,10 @@ public abstract partial class Core<TWorld> where TWorld : struct, ISessionType, 
 		}
 
 		public static void CollideMover(BroadPhase broadPhase, FWorldTransform moverXf, Capsule capsule, Filter filter, ref MoverPlaneBuffer outPlanes) {
+			CollideMover(broadPhase, moverXf, capsule, filter, FP.Zero, ref outPlanes);
+		}
+
+		public static void CollideMover(BroadPhase broadPhase, FWorldTransform moverXf, Capsule capsule, Filter filter, FP predictionTime, ref MoverPlaneBuffer outPlanes) {
 			PhysicsValidation.ValidateCapsuleQuery(moverXf, capsule, FVector3.Zero);
 			var localAabb = Capsule.ComputeAABB(capsule, FTransform.Identity);
 			var margin = new FVector3(B3Config.SpeculativeDistance, B3Config.SpeculativeDistance, B3Config.SpeculativeDistance);
@@ -105,7 +109,7 @@ public abstract partial class Core<TWorld> where TWorld : struct, ISessionType, 
 
 			for (var i = 0; i < candidates.Count; i++) {
 				var candidateGid = candidates[i];
-				if (!candidateGid.TryUnpack<TWorld>(out var shapeEntity) || !TryGetShapeAndTransform(shapeEntity, out var shape, out var candidateXf)) {
+				if (!candidateGid.TryUnpack<TWorld>(out var shapeEntity) || !TryGetShapeAndTransform(shapeEntity, predictionTime, out var shape, out var candidateXf)) {
 					continue;
 				}
 
@@ -191,6 +195,8 @@ public abstract partial class Core<TWorld> where TWorld : struct, ISessionType, 
 			public bool StartedSolid;
 			public FP Fraction;
 			public FVector3 Normal;
+			public EntityGID BodyGid;
+			public FPos Point;
 		}
 
 		/// <summary>
@@ -202,7 +208,7 @@ public abstract partial class Core<TWorld> where TWorld : struct, ISessionType, 
 		/// loop as <see cref="CastMover"/>, just against a box proxy built fresh here instead of the
 		/// mover's own capsule, and reporting hit/normal/deep-overlap instead of only a fraction.
 		/// </summary>
-		private static GroundTraceResult TraceBody(BroadPhase broadPhase, FPos origin, FVector3 translation, FP halfWidth, FP halfDepth, FP halfHeight, Filter filter) {
+		private static GroundTraceResult TraceBody(BroadPhase broadPhase, FPos origin, FVector3 translation, FP halfWidth, FP halfDepth, FP halfHeight, Filter filter, FP predictionTime) {
 			var proxy = new ShapeProxy { Count = 8, Radius = FP.Zero };
 			for (var i = 0; i < 8; i++) {
 				var sx = (i & 1) != 0 ? halfWidth : -halfWidth;
@@ -228,7 +234,7 @@ public abstract partial class Core<TWorld> where TWorld : struct, ISessionType, 
 			var bestFraction = FP.One;
 
 			for (var i = 0; i < candidates.Count; i++) {
-				if (!candidates[i].TryUnpack<TWorld>(out var shapeEntity) || !TryGetShapeAndTransform(shapeEntity, out var shape, out var candidateXf)) {
+				if (!candidates[i].TryUnpack<TWorld>(out var shapeEntity) || !TryGetShapeAndTransform(shapeEntity, predictionTime, out var shape, out var candidateXf)) {
 					continue;
 				}
 
@@ -263,6 +269,11 @@ public abstract partial class Core<TWorld> where TWorld : struct, ISessionType, 
 					result.Hit = true;
 					result.Fraction = output.Fraction;
 					result.Normal = candidateXf.Rotation * output.Normal;
+					result.Point = FWorldTransform.TransformPoint(candidateXf, output.Point);
+					if (shapeEntity.Has<W.Link<BodyOwner>>()) {
+						ref readonly var owner = ref shapeEntity.Read<W.Link<BodyOwner>>();
+						result.BodyGid = owner.Value;
+					}
 				}
 			}
 
@@ -299,7 +310,12 @@ public abstract partial class Core<TWorld> where TWorld : struct, ISessionType, 
 		}
 
 		public static bool UpdatePogoGrounding(BroadPhase broadPhase, FWorldTransform moverXf, Capsule capsule, FP dt, FP hertz, FP dampingRatio, FP jumpCooldown, FP maxSlopeNormalThreshold, Filter filter, ref FP pogoVelocity) {
+			return UpdatePogoGrounding(broadPhase, moverXf, capsule, dt, hertz, dampingRatio, jumpCooldown, maxSlopeNormalThreshold, filter, ref pogoVelocity, out _);
+		}
+
+		public static bool UpdatePogoGrounding(BroadPhase broadPhase, FWorldTransform moverXf, Capsule capsule, FP dt, FP hertz, FP dampingRatio, FP jumpCooldown, FP maxSlopeNormalThreshold, Filter filter, ref FP pogoVelocity, out FVector3 supportVelocity, FP predictionTime = default) {
 			PhysicsValidation.ValidateCapsuleQuery(moverXf, capsule, FVector3.Zero);
+			supportVelocity = FVector3.Zero;
 			// See Mover.JumpCooldown's remarks: skip the trace entirely while a jump is still in its
 			// cooldown window, matching box3d's CategorizeGround gating re-grounding on m_jumpCooldown.
 			if (jumpCooldown > FP.Zero) {
@@ -315,7 +331,7 @@ public abstract partial class Core<TWorld> where TWorld : struct, ISessionType, 
 			var halfHeight = capsule.Radius * FP.Half;
 			var radiusScale = FP.One;
 			var halfWidth = capsule.Radius * FP.Half * radiusScale;
-			var trace = TraceBody(broadPhase, origin, translation, halfWidth, halfWidth, halfHeight, filter);
+			var trace = TraceBody(broadPhase, origin, translation, halfWidth, halfWidth, halfHeight, filter, predictionTime);
 
 			while (trace.StartedSolid || (trace.Hit && !IsStandableSurface(trace.Normal, maxSlopeNormalThreshold))) {
 				radiusScale -= FP.FromRatio(1, 10);
@@ -325,7 +341,7 @@ public abstract partial class Core<TWorld> where TWorld : struct, ISessionType, 
 				}
 
 				halfWidth = capsule.Radius * FP.Half * radiusScale;
-				trace = TraceBody(broadPhase, origin, translation, halfWidth, halfWidth, halfHeight, filter);
+				trace = TraceBody(broadPhase, origin, translation, halfWidth, halfWidth, halfHeight, filter, predictionTime);
 			}
 
 			if (trace.StartedSolid || !trace.Hit || !IsStandableSurface(trace.Normal, maxSlopeNormalThreshold)) {
@@ -346,10 +362,15 @@ public abstract partial class Core<TWorld> where TWorld : struct, ISessionType, 
 			pogoVelocity = (pogoVelocity - omega * omegaH * (pogoCurrentLength - pogoRestLength))
 				/ (FP.One + 2 * dampingRatio * omegaH + omegaH * omegaH);
 
+			if (trace.BodyGid.TryUnpack<TWorld>(out var support) && support.Has<Body>()) {
+				ref readonly var body = ref support.Read<Body>();
+				supportVelocity = body.LinearVelocity + FVector3.Cross(body.AngularVelocity, trace.Point - body.Center);
+			}
+
 			return true;
 		}
 
-		private static bool TryGetShapeAndTransform(W.Entity shapeEntity, out Shape shape, out FWorldTransform transform) {
+		private static bool TryGetShapeAndTransform(W.Entity shapeEntity, FP predictionTime, out Shape shape, out FWorldTransform transform) {
 			ref readonly var shapeRef = ref shapeEntity.Read<Shape>()!; // Broad-phase proxies are always shape entities.
 			shape = shapeRef;
 			transform = default;
@@ -363,7 +384,13 @@ public abstract partial class Core<TWorld> where TWorld : struct, ISessionType, 
 				return false;
 			}
 
-			transform = bodyEntity.Read<Body>()!.Transform; // BodyOwner always links to an entity with Body.
+			ref readonly var body = ref bodyEntity.Read<Body>()!; // BodyOwner always links to an entity with Body.
+			transform = body.Transform;
+			if (predictionTime > FP.Zero && body.Type == BodyType.Kinematic) {
+				transform.Rotation = FQuaternion.IntegrateRotation(transform.Rotation, predictionTime * body.AngularVelocity);
+				var center = body.Center + predictionTime * body.LinearVelocity;
+				transform.Position = center + -(transform.Rotation * body.LocalCenter);
+			}
 			return true;
 		}
 

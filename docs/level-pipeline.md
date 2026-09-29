@@ -226,16 +226,22 @@ client: --level <name>, default level_pipeline_test → res://maps/<name>.level.
   Unknown mask bits are rejected. Version 7 widens the mask to 16 bits and
   adds ZoneLink (a zone id, which must name one of the level's zone volumes)
   and DoorMotion (open offset, speed, starts open) for the `Door` and
-  `PressurePlate` types.
+  `PressurePlate` types. Version 8 adds `RailMotion` (travel offset, speed,
+  starts at end) and the `Platform` type. Version 7 files remain readable.
   The file is: placements, zone volumes, navigation. Validation checks each
   type's components:
 
   | Type | Required | Not allowed | Body |
   | --- | --- | --- | --- |
-  | `Crate` | Health, Loot, Body, BoxShape, View | Navigation | Dynamic or Kinematic |
-  | `StaticGeometry` | Body, BoxShape, Navigation | Health, Loot, View | Static |
-  | `Door` | Body, BoxShape, View, ZoneLink, DoorMotion | Health, Loot, Navigation | Kinematic |
-  | `PressurePlate` | Body, BoxShape, ZoneLink | Health, Loot, View, Navigation, DoorMotion | Static |
+  | `Crate` | Health, Loot, Body, BoxShape, View | Navigation, RailMotion | Dynamic or Kinematic |
+  | `StaticGeometry` | Body, BoxShape, Navigation | Health, Loot, View, RailMotion | Static |
+  | `Door` | Body, BoxShape, View, ZoneLink, DoorMotion | Health, Loot, Navigation, RailMotion | Kinematic |
+  | `PressurePlate` | Body, BoxShape, ZoneLink | Health, Loot, View, Navigation, DoorMotion, RailMotion | Static |
+  | `Platform` | Body, BoxShape, View, Navigation, ZoneLink, RailMotion | Health, Loot, DoorMotion | Kinematic |
+
+  A platform's navigation box is baked only at its authored start pose and does
+  not create a duplicate static body at runtime. Rails dwell for three seconds
+  at each endpoint so agents can board and cross while the linked zone is open.
 
   `LevelLoader` spawns static geometry first, then one entity per navigation
   zone, then everything else, each group in `LevelData.Entities` order.

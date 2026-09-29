@@ -33,7 +33,7 @@ public sealed class NavMeshBakerTests {
 	}
 
 	[Test]
-	public void SampleBoxFootprintIsBlockedAndItsTopIsNotWalkable() {
+	public void SampleObstacleIsBlockedAndShaftPlatformIsWalkable() {
 		var mesh = Sample().Mesh;
 		var query = new NavMeshQuery(mesh);
 
@@ -41,7 +41,8 @@ public sealed class NavMeshBakerTests {
 			Assert.That(query.FindTriangle(XZ(0, -6)), Is.EqualTo(-1), "box centre");
 			Assert.That(query.FindTriangle(new F64.FVector2(F64.FP.Zero, F64.FP.FromRatio(-39, 10))), Is.EqualTo(-1), "0.1 from the box side");
 			Assert.That(query.FindTriangle(XZ(0, -3)), Is.GreaterThanOrEqualTo(0), "1.0 from the box side");
-			Assert.That(mesh.Vertices.ToArray().Max(static v => v.Y), Is.LessThanOrEqualTo(F64.FP.Half + MaxSurfaceLift), "nothing is walkable above the ground");
+			Assert.That(mesh.Vertices.ToArray().Max(static v => v.Y), Is.LessThanOrEqualTo(F64.FP.Half + MaxSurfaceLift), "all walkable floor starts flush");
+			Assert.That(query.FindTriangle(XZ(-12, 8)), Is.GreaterThanOrEqualTo(0), "the platform supplies walkable floor over the shaft");
 		});
 	}
 
@@ -177,6 +178,35 @@ public sealed class NavMeshBakerTests {
 
 		Assert.That(() => NavMeshBaker.BakeLevel(level, NavBakeSettings.Default, out _),
 			Throws.InstanceOf<InvalidDataException>().With.Message.Contains("covers no walkable navmesh"));
+	}
+
+	[Test]
+	public void PlatformIsTheOnlyWalkableFloorAcrossAShaft() {
+		var platform = PhysicsSmokeTest.TestLevels.Platform(
+			"Platform",
+			new FWorldTransform(new FPos(P(0), P(0), P(0)), FQuaternion.Identity),
+			new FVector3(2.ToFP(), FP.Half, 3.ToFP()),
+			"shaft",
+			new FVector3(FP.Zero, 4.ToFP(), FP.Zero),
+			FP.One);
+		var level = new LevelData([
+			PhysicsSmokeTest.TestLevels.StaticBox("Left", new FWorldTransform(new FPos(P(-6), P(0), P(0)), FQuaternion.Identity), new FVector3(4.ToFP(), FP.Half, 3.ToFP())),
+			platform,
+			PhysicsSmokeTest.TestLevels.StaticBox("Right", new FWorldTransform(new FPos(P(6), P(0), P(0)), FQuaternion.Identity), new FVector3(4.ToFP(), FP.Half, 3.ToFP())),
+		], navZones: [Zone("shaft", new FPos(P(0), P(1, 2), P(0)))]);
+
+		var baked = NavMeshBaker.BakeLevel(level, NavBakeSettings.Default, out _);
+		var navigation = baked.Navigation!;
+		var mesh = navigation.Mesh.CreateMesh();
+		var query = new NavMeshQuery(mesh);
+
+		Assert.Multiple(() => {
+			Assert.That(level.Entities.Count(static entity => entity.Type == LevelEntityType.Platform), Is.EqualTo(1));
+			Assert.That(level.Entities.Count(static entity => entity.Type == LevelEntityType.StaticGeometry), Is.EqualTo(2), "there is no static collider under the shaft");
+			Assert.That(query.FindTriangle(XZ(0, 0)), Is.GreaterThanOrEqualTo(0), "the platform start pose supplies the shaft floor");
+			Assert.That(navigation.Zones.Single().Triangles.Length, Is.GreaterThan(0));
+			Assert.That(FindPath(mesh, V(-6, 0.5, 0), V(6, 0.5, 0)), Is.EqualTo(NavPathStatus.Found));
+		});
 	}
 
 	[Test]

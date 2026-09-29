@@ -20,13 +20,23 @@ public abstract partial class Core<TWorld> where TWorld : struct, ISessionType, 
 	/// sample's CategorizeGround/TraceBody -- a small box sweep, not a single ray, so standing
 	/// mostly off a ledge doesn't still read as grounded), computed fresh each tick from
 	/// <see cref="Mover.CapsuleCenter1"/>, before the movement target is built; its spring-damper
-	/// output (<see cref="Mover.PogoVelocity"/>) is added into that target alongside
-	/// gravity-integrated <see cref="Mover.Velocity"/>, not just used as a boolean.
+	/// output (<see cref="Mover.PogoVelocity"/>) and the supporting body's point velocity are added
+	/// into that target alongside gravity-integrated <see cref="Mover.Velocity"/>. Support velocity
+	/// is retained on takeoff so rollback-corrected jumps from moving platforms keep their momentum.
+	/// Rail proxies cover both poses and kinematic collision uses the predicted pose for this tick,
+	/// keeping vertical riders relative to the support that physics integrates later in the pipeline.
 	/// </summary>
 	public struct CharacterMoverSystem : ISystem {
 		private static readonly FP Tolerance = FP.FromRatio(1, 100);
 
 		public void Update() {
+			var broadPhase = W.GetResource<BroadPhase>();
+			var dt = Const.DeltaTime.To32();
+			foreach (var platform in W.Query<All<PatrolRail, Body>>().Entities()) {
+				ref readonly var body = ref platform.Read<Body>();
+				ShapeProxySystem.RefreshBodyAABBs(platform, body, broadPhase, dt * body.LinearVelocity);
+			}
+
 			W.Query().For(static (ref Transform transform, ref Mover mover, ref CharacterMoveIntent intent) => {
 				// Past the physics escape line the mover's queries would leave the supported envelope, so the
 				// character stops simulating in place (the counterpart of OutOfPhysicsBounds for bodies).
@@ -34,6 +44,8 @@ public abstract partial class Core<TWorld> where TWorld : struct, ISessionType, 
 					mover.Velocity = FVector3.Zero;
 					mover.PogoVelocity = FP.Zero;
 					mover.Grounded = false;
+					mover.SupportVelocity = FVector3.Zero;
+					mover.InheritedVelocity = FVector3.Zero;
 					return;
 				}
 
@@ -45,6 +57,8 @@ public abstract partial class Core<TWorld> where TWorld : struct, ISessionType, 
 				// Jump check comes before the grounded reset (and clears Grounded immediately) so the
 				// fresh jump velocity isn't stomped back to zero by that same reset this tick --
 				// mirrors box3d's CharacterMover::Step/SolveMove ordering.
+				var wasGrounded = mover.Grounded;
+				var previousSupportVelocity = mover.SupportVelocity;
 				if (intent.Jump && mover.Grounded) {
 					mover.Velocity.Y = jumpForce;
 					mover.Grounded = false;
@@ -74,17 +88,29 @@ public abstract partial class Core<TWorld> where TWorld : struct, ISessionType, 
 
 				mover.Grounded = CharacterMover.UpdatePogoGrounding(
 					broadPhase, moverXf, capsule, dt, characterRes.PogoHertz.To32(), characterRes.PogoDampingRatio.To32(), mover.JumpCooldown,
-					characterRes.MaxSlopeNormalThreshold.To32(), moverFilter, ref mover.PogoVelocity);
+					characterRes.MaxSlopeNormalThreshold.To32(), moverFilter, ref mover.PogoVelocity, out var supportVelocity, dt);
 
-				var target = moverXf.Position + dt * mover.Velocity + dt * mover.PogoVelocity * FVector3.Up;
+				if (mover.Grounded) {
+					mover.SupportVelocity = supportVelocity;
+					mover.InheritedVelocity = FVector3.Zero;
+				} else {
+					if (wasGrounded) {
+						mover.InheritedVelocity = previousSupportVelocity;
+					}
+					mover.SupportVelocity = FVector3.Zero;
+				}
+
+				var carriedVelocity = mover.Grounded ? mover.SupportVelocity : mover.InheritedVelocity;
+				var effectiveVelocity = mover.Velocity + carriedVelocity;
+				var target = moverXf.Position + dt * effectiveVelocity + dt * mover.PogoVelocity * FVector3.Up;
 
 				var planes = new MoverPlaneBuffer();
 				for (var iteration = 0; iteration < 5; iteration++) {
 					planes.Clear();
-					CharacterMover.CollideMover(broadPhase, moverXf, capsule, moverFilter, ref planes);
+					CharacterMover.CollideMover(broadPhase, moverXf, capsule, moverFilter, dt, ref planes);
 
 					var (delta, _) = MoverSolver.SolvePlanes(target - moverXf.Position, ref planes);
-					var fraction = CharacterMover.CastMover(broadPhase, moverXf, capsule, delta, FP.One, moverFilter);
+					var fraction = CharacterMover.CastMover(broadPhase, moverXf, capsule, delta, FP.One, moverFilter, dt);
 					delta *= fraction;
 					moverXf.Position += delta;
 
@@ -93,9 +119,13 @@ public abstract partial class Core<TWorld> where TWorld : struct, ISessionType, 
 					}
 				}
 
-				CharacterMover.ApplyPushImpulses(moverXf, mover.Velocity, in planes);
+				CharacterMover.ApplyPushImpulses(moverXf, effectiveVelocity, in planes);
 
-				mover.Velocity = MoverSolver.ClipVector(mover.Velocity, in planes);
+				var clippedVelocity = MoverSolver.ClipVector(mover.Velocity, in planes);
+				if (!mover.Grounded) {
+					mover.InheritedVelocity = MoverSolver.ClipVector(effectiveVelocity, in planes) - clippedVelocity;
+				}
+				mover.Velocity = clippedVelocity;
 				transform.SetFromWorldTransform(moverXf);
 			});
 		}

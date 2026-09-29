@@ -30,6 +30,8 @@ public abstract partial class Core<TWorld> where TWorld : struct, ISessionType, 
 			Systems.Add(new PlayerIntentSystem(), order: 2);
 			Systems.Add(new NavChaseSystem(), order: 3);
 			Systems.Add(new DoorSystem(), order: 3);
+			// Rail velocity and linked floor availability must be final before planning and movers.
+			Systems.Add(new RailMotionSystem(), order: 3);
 			// Zone states are final for the tick once gameplay above has run; agents plan against them.
 			Systems.Add(new NavZoneApplySystem(), order: 4);
 			Systems.Add(new NavAgentSystem(), order: 5);
@@ -40,7 +42,6 @@ public abstract partial class Core<TWorld> where TWorld : struct, ISessionType, 
 			Systems.Add(new ProjectileRangeSystem(), order: 8);
 			Systems.Add(new ShapeProxySystem(), order: 9);
 			Systems.Add(new ContactSystem(), order: 10);
-			Systems.Add(new DummyPatrolSystem(), order: 11);
 			// Sensor events from ContactSystem this tick; toggled doors move from the next tick on.
 			Systems.Add(new PressurePlateSystem(), order: 11);
 			Systems.Add(new ContactSolverSystem(), order: 12);
