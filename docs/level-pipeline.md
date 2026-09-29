@@ -209,15 +209,31 @@ client: --level <name>, default level_pipeline_test → res://maps/<name>.level.
 - The `.level.bytes` files are committed until CI can run the headless
   exporter. Re-export after changing a map; the scene is not read at runtime,
   so an edit without re-export has no effect.
-- Static box colliders are in the format (version 2) and load as static ECS
-  bodies (`LevelLoader`). `SpawnSphereSystem` no longer builds the ground; the
+- Static geometry is in the format and loads as static ECS bodies
+  (`LevelLoader`). `SpawnSphereSystem` no longer builds the ground; the
   old test arena lives in `maps/level_pipeline_test.tscn`.
 - The client instances `res://maps/<name>.tscn` for visuals.
-- Static colliders are authored like entities: a `LevelCollider` marker with a
-  `ColliderRecipe` and overrides (`BoxColliderComponent` for the size). This
-  replaces the `StaticBody3D` / `CollisionShape3D` convention below: the
-  exporter refuses Godot physics nodes, and markers draw their box as lines in
-  the editor only.
+- Static geometry is an entity placement: an `EntitySpawn` whose recipe has
+  `EntityType = StaticGeometry`, a static `BodyComponent`, a
+  `BoxShapeComponent` for the size and a `NavigationComponent`
+  (`maps/static_box_recipe.tres`). This replaces the `StaticBody3D` /
+  `CollisionShape3D` convention below: the exporter refuses Godot physics
+  nodes, and markers draw their box as lines in the editor only. (Until format
+  version 6 this was a separate `LevelCollider` marker and file section.)
+- Format version 6 stores every placement the same way: source path, type
+  byte, transform, a presence mask with one bit per
+  `LevelEntityComponentKind` (Health, Loot, Body, BoxShape, View, Navigation),
+  then the present components in that order. Unknown mask bits are rejected.
+  The file is: placements, zone volumes, navigation. Validation checks each
+  type's components:
+
+  | Type | Required | Not allowed | Body |
+  | --- | --- | --- | --- |
+  | `Crate` | Health, Loot, Body, BoxShape, View | Navigation | Dynamic or Kinematic |
+  | `StaticGeometry` | Body, BoxShape, Navigation | Health, Loot, View | Static |
+
+  `LevelLoader` spawns static geometry first, then one entity per navigation
+  zone, then everything else, each group in `LevelData.Entities` order.
 - Cost of static colliders as ECS bodies, measured on a 212-box test map:
   about 1.4 KB of rollback snapshot per box (314 KB vs 15 KB), 14 us to write
   and 59 us to load a snapshot, simulation 0.30 ms per tick (0.23 ms before).

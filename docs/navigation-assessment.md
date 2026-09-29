@@ -5,12 +5,13 @@
 > Scope: deterministic runtime pathfinding for rollback. All claims verified
 > against local source unless marked otherwise.
 >
-> Status: Phases 0 to 7 are implemented. Maps can classify their existing
-> `LevelCollider` boxes for navigation, level format version 3 preserves that
-> classification, and `Space.NavBuilder` deterministically triangulates the
+> Status: Phases 0 to 7 are implemented. Maps classify their static geometry
+> for navigation (a `NavigationComponent` on `StaticGeometry` placements since
+> format version 6; a `LevelCollider` field before), the level format preserves
+> that classification, and `Space.NavBuilder` deterministically triangulates the
 > fixed-point boxes. `GameCore/Navigation` holds the fixed-point runtime core
 > (mesh, query, A*, funnel), and `Space.NavBuilder` bakes that mesh from a
-> level's static boxes with DotRecast and a fixed-point build pipeline. Level
+> level's static geometry with DotRecast and a fixed-point build pipeline. Level
 > export bakes the navmesh into format version 4, and client and server install
 > it as a per-world resource. A `NavAgent` steers a `NavCharacter` through the
 > same `CharacterMoverSystem` the player uses, and navigation is verified
@@ -27,8 +28,8 @@
 
 Port the core of Klotho's deterministic navigation runtime into
 `GameCore/Navigation`. Build the navmesh with our own offline builder:
-the existing `LevelCollider` authoring path resolves to fixed-point
-`LevelData.StaticBoxes`, DotRecast bakes their walkable surface, and a port of
+the `StaticGeometry` placements resolve to fixed-point
+`LevelData.NavigationSources`, DotRecast bakes their walkable surface, and a port of
 Klotho's build pipeline turns it into a fixed-point navmesh stored in the
 level file (see `level-pipeline.md`, Phase 5). Godot's
 `NavigationRegion3D` bake is not used. Do not run DotRecast in the simulation.
@@ -202,9 +203,13 @@ Phase 0 is complete:
 
 - `NavContribution` has stable serialized values: `Walkable = 0`,
   `ObstacleOnly = 1`, and `Excluded = 2`.
-- `Client/level_authoring/LevelCollider.cs` exposes the classification in the
-  inspector and passes it through `ColliderRecipe` and `StaticBoxBuilder`.
-- `StaticBox` stores the classification. `LevelDataCodec` version 3 writes it
+- `Client/level_authoring/NavigationComponent.cs` exposes the classification in
+  the inspector and passes it through `EntityRecipe` and
+  `EntityPlacementBuilder`. (Originally `LevelCollider`, `ColliderRecipe` and
+  `StaticBoxBuilder`; replaced in format version 6.)
+- The placement's `Navigation` component stores the classification, and
+  `LevelData.NavigationSources` derives a `NavSourceBox` per static geometry
+  placement. `LevelDataCodec` (version 3 onwards) writes it
   into the level payload, validates it on read, and therefore includes it in
   the existing whole-level content hash and connection key.
 - `Client/maps/level_pipeline_test.tscn` marks the ground as `Walkable` and
@@ -212,7 +217,7 @@ Phase 0 is complete:
   regenerated with Godot 4.7.2.
 - `NavBuilder/Space.NavBuilder.csproj` is a plain .NET 8 build-time module. It
   has no Godot dependency and is not referenced by the client or server.
-- `StaticBoxTriangulator` sorts boxes by ordinal source path, rejects invalid
+- `NavSourceTriangulator` (originally `StaticBoxTriangulator`) sorts boxes by ordinal source path, rejects invalid
   or duplicate input, omits `Excluded` boxes, applies the same quaternion
   normalization as physics, and emits eight Fixed64 world vertices and twelve
   consistently wound triangles per included box.
@@ -539,7 +544,7 @@ Phase 6 is complete:
 Phase 7 is complete:
 
 - `Core<TWorld>.NavDebugDraw` (GameCore, next to `PhysicsDebugDraw`) walks the
-  world's `NavigationRes.Mesh`, the level's `StaticBoxes`, and every
+  world's `NavigationRes.Mesh`, the level's `NavigationSources`, and every
   `NavAgent`, and reports them to an `INavDebugDraw` (triangles, segments,
   points, and one per-agent status callback) with semantic `NavDebugColor`s.
   `NavDebugDrawFlags` selects triangles, edges, sources, and agents; an agent
@@ -608,7 +613,7 @@ Phase 8, steps 1 and 2 (switchable zones), are complete:
   walkable triangle, a duplicate id, or more than 62 zones fail the bake.
   Overlapping zones are not detected; the later id owns the overlap.
 - Format version 5 stores the zone volumes after the static boxes (ordinal by
-  id) and appends the zone table (`NavZoneData`: id, strictly ascending
+  id; version 6 folds the static boxes into the placements) and appends the zone table (`NavZoneData`: id, strictly ascending
   triangles) to the navigation section. Decoding checks counts against the
   bytes left, and `LevelNavigation` rejects out-of-range, shared, or unordered
   entries. A baked navmesh must carry exactly the level's zone ids in order,

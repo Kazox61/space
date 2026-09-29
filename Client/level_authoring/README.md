@@ -18,12 +18,20 @@ Everything is set up the same way: a marker node with a `Recipe` resource for de
 
 | Marker | Recipe | Components | Exports |
 | --- | --- | --- | --- |
-| `EntitySpawn` | `EntityRecipe` (e.g. `maps/crate_recipe.tres`) | Health, Loot, Body, BoxShape, View | an entity placement |
-| `LevelCollider` | `ColliderRecipe` (e.g. `maps/static_box_recipe.tres`) | BoxCollider (size) | a static box |
+| `EntitySpawn` | `EntityRecipe` | Health, Loot, Body, BoxShape, View, Navigation | an entity placement |
+
+The recipe's `EntityType` decides which components the placement needs:
+
+| Entity type | Example recipe | Required | Not allowed | Body |
+| --- | --- | --- | --- | --- |
+| `Crate` | `maps/crate_recipe.tres` | Health, Loot, Body, BoxShape, View | Navigation | Dynamic or Kinematic |
+| `StaticGeometry` | `maps/static_box_recipe.tres` | Body, BoxShape, Navigation | Health, Loot, View | Static |
+
+Walls and floors are `StaticGeometry` placements: the static recipe sets a static body, a 1 m box and `Walkable` navigation, and each wall overrides `BoxShape` with its size (at most 80 m per side). The export fails on a missing or disallowed component.
 
 A `NavZone` node marks a switchable navigation zone (a door, gate or bridge): set `ZoneId` (the node name when empty) and `Size`, and rotate it only about Y. The bake splits the navmesh along the box, so the simulation can close exactly the ground inside it through the zone's `NavZoneState` entity. The box must enclose the floor it switches, zones must not overlap, and a zone over no walkable ground fails the export. It draws blue lines in the editor and does not collide.
 
-Markers take position and rotation from their node transform and must have unit scale; sizes live in components. A `LevelCollider` also declares how it contributes to the offline navigation bake: `Walkable`, `ObstacleOnly`, or `Excluded`. Every export bakes a navmesh from these colliders (`NavBakeSettings.Default`, sized for the player capsule) and stores it with its settings in the level file; a map without a `Walkable` collider gets no navmesh. The bake runs only in editor builds: `Space.NavBuilder` and DotRecast are referenced in the `Debug` configuration alone, so exported games never contain them. It draws its box as orange lines in the editor and nothing in the game, so give it a mesh (a child works) for what players see. Godot physics nodes (`StaticBody3D`, `CollisionShape3D`, `Area3D`) are refused by the exporter.
+Markers take position and rotation from their node transform and must have unit scale; sizes live in components. Static geometry declares how it contributes to the offline navigation bake with a `NavigationComponent`: `Walkable`, `ObstacleOnly`, or `Excluded`. Every export bakes a navmesh from the static geometry (`NavBakeSettings.Default`, sized for the player capsule) and stores it with its settings in the level file; a map without `Walkable` static geometry gets no navmesh. The bake runs only in editor builds: `Space.NavBuilder` and DotRecast are referenced in the `Debug` configuration alone, so exported games never contain them. An `EntitySpawn` draws its box as orange lines in the editor and nothing in the game. Static geometry has no view, so give it a mesh (a child works) for what players see. Godot physics nodes (`StaticBody3D`, `CollisionShape3D`, `Area3D`) are refused by the exporter.
 
 Every Godot export preset must list `*.level.bytes` under Resources → "Filters to export non-resource files", or exported builds stop at startup with "Level file ... is missing". The editor reads presets only at startup, so restart it after the filter changes in `export_presets.cfg`.
 
