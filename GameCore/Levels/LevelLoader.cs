@@ -1,4 +1,5 @@
 using FFS.Libraries.StaticEcs;
+using Fixed;
 using Fixed32;
 using Shenanicode.Rollback;
 
@@ -12,7 +13,13 @@ public abstract partial class Core<TWorld> where TWorld : struct, ISessionType, 
 				LevelDataValidation.Validate(placement);
 				var components = placement.Components;
 				PhysicsValidation.ValidateShape(CreateBoxShape(components.BoxShape!.Value), components.Body!.Value, placement.Transform, placement.SourcePath);
+				if (components.DoorMotion is { } motion) {
+					// A door must be valid at both ends of its travel.
+					PhysicsValidation.ValidateShape(CreateBoxShape(components.BoxShape.Value), components.Body.Value, OpenTransform(placement.Transform, motion), placement.SourcePath);
+				}
 			}
+			LevelDataValidation.ValidateZoneLinks(level.Entities, level.NavZones);
+			var zoneIds = level.NavZones.Select(static zone => zone.Id).Order(StringComparer.Ordinal).ToArray();
 
 			// Static geometry first, then zones, then the rest, so entity ids stay in this order.
 			foreach (var placement in level.Entities) {
@@ -29,6 +36,12 @@ public abstract partial class Core<TWorld> where TWorld : struct, ISessionType, 
 						break;
 					case LevelEntityType.Crate:
 						SpawnCrate(placement);
+						break;
+					case LevelEntityType.Door:
+						SpawnDoor(placement, ZoneIndex(zoneIds, placement));
+						break;
+					case LevelEntityType.PressurePlate:
+						SpawnPressurePlate(placement, ZoneIndex(zoneIds, placement));
 						break;
 					default:
 						throw new InvalidDataException($"{placement.SourcePath}: unsupported entity type {placement.Type}.");
@@ -50,6 +63,54 @@ public abstract partial class Core<TWorld> where TWorld : struct, ISessionType, 
 			BodyOperations.CreateBody(crate, components.Body!.Value, placement.Transform);
 
 			ShapeFactory.CreateShape(crate, CreateBoxShape(components.BoxShape!.Value));
+		}
+
+		private static void SpawnDoor(in EntityPlacement placement, int zone) {
+			var components = placement.Components;
+			var motion = components.DoorMotion!.Value;
+			var openTransform = OpenTransform(placement.Transform, motion);
+			var door = W.NewEntity(new Door {
+				State = new DoorState {
+					Zone = zone,
+					ClosedPosition = placement.Transform.Position,
+					OpenOffset = openTransform.Position - placement.Transform.Position,
+					Speed = motion.Speed,
+					Open = motion.StartsOpen,
+					FullyOpen = motion.StartsOpen,
+				},
+			});
+
+			var start = motion.StartsOpen ? openTransform : placement.Transform;
+			var transform = new Transform();
+			transform.SetFromWorldTransform(start);
+			door.Set(transform);
+			BodyOperations.CreateBody(door, components.Body!.Value, start);
+			ShapeFactory.CreateShape(door, CreateBoxShape(components.BoxShape!.Value));
+		}
+
+		private static void SpawnPressurePlate(in EntityPlacement placement, int zone) {
+			// No ViewId: like static geometry, the map scene draws the plate.
+			var plate = W.NewEntity(new PressurePlate { Zone = zone });
+			var transform = new Transform();
+			transform.SetFromWorldTransform(placement.Transform);
+			plate.Set(transform);
+			BodyOperations.CreateBody(plate, placement.Components.Body!.Value, placement.Transform);
+			var shape = CreateBoxShape(placement.Components.BoxShape!.Value);
+			shape.IsSensor = true;
+			shape.EnableSensorEvents = true;
+			shape.Filter = Filter.Trigger;
+			ShapeFactory.CreateShape(plate, shape);
+		}
+
+		/// <summary>The door's open pose: its placed pose moved by the open offset, turned into world space.</summary>
+		private static FWorldTransform OpenTransform(in FWorldTransform closed, in DoorMotionData motion) {
+			var offset = FQuaternion.Normalize(closed.Rotation) * motion.OpenOffset;
+			return new FWorldTransform(closed.Position + offset, closed.Rotation);
+		}
+
+		/// <summary>The linked zone's index among the level's zone ids in ordinal order; see <see cref="DoorState.Zone"/>.</summary>
+		private static int ZoneIndex(string[] zoneIds, in EntityPlacement placement) {
+			return Array.IndexOf(zoneIds, placement.Components.ZoneLink!);
 		}
 
 		/// <summary>One open <see cref="NavZoneState"/> per baked zone, for gameplay to switch.</summary>

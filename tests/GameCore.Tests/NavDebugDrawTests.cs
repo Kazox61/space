@@ -38,7 +38,11 @@ public sealed class NavDebugDrawTests {
 		new Core<NavDebugDrawWorldA>.NavDebugDraw(Level()).Draw(draw, NavDebugDrawFlags.Triangles | NavDebugDrawFlags.Edges | NavDebugDrawFlags.Sources);
 
 		var mesh = Level().Navigation!.Mesh;
-		var clearance = draw.Segments(NavDebugColor.ObstacleClearance);
+		// The vault walls are obstacles too; keep the test box's ring.
+		var clearance = draw.Segments(NavDebugColor.ObstacleClearance).Where(s => {
+			var (x, z) = Midpoint(s);
+			return Inside(x, z, BoxMinX - AgentRadius - 0.1, BoxMaxX + AgentRadius + 0.1, BoxMinZ - AgentRadius - 0.1, BoxMaxZ + AgentRadius + 0.1);
+		}).ToList();
 		// Boundary edges that ring the obstacle: outside its footprint grown by the radius, within one unit of it.
 		var ring = draw.Segments(NavDebugColor.BoundaryEdge).Count(s => {
 			var (x, z) = Midpoint(s);
@@ -51,7 +55,8 @@ public sealed class NavDebugDrawTests {
 		Assert.Multiple(() => {
 			Assert.That(draw.Triangles, Has.Count.EqualTo(mesh.TriangleCount), "every shipped triangle is drawn");
 			Assert.That(draw.Triangles.Select(t => t.Color).Distinct(), Is.EqualTo(new[] { NavDebugColor.WalkableArea }), "the sample ships one walkable area");
-			Assert.That(draw.Segments(NavDebugColor.ObstacleSource), Has.Count.EqualTo(12), "the test box is outlined as obstacle-only");
+			Assert.That(draw.Segments(NavDebugColor.ObstacleSource), Has.Count.EqualTo(6 * 12), "the test box and the five vault walls are outlined as obstacle-only");
+			Assert.That(draw.Segments(NavDebugColor.ObstacleClearance), Has.Count.EqualTo(6 * 4), "each obstacle gets a clearance ring");
 			Assert.That(draw.Segments(NavDebugColor.WalkableSource), Has.Count.EqualTo(12), "the ground is outlined as walkable");
 			Assert.That(clearance, Has.Count.EqualTo(4));
 			Assert.That(clearance.SelectMany(s => new[] { s.A, s.B }).Select(p => (Math.Round(ToDouble(p.X), 3), Math.Round(ToDouble(p.Z), 3))).Distinct(),
@@ -134,7 +139,7 @@ public sealed class NavDebugDrawTests {
 			Assert.That(overlay.Mesh, Is.Null);
 			Assert.That(draw.Triangles, Is.Empty);
 			Assert.That(draw.Agents, Is.Empty);
-			Assert.That(draw.Segments(NavDebugColor.ObstacleSource), Has.Count.EqualTo(12));
+			Assert.That(draw.Segments(NavDebugColor.ObstacleSource), Has.Count.EqualTo(6 * 12), "the test box and the five vault walls");
 			Assert.That(draw.Segments(NavDebugColor.ObstacleClearance), Is.Empty, "no bake, no clearance");
 		});
 	}
@@ -229,11 +234,11 @@ public sealed class NavDebugDrawTests {
 		var closed = new Recorder();
 		overlay.Draw(closed, NavDebugDrawFlags.Triangles | NavDebugDrawFlags.Sources);
 
-		var zoneTriangles = Level().Navigation!.Zones[0].Triangles.Length;
+		var zoneTriangles = Level().Navigation!.Zones.Sum(static zone => zone.Triangles.Length);
 		Assert.Multiple(() => {
-			Assert.That(open.Segments(NavDebugColor.OpenZone), Has.Count.EqualTo(12), "the gate volume is outlined as open");
+			Assert.That(open.Segments(NavDebugColor.OpenZone), Has.Count.EqualTo(2 * 12), "the gate and vault volumes are outlined as open");
 			Assert.That(open.Segments(NavDebugColor.BlockedZone), Is.Empty);
-			Assert.That(closed.Segments(NavDebugColor.BlockedZone), Has.Count.EqualTo(12), "and as blocked once closed");
+			Assert.That(closed.Segments(NavDebugColor.BlockedZone), Has.Count.EqualTo(2 * 12), "and as blocked once closed");
 			Assert.That(closed.Triangles.Count(t => t.Color == NavDebugColor.BlockedArea), Is.EqualTo(zoneTriangles), "its triangles are drawn blocked");
 		});
 	}

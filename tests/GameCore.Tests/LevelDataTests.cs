@@ -164,12 +164,54 @@ public sealed class LevelDataTests {
 		var bytes = LevelDataCodec.Serialize(new LevelData([Box("Map/Wall", 0)]));
 		// Payload: entity count, source path (length-prefixed), type byte, transform (3 longs, 4 ints), mask.
 		var maskOffset = LevelDataCodec.EnvelopeSize + sizeof(int) + 1 + "Map/Wall".Length + 1 + 3 * sizeof(long) + 4 * sizeof(int);
-		Assert.That(bytes[maskOffset], Is.EqualTo(0b10_1100), "mask of Body, BoxShape and Navigation");
-		bytes[maskOffset] |= 0x80;
+		Assert.That(BitConverter.ToUInt16(bytes, maskOffset), Is.EqualTo(0b10_1100), "mask of Body, BoxShape and Navigation");
+		bytes[maskOffset + 1] |= 0x80;
 		SHA256.HashData(bytes.AsSpan(LevelDataCodec.EnvelopeSize)).CopyTo(bytes, LevelDataCodec.HashOffset);
 
 		Assert.That(() => LevelDataCodec.Deserialize(bytes),
 			Throws.TypeOf<InvalidDataException>().With.Message.Contains("unknown entity components"));
+	}
+
+	[Test]
+	public void CodecRoundTripsDoorsAndPlates() {
+		var level = new LevelData([Door("Map/Door"), Plate("Map/Plate")], navZones: [GateZone()]);
+		var bytes = LevelDataCodec.Serialize(level);
+		var decoded = LevelDataCodec.Deserialize(bytes);
+
+		Assert.Multiple(() => {
+			Assert.That(LevelDataCodec.Serialize(decoded), Is.EqualTo(bytes));
+			Assert.That(decoded.Entities[0].Components, Is.EqualTo(Door("Map/Door").Components));
+			Assert.That(decoded.Entities[1].Components, Is.EqualTo(Plate("Map/Plate").Components));
+			Assert.That(decoded.NavigationSources, Is.Empty, "doors and plates are not bake input");
+		});
+	}
+
+	[Test]
+	public void ZoneLinksMustNameALevelZone() {
+		Assert.Multiple(() => {
+			Assert.That(() => LevelDataCodec.Serialize(new LevelData([Door("Map/Door")])),
+				Throws.TypeOf<InvalidDataException>().With.Message.Contains("Map/Door").And.Message.Contains("names no navigation zone"));
+			var unlinked = Door("Map/Door");
+			unlinked = unlinked with { Components = unlinked.Components with { ZoneLink = null } };
+			Assert.That(() => LevelDataCodec.Serialize(new LevelData([unlinked], navZones: [GateZone()])),
+				Throws.TypeOf<InvalidDataException>().With.Message.Contains("missing").And.Message.Contains("ZoneLink"));
+		});
+	}
+
+	[Test]
+	public void DoorsAndPlatesCheckTheirComponents() {
+		var door = Door("Map/Door");
+		var plate = Plate("Map/Plate");
+		Assert.Multiple(() => {
+			Assert.That(() => LevelDataValidation.Validate(door with { Components = door.Components with { Body = BodyType.Dynamic } }),
+				Throws.TypeOf<InvalidDataException>().With.Message.Contains("Kinematic body"));
+			Assert.That(() => LevelDataValidation.Validate(door with { Components = door.Components with { DoorMotion = new DoorMotionData(FVector3.Zero, FP.One, false) } }),
+				Throws.TypeOf<InvalidDataException>().With.Message.Contains("open offset"));
+			Assert.That(() => LevelDataValidation.Validate(plate with { Components = plate.Components with { View = ViewAsset.Door } }),
+				Throws.TypeOf<InvalidDataException>().With.Message.Contains("View not allowed on PressurePlate"));
+			Assert.That(() => LevelDataValidation.Validate(plate with { Components = plate.Components with { Body = BodyType.Kinematic } }),
+				Throws.TypeOf<InvalidDataException>().With.Message.Contains("Static body"));
+		});
 	}
 
 	[Test]
@@ -315,6 +357,8 @@ public sealed class LevelDataTests {
 			Assert.That(ground.Components.Navigation, Is.EqualTo(NavContribution.Walkable));
 			Assert.That(testBox.Type, Is.EqualTo(LevelEntityType.StaticGeometry));
 			Assert.That(testBox.Components.Navigation, Is.EqualTo(NavContribution.ObstacleOnly));
+			Assert.That(level.Data.Entities.Single(static entity => entity.SourcePath == "VaultDoor").Components.ZoneLink, Is.EqualTo("vault"));
+			Assert.That(level.Data.Entities.Single(static entity => entity.SourcePath == "VaultPlate").Type, Is.EqualTo(LevelEntityType.PressurePlate));
 		});
 	}
 
@@ -368,6 +412,29 @@ public sealed class LevelDataTests {
 			W.Destroy();
 		}
 	}
+
+	private static NavZoneVolume GateZone() => new(
+		"gate",
+		new FWorldTransform(new FPos(Fixed64.FP.FromRatio(4, 1), Fixed64.FP.Half, Fixed64.FP.FromRatio(-6, 1)), FQuaternion.Identity),
+		new FVector3(FP.Two, FP.One, 3.ToFP())
+	);
+
+	private static EntityPlacement Door(string path) => PhysicsSmokeTest.TestLevels.Door(
+		path,
+		new FWorldTransform(new FPos(Fixed64.FP.FromRatio(4, 1), Fixed64.FP.FromRatio(3, 2), Fixed64.FP.FromRatio(-6, 1)), FQuaternion.Identity),
+		new FVector3(FP.Two, FP.One, FP.Quarter),
+		"gate",
+		new FVector3(5.ToFP(), FP.Zero, FP.Zero),
+		FP.Two,
+		startsOpen: true
+	);
+
+	private static EntityPlacement Plate(string path) => PhysicsSmokeTest.TestLevels.PressurePlate(
+		path,
+		new FWorldTransform(new FPos(Fixed64.FP.FromRatio(-7, 1), Fixed64.FP.Half, Fixed64.FP.Zero), FQuaternion.Identity),
+		new FVector3(FP.One, FP.Quarter, FP.One),
+		"gate"
+	);
 
 	private static EntityPlacement Box(string path, int x, NavContribution navigation = NavContribution.Walkable) => PhysicsSmokeTest.TestLevels.StaticBox(
 		path,

@@ -18,7 +18,7 @@ Everything is set up the same way: a marker node with a `Recipe` resource for de
 
 | Marker | Recipe | Components | Exports |
 | --- | --- | --- | --- |
-| `EntitySpawn` | `EntityRecipe` | Health, Loot, Body, BoxShape, View, Navigation | an entity placement |
+| `EntitySpawn` | `EntityRecipe` | Health, Loot, Body, BoxShape, View, Navigation, ZoneLink, DoorMotion | an entity placement |
 
 The recipe's `EntityType` decides which components the placement needs:
 
@@ -26,6 +26,10 @@ The recipe's `EntityType` decides which components the placement needs:
 | --- | --- | --- | --- | --- |
 | `Crate` | `maps/crate_recipe.tres` | Health, Loot, Body, BoxShape, View | Navigation | Dynamic or Kinematic |
 | `StaticGeometry` | `maps/static_box_recipe.tres` | Body, BoxShape, Navigation | Health, Loot, View | Static |
+| `Door` | `maps/door_recipe.tres` | Body, BoxShape, View, ZoneLink, DoorMotion | Health, Loot, Navigation | Kinematic |
+| `PressurePlate` | `maps/pressure_plate_recipe.tres` | Body, BoxShape, ZoneLink | Health, Loot, View, Navigation, DoorMotion | Static |
+
+A door and a pressure plate are linked through a `ZoneLinkComponent` naming a `NavZone` id. The door's node transform is its closed pose; `DoorMotionComponent` sets how far it slides to open (in its own frame), its speed, and whether it starts open. While a door is not fully open its zone is blocked for navigation. A character stepping onto an empty plate toggles every door of the plate's zone. Plates are drawn by the map scene (give them a mesh child); doors have a view and move. In the sample map, `VaultDoor` fills the only doorway into a walled room (the `vault` zone) and opens by sliding into the wall beside it, so the open door never stands on walkable ground. `VaultPlate`, left of the player spawns, and `VaultPlateInside` both toggle it. Walls that should not be walked on get `NavigationComponent(ObstacleOnly)`.
 
 Walls and floors are `StaticGeometry` placements: the static recipe sets a static body, a 1 m box and `Walkable` navigation, and each wall overrides `BoxShape` with its size (at most 80 m per side). The export fails on a missing or disallowed component.
 

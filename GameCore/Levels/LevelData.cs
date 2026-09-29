@@ -7,6 +7,10 @@ public enum LevelEntityType : byte {
 	Crate = 1,
 	/// <summary>Immovable level geometry (walls, floors) with a static body; the navmesh bake's input.</summary>
 	StaticGeometry = 2,
+	/// <summary>A kinematic box that slides between closed and open, blocking a navigation zone while not open.</summary>
+	Door = 3,
+	/// <summary>A static sensor box; a character stepping onto it toggles the doors of its zone.</summary>
+	PressurePlate = 4,
 }
 
 public enum LootKind : byte {
@@ -24,6 +28,12 @@ public enum NavContribution : byte {
 public readonly record struct BoxShapeData(FVector3 HalfExtents, FP Density);
 
 /// <summary>
+/// How a door moves: from its placed (closed) pose by <see cref="OpenOffset"/>, given in the door's
+/// own frame, at <see cref="Speed"/> units per second.
+/// </summary>
+public readonly record struct DoorMotionData(FVector3 OpenOffset, FP Speed, bool StartsOpen);
+
+/// <summary>
 /// The components a placement carries; null when absent. Which ones an entity type requires or forbids is
 /// checked by validation.
 /// </summary>
@@ -33,7 +43,9 @@ public readonly record struct PlacementComponents(
 	BodyType? Body = null,
 	BoxShapeData? BoxShape = null,
 	ViewAsset? View = null,
-	NavContribution? Navigation = null
+	NavContribution? Navigation = null,
+	string? ZoneLink = null,
+	DoorMotionData? DoorMotion = null
 ) {
 	public bool Has(LevelEntityComponentKind kind) => kind switch {
 		LevelEntityComponentKind.Health => Health.HasValue,
@@ -42,6 +54,8 @@ public readonly record struct PlacementComponents(
 		LevelEntityComponentKind.BoxShape => BoxShape.HasValue,
 		LevelEntityComponentKind.View => View.HasValue,
 		LevelEntityComponentKind.Navigation => Navigation.HasValue,
+		LevelEntityComponentKind.ZoneLink => ZoneLink is not null,
+		LevelEntityComponentKind.DoorMotion => DoorMotion.HasValue,
 		_ => false,
 	};
 }

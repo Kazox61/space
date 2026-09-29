@@ -9,6 +9,9 @@
 [ext_resource type="Script" uid="uid://eb4g86y84qna" path="res://level_authoring/HealthComponent.cs" id="9_health"]
 [ext_resource type="Script" uid="uid://dysc1e0oy7v13" path="res://level_authoring/NavZone.cs" id="10_nav_zone"]
 [ext_resource type="Script" uid="uid://dho3jcli7i2b7" path="res://level_authoring/NavigationComponent.cs" id="11_navigation"]
+[ext_resource type="Resource" path="res://maps/door_recipe.tres" id="12_door_recipe"]
+[ext_resource type="Resource" path="res://maps/pressure_plate_recipe.tres" id="13_plate_recipe"]
+[ext_resource type="Script" uid="uid://qq1bsrwdjxl6" path="res://level_authoring/ZoneLinkComponent.cs" id="14_zone_link"]
 
 [sub_resource type="Resource" id="StrongCrateHealth"]
 script = ExtResource("9_health")
@@ -28,6 +31,44 @@ Size = Vector3(4, 1, 4)
 [sub_resource type="Resource" id="TestBoxNavigation"]
 script = ExtResource("11_navigation")
 Value = 1
+
+[sub_resource type="Resource" id="VaultLink"]
+script = ExtResource("14_zone_link")
+ZoneId = "vault"
+
+[sub_resource type="Resource" id="WallNavigation"]
+script = ExtResource("11_navigation")
+Value = 1
+
+[sub_resource type="StandardMaterial3D" id="WallMaterial"]
+albedo_color = Color(0.55, 0.55, 0.6, 1)
+
+[sub_resource type="Resource" id="WallSideBox"]
+script = ExtResource("7_box_shape")
+Size = Vector3(0.5, 2, 3)
+
+[sub_resource type="BoxMesh" id="WallSideMesh"]
+size = Vector3(0.5, 2, 3)
+
+[sub_resource type="Resource" id="WallLongBox"]
+script = ExtResource("7_box_shape")
+Size = Vector3(8, 2, 0.5)
+
+[sub_resource type="BoxMesh" id="WallLongMesh"]
+size = Vector3(8, 2, 0.5)
+
+[sub_resource type="Resource" id="WallEastBox"]
+script = ExtResource("7_box_shape")
+Size = Vector3(0.5, 2, 9)
+
+[sub_resource type="BoxMesh" id="WallEastMesh"]
+size = Vector3(0.5, 2, 9)
+
+[sub_resource type="StandardMaterial3D" id="PlateMaterial"]
+albedo_color = Color(0.8, 0.15, 0.1, 1)
+
+[sub_resource type="BoxMesh" id="PlateMesh"]
+size = Vector3(2, 0.1, 2)
 
 [sub_resource type="StandardMaterial3D" id="StandardMaterial3D_jh5dx"]
 albedo_color = Color(1, 0.6, 0, 1)
@@ -72,3 +113,87 @@ transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 4, 0.5, -6)
 script = ExtResource("10_nav_zone")
 ZoneId = "gate"
 Size = Vector3(4, 2, 6)
+
+[node name="VaultWallWestSouth" type="Node3D" parent="." unique_id=1734001130]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 15.75, 1.5, -3)
+script = ExtResource("1_spawn")
+Recipe = ExtResource("5_static_recipe")
+Overrides = Array[ExtResource("8_entity_component")]([SubResource("WallSideBox"), SubResource("WallNavigation")])
+
+[node name="Mesh" type="MeshInstance3D" parent="VaultWallWestSouth" unique_id=1734001230]
+material_override = SubResource("WallMaterial")
+mesh = SubResource("WallSideMesh")
+
+[node name="VaultWallWestNorth" type="Node3D" parent="." unique_id=1734001131]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 15.75, 1.5, 3)
+script = ExtResource("1_spawn")
+Recipe = ExtResource("5_static_recipe")
+Overrides = Array[ExtResource("8_entity_component")]([SubResource("WallSideBox"), SubResource("WallNavigation")])
+
+[node name="Mesh" type="MeshInstance3D" parent="VaultWallWestNorth" unique_id=1734001231]
+material_override = SubResource("WallMaterial")
+mesh = SubResource("WallSideMesh")
+
+[node name="VaultWallNorth" type="Node3D" parent="." unique_id=1734001132]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 20, 1.5, 4.25)
+script = ExtResource("1_spawn")
+Recipe = ExtResource("5_static_recipe")
+Overrides = Array[ExtResource("8_entity_component")]([SubResource("WallLongBox"), SubResource("WallNavigation")])
+
+[node name="Mesh" type="MeshInstance3D" parent="VaultWallNorth" unique_id=1734001232]
+material_override = SubResource("WallMaterial")
+mesh = SubResource("WallLongMesh")
+
+[node name="VaultWallSouth" type="Node3D" parent="." unique_id=1734001133]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 20, 1.5, -4.25)
+script = ExtResource("1_spawn")
+Recipe = ExtResource("5_static_recipe")
+Overrides = Array[ExtResource("8_entity_component")]([SubResource("WallLongBox"), SubResource("WallNavigation")])
+
+[node name="Mesh" type="MeshInstance3D" parent="VaultWallSouth" unique_id=1734001233]
+material_override = SubResource("WallMaterial")
+mesh = SubResource("WallLongMesh")
+
+[node name="VaultWallEast" type="Node3D" parent="." unique_id=1734001134]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 24.25, 1.5, 0)
+script = ExtResource("1_spawn")
+Recipe = ExtResource("5_static_recipe")
+Overrides = Array[ExtResource("8_entity_component")]([SubResource("WallEastBox"), SubResource("WallNavigation")])
+
+[node name="Mesh" type="MeshInstance3D" parent="VaultWallEast" unique_id=1734001234]
+material_override = SubResource("WallMaterial")
+mesh = SubResource("WallEastMesh")
+
+[node name="Vault" type="Node3D" parent="." unique_id=1734001135]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 15.75, 0.5, 0)
+script = ExtResource("10_nav_zone")
+ZoneId = "vault"
+Size = Vector3(2, 2, 3)
+
+[node name="VaultDoor" type="Node3D" parent="." unique_id=1734001123]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 15.75, 1.5, 0)
+script = ExtResource("1_spawn")
+Recipe = ExtResource("12_door_recipe")
+Overrides = Array[ExtResource("8_entity_component")]([SubResource("VaultLink")])
+
+[node name="VaultPlate" type="Node3D" parent="." unique_id=1734001124]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, -7, 0.5, 0)
+script = ExtResource("1_spawn")
+Recipe = ExtResource("13_plate_recipe")
+Overrides = Array[ExtResource("8_entity_component")]([SubResource("VaultLink")])
+
+[node name="Mesh" type="MeshInstance3D" parent="VaultPlate" unique_id=1734001125]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 0.05, 0)
+material_override = SubResource("PlateMaterial")
+mesh = SubResource("PlateMesh")
+
+[node name="VaultPlateInside" type="Node3D" parent="." unique_id=1734001126]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 22, 0.5, 0)
+script = ExtResource("1_spawn")
+Recipe = ExtResource("13_plate_recipe")
+Overrides = Array[ExtResource("8_entity_component")]([SubResource("VaultLink")])
+
+[node name="Mesh" type="MeshInstance3D" parent="VaultPlateInside" unique_id=1734001127]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 0.05, 0)
+material_override = SubResource("PlateMaterial")
+mesh = SubResource("PlateMesh")

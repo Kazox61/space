@@ -222,8 +222,11 @@ client: --level <name>, default level_pipeline_test → res://maps/<name>.level.
   version 6 this was a separate `LevelCollider` marker and file section.)
 - Format version 6 stores every placement the same way: source path, type
   byte, transform, a presence mask with one bit per
-  `LevelEntityComponentKind` (Health, Loot, Body, BoxShape, View, Navigation),
-  then the present components in that order. Unknown mask bits are rejected.
+  `LevelEntityComponentKind`, then the present components in that order.
+  Unknown mask bits are rejected. Version 7 widens the mask to 16 bits and
+  adds ZoneLink (a zone id, which must name one of the level's zone volumes)
+  and DoorMotion (open offset, speed, starts open) for the `Door` and
+  `PressurePlate` types.
   The file is: placements, zone volumes, navigation. Validation checks each
   type's components:
 
@@ -231,6 +234,8 @@ client: --level <name>, default level_pipeline_test → res://maps/<name>.level.
   | --- | --- | --- | --- |
   | `Crate` | Health, Loot, Body, BoxShape, View | Navigation | Dynamic or Kinematic |
   | `StaticGeometry` | Body, BoxShape, Navigation | Health, Loot, View | Static |
+  | `Door` | Body, BoxShape, View, ZoneLink, DoorMotion | Health, Loot, Navigation | Kinematic |
+  | `PressurePlate` | Body, BoxShape, ZoneLink | Health, Loot, View, Navigation, DoorMotion | Static |
 
   `LevelLoader` spawns static geometry first, then one entity per navigation
   zone, then everything else, each group in `LevelData.Entities` order.

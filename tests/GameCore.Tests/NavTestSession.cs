@@ -9,6 +9,7 @@ namespace Space.GameCore.Tests;
 /// <summary>Game worlds on the committed sample level, set up the way client and server run them.</summary>
 public static class NavTestSession {
 	private static LevelData? s_level;
+	private static LevelData? s_doorLevel;
 
 	public static void Step<TWorld>() where TWorld : struct, IWorldType, ISessionType {
 		Core<TWorld>.S.FastForwardToTick(Core<TWorld>.S.CurrentTick + 1);
@@ -25,16 +26,22 @@ public static class NavTestSession {
 		return MemoryMarshal.AsBytes(new ReadOnlySpan<T>(in value)).ToArray();
 	}
 
-	/// <summary>The committed sample level's static geometry, zones and navmesh, without its dynamic crates.</summary>
+	/// <summary>The committed sample level's static geometry, zones and navmesh, without its crates, door and plate.</summary>
 	public static LevelData Level() {
-		if (s_level is not null) {
-			return s_level;
-		}
+		return s_level ??= Sample(static entity => entity.Type == LevelEntityType.StaticGeometry);
+	}
+
+	/// <summary>The committed sample level without its crates: static geometry, the gate door and its plate.</summary>
+	public static LevelData DoorLevel() {
+		return s_doorLevel ??= Sample(static entity => entity.Type != LevelEntityType.Crate);
+	}
+
+	private static LevelData Sample(Func<EntityPlacement, bool> keep) {
 		for (var directory = new DirectoryInfo(TestContext.CurrentContext.TestDirectory); directory is not null; directory = directory.Parent) {
 			var candidate = Path.Combine(directory.FullName, "Client", "maps", "level_pipeline_test.level.bytes");
 			if (File.Exists(candidate)) {
 				var data = LevelFile.ReadFromDisk(candidate).Data;
-				return s_level = new LevelData(data.Entities.Where(static entity => entity.Type == LevelEntityType.StaticGeometry), data.Navigation, data.NavZones);
+				return new LevelData(data.Entities.Where(keep), data.Navigation, data.NavZones);
 			}
 		}
 		throw new FileNotFoundException("Could not find the sample level file.");

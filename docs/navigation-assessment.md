@@ -22,7 +22,11 @@
 > `NavZone` volume in a map splits the baked navmesh, level format version 5
 > stores the zone table, a snapshotted `NavZoneState` entity per zone drives
 > the mesh's blocked and cost flags every tick, and agents re-plan when any
-> zone changes. ORCA avoidance (steps 3 and 4) is not started.
+> zone changes. Gameplay drives zones through map-placed doors: a `Door` is a
+> kinematic box that blocks its zone unless fully open, and a `PressurePlate`
+> sensor toggles it when a character steps on. Characters touch sensors through
+> a `SensorProxy`, a kinematic body with a sensor capsule that follows each
+> mover. ORCA avoidance (steps 3 and 4) is not started.
 
 ## Summary
 

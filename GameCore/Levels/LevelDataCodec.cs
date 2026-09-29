@@ -9,7 +9,7 @@ public static class LevelDataCodec {
 	private static readonly Encoding s_strictUtf8 = new UTF8Encoding(encoderShouldEmitUTF8Identifier: false, throwOnInvalidBytes: true);
 
 	private const uint Magic = 0x4C564C53; // "SLVL" in little-endian byte order.
-	private const ushort Version = 6;
+	private const ushort Version = 7;
 	internal const int HashSize = 32;
 	internal const int HashOffset = sizeof(uint) + sizeof(ushort) + sizeof(int);
 	internal const int EnvelopeSize = HashOffset + HashSize;
@@ -17,7 +17,7 @@ public static class LevelDataCodec {
 	private const int MaximumEntityCount = 100_000;
 	private const int MaximumNavZoneCount = NavZoneData.MaxZones;
 	private const int MaximumPayloadSize = 64 * 1024 * 1024;
-	private const int ComponentKindCount = (int)LevelEntityComponentKind.Navigation + 1;
+	private const int ComponentKindCount = (int)LevelEntityComponentKind.DoorMotion + 1;
 	private const int KnownComponentMask = (1 << ComponentKindCount) - 1;
 
 	public static byte[] Serialize(LevelData level) {
@@ -27,6 +27,7 @@ public static class LevelDataCodec {
 		}
 		var orderedZones = OrderZones(level.NavZones);
 		ValidateNavigationZones(orderedZones, level.Navigation);
+		LevelDataValidation.ValidateZoneLinks(ordered, orderedZones);
 
 		using var payloadStream = new MemoryStream();
 		using (var writer = new BinaryWriter(payloadStream, Encoding.UTF8, leaveOpen: true)) {
@@ -130,6 +131,7 @@ public static class LevelDataCodec {
 				throw new InvalidDataException("Level payload contains trailing data.");
 			}
 			ValidateNavigationZones(zones, navigation);
+			LevelDataValidation.ValidateZoneLinks(placements, zones);
 			return new LevelData(placements, navigation, zones);
 		} catch (EndOfStreamException exception) {
 			throw new InvalidDataException("Level data is truncated.", exception);
@@ -145,7 +147,7 @@ public static class LevelDataCodec {
 	public static string ContentHash(ReadOnlySpan<byte> bytes) => Convert.ToHexString(SHA256.HashData(bytes));
 
 	/// <remarks>
-	/// Source path, type, transform, then a mask with bit <c>1 &lt;&lt; kind</c> set per present
+	/// Source path, type, transform, then a 16-bit mask with bit <c>1 &lt;&lt; kind</c> set per present
 	/// <see cref="LevelEntityComponentKind"/>, then each present component in kind order.
 	/// </remarks>
 	private static void WritePlacement(BinaryWriter writer, in EntityPlacement placement) {
@@ -153,10 +155,10 @@ public static class LevelDataCodec {
 		writer.Write((byte)placement.Type);
 		WriteTransform(writer, placement.Transform);
 		var components = placement.Components;
-		byte mask = 0;
+		ushort mask = 0;
 		for (var kind = 0; kind < ComponentKindCount; kind++) {
 			if (components.Has((LevelEntityComponentKind)kind)) {
-				mask |= (byte)(1 << kind);
+				mask |= (ushort)(1 << kind);
 			}
 		}
 		writer.Write(mask);
@@ -181,15 +183,25 @@ public static class LevelDataCodec {
 		if (components.Navigation is { } navigation) {
 			writer.Write((byte)navigation);
 		}
+		if (components.ZoneLink is { } zoneLink) {
+			writer.Write(zoneLink);
+		}
+		if (components.DoorMotion is { } motion) {
+			writer.Write(motion.OpenOffset.X.RawValue);
+			writer.Write(motion.OpenOffset.Y.RawValue);
+			writer.Write(motion.OpenOffset.Z.RawValue);
+			writer.Write(motion.Speed.RawValue);
+			writer.Write(motion.StartsOpen);
+		}
 	}
 
 	private static EntityPlacement ReadPlacement(BinaryReader reader, int index) {
 		var sourcePath = ReadSourcePath(reader, "entity", index);
 		var type = (LevelEntityType)reader.ReadByte();
 		var transform = ReadTransform(reader);
-		var mask = reader.ReadByte();
+		var mask = reader.ReadUInt16();
 		if ((mask & ~KnownComponentMask) != 0) {
-			throw new InvalidDataException($"{sourcePath}: unknown entity components in mask 0x{mask:X2}.");
+			throw new InvalidDataException($"{sourcePath}: unknown entity components in mask 0x{mask:X4}.");
 		}
 		bool Has(LevelEntityComponentKind kind) => (mask & (1 << (int)kind)) != 0;
 		return new EntityPlacement(sourcePath, type, transform, new PlacementComponents(
@@ -203,7 +215,19 @@ public static class LevelDataCodec {
 				)
 				: null,
 			View: Has(LevelEntityComponentKind.View) ? (ViewAsset)reader.ReadInt32() : null,
-			Navigation: Has(LevelEntityComponentKind.Navigation) ? (NavContribution)reader.ReadByte() : null
+			Navigation: Has(LevelEntityComponentKind.Navigation) ? (NavContribution)reader.ReadByte() : null,
+			ZoneLink: Has(LevelEntityComponentKind.ZoneLink) ? ReadBoundedString(reader, NavZoneData.MaxIdLength, $"{sourcePath} zone link") : null,
+			DoorMotion: Has(LevelEntityComponentKind.DoorMotion)
+				? new DoorMotionData(
+					new FVector3(FP.FromRaw(reader.ReadInt32()), FP.FromRaw(reader.ReadInt32()), FP.FromRaw(reader.ReadInt32())),
+					FP.FromRaw(reader.ReadInt32()),
+					reader.ReadByte() switch {
+						0 => false,
+						1 => true,
+						var value => throw new InvalidDataException($"{sourcePath}: invalid door start state {value}."),
+					}
+				)
+				: null
 		));
 	}
 

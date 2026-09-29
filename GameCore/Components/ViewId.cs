@@ -15,4 +15,5 @@ public enum ViewAsset {
 	Dummy = 5,
 	Crate = 6,
 	NavCharacter = 7,
+	Door = 8,
 }

@@ -184,7 +184,7 @@ public sealed class NavMeshBakerTests {
 		var settings = NavBakeSettings.Default;
 		var result = NavMeshBaker.Bake(LoadSampleBoxes(), LoadSampleZones(), settings);
 		var mesh = result.Mesh;
-		var zone = result.Zones.Single();
+		var zone = result.Zones.Single(static zone => zone.Id == "gate");
 		var inZone = zone.Triangles.ToArray().ToHashSet();
 		// Recast marks voxels by their centers and then simplifies region contours by up to
 		// EdgeMaxError voxels, so the split follows the volume only within this tolerance.
@@ -205,8 +205,10 @@ public sealed class NavMeshBakerTests {
 					Assert.That(x > 2 + tolerance && x < 6 - tolerance && z > -9 + tolerance && z < -3 - tolerance, Is.False, $"triangle {t} at ({x}, {z}) lies inside the volume but not in the zone");
 				}
 			}
-			// Walkable ground inside the volume: x from the box's eroded edge at 2.5 to 6.
-			Assert.That(zoneArea, Is.EqualTo(3.5 * 6).Within(1.5), "the zone covers the walkable ground inside its volume");
+			// Walkable ground inside the volume: x from the box's eroded edge at 2.5 to 6. Contour simplification
+			// trims slivers along the volume's edges, and how much depends on the rest of the level's regions
+			// (19.5 m² on the open sample, 19.3 m² once the vault room was added).
+			Assert.That(zoneArea, Is.EqualTo(3.5 * 6).Within(2), "the zone covers the walkable ground inside its volume");
 		});
 	}
 

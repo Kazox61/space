@@ -35,4 +35,38 @@ public static class TestLevels {
 			Navigation: navigation
 		)
 	);
+
+	/// <summary>A door placement: a kinematic box with a door view, linked to <paramref name="zoneId"/>.</summary>
+	public static EntityPlacement Door(
+		string path,
+		FWorldTransform closed,
+		FVector3 halfExtents,
+		string zoneId,
+		FVector3 openOffset,
+		FP speed,
+		bool startsOpen
+	) => new(
+		path,
+		LevelEntityType.Door,
+		closed,
+		new PlacementComponents(
+			Body: BodyType.Kinematic,
+			BoxShape: new BoxShapeData(halfExtents, FP.One),
+			View: ViewAsset.Door,
+			ZoneLink: zoneId,
+			DoorMotion: new DoorMotionData(openOffset, speed, startsOpen)
+		)
+	);
+
+	/// <summary>A pressure plate placement: a static sensor box linked to <paramref name="zoneId"/>.</summary>
+	public static EntityPlacement PressurePlate(string path, FWorldTransform transform, FVector3 halfExtents, string zoneId) => new(
+		path,
+		LevelEntityType.PressurePlate,
+		transform,
+		new PlacementComponents(
+			Body: BodyType.Static,
+			BoxShape: new BoxShapeData(halfExtents, FP.One),
+			ZoneLink: zoneId
+		)
+	);
 }

@@ -22,6 +22,19 @@ internal static class LevelDataValidation {
 		[BodyType.Static]
 	);
 
+	private static readonly TypeRules s_door = new(
+		[LevelEntityComponentKind.Body, LevelEntityComponentKind.BoxShape, LevelEntityComponentKind.View, LevelEntityComponentKind.ZoneLink, LevelEntityComponentKind.DoorMotion],
+		[LevelEntityComponentKind.Health, LevelEntityComponentKind.Loot, LevelEntityComponentKind.Navigation],
+		[BodyType.Kinematic]
+	);
+
+	// No View, like static geometry: a plate never moves, so the map scene draws it.
+	private static readonly TypeRules s_pressurePlate = new(
+		[LevelEntityComponentKind.Body, LevelEntityComponentKind.BoxShape, LevelEntityComponentKind.ZoneLink],
+		[LevelEntityComponentKind.Health, LevelEntityComponentKind.Loot, LevelEntityComponentKind.View, LevelEntityComponentKind.Navigation, LevelEntityComponentKind.DoorMotion],
+		[BodyType.Static]
+	);
+
 	public static void Validate(in EntityPlacement placement) {
 		if (string.IsNullOrWhiteSpace(placement.SourcePath)) {
 			throw new InvalidDataException("Level entity source path is required.");
@@ -29,6 +42,8 @@ internal static class LevelDataValidation {
 		var rules = placement.Type switch {
 			LevelEntityType.Crate => s_crate,
 			LevelEntityType.StaticGeometry => s_staticGeometry,
+			LevelEntityType.Door => s_door,
+			LevelEntityType.PressurePlate => s_pressurePlate,
 			_ => throw new InvalidDataException($"{placement.SourcePath}: unsupported entity type {placement.Type}."),
 		};
 		var components = placement.Components;
@@ -59,11 +74,33 @@ internal static class LevelDataValidation {
 		if (components.Navigation is { } navigation && !Enum.IsDefined(navigation)) {
 			throw new InvalidDataException($"{placement.SourcePath}: invalid navigation contribution {navigation}.");
 		}
+		if (components.ZoneLink is { } zoneLink && (string.IsNullOrWhiteSpace(zoneLink) || zoneLink.Length > NavZoneData.MaxIdLength)) {
+			throw new InvalidDataException($"{placement.SourcePath}: zone link '{zoneLink}' must be non-empty and at most {NavZoneData.MaxIdLength} characters.");
+		}
+		if (components.DoorMotion is { } motion) {
+			var travelLimit = FP.FromRatio(80, 1);
+			if (motion.OpenOffset == FVector3.Zero
+				|| FP.Abs(motion.OpenOffset.X) > travelLimit || FP.Abs(motion.OpenOffset.Y) > travelLimit || FP.Abs(motion.OpenOffset.Z) > travelLimit) {
+				throw new InvalidDataException($"{placement.SourcePath}: door open offset must be non-zero and at most {travelLimit} per axis.");
+			}
+			if (motion.Speed <= FP.Zero || motion.Speed > FP.FromRatio(20, 1)) {
+				throw new InvalidDataException($"{placement.SourcePath}: door speed must be in (0, 20].");
+			}
+		}
 		if (FQuaternion.LengthSqr(placement.Transform.Rotation) <= FP.CalculationsEpsilonSqr) {
 			throw new InvalidDataException($"{placement.SourcePath}: rotation must be non-zero.");
 		}
 
 		ValidateOrigin(placement.Transform.Position, placement.SourcePath);
+	}
+
+	/// <summary>Every <see cref="PlacementComponents.ZoneLink"/> must name one of the level's zone volumes.</summary>
+	public static void ValidateZoneLinks(IEnumerable<EntityPlacement> placements, IReadOnlyList<NavZoneVolume> zones) {
+		foreach (var placement in placements) {
+			if (placement.Components.ZoneLink is { } zoneLink && !zones.Any(zone => StringComparer.Ordinal.Equals(zone.Id, zoneLink))) {
+				throw new InvalidDataException($"{placement.SourcePath}: zone link '{zoneLink}' names no navigation zone in the level.");
+			}
+		}
 	}
 
 	private static void ValidateBoxShape(in BoxShapeData box, BodyType body, string sourcePath) {

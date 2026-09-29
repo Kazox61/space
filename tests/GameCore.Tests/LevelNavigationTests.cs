@@ -41,7 +41,7 @@ public sealed class LevelNavigationTests {
 	public void NavigationZonesMustMatchTheLevelsZoneVolumes() {
 		var baked = Baked();
 		var withoutVolumes = new LevelData(baked.Entities, baked.Navigation);
-		var renamed = new LevelData(baked.Entities, baked.Navigation, baked.NavZones.Select(static zone => zone with { Id = "other" }));
+		var renamed = new LevelData(baked.Entities, baked.Navigation, baked.NavZones.Select(static zone => zone with { Id = "other-" + zone.Id }));
 
 		Assert.Multiple(() => {
 			Assert.That(() => LevelDataCodec.Serialize(withoutVolumes), Throws.InstanceOf<InvalidDataException>().With.Message.Contains("bake the level again"));
@@ -118,7 +118,7 @@ public sealed class LevelNavigationTests {
 			Assert.That(NavMeshBytes.Of(navigation.Mesh.CreateMesh()), Is.EqualTo(NavMeshBytes.Of(Baked().Navigation!.Mesh.CreateMesh())),
 				"the committed navmesh differs from a fresh bake of the committed colliders; re-export the sample level");
 			Assert.That(ZoneTable(navigation), Is.EqualTo(ZoneTable(Baked().Navigation!)), "the committed zone table differs from a fresh bake");
-			Assert.That(navigation.Zones.Select(static zone => zone.Id), Is.EqualTo(new[] { "gate" }));
+			Assert.That(navigation.Zones.Select(static zone => zone.Id), Is.EqualTo(new[] { "gate", "vault" }));
 		});
 	}
 

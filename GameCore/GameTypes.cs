@@ -26,6 +26,7 @@ public static class GameTypes {
 		World<TWorld>.Types()
 			.Component<Body>()
 			.Component<CharacterMoveIntent>()
+			.Component<DoorState>()
 			.Component<Contact>()
 			.Component<Health>()
 			.Component<LootDrop>()
@@ -36,13 +37,16 @@ public static class GameTypes {
 			.Component<PendingRespawn>()
 			.Component<PendingShot>()
 			.Component<PlayerInfo>()
+			.Component<PressurePlateState>()
 			.Component<ProjectileOrigin>()
 			.Component<ProjectileRange>()
 			.Component<RailSlot>()
+			.Component<SensorProxy>()
 			.Component<Shape>()
 			.Component<Transform>()
 			.Component<ViewId>()
 			.Tag<ChasesNearestPlayer>()
+			.Tag<HasSensorProxy>()
 			.Tag<IsProjectile>()
 			.Tag<OutOfPhysicsBounds>()
 			.Links<Shapes>()
@@ -59,9 +63,11 @@ public static class GameTypes {
 			.Event<DamageEvent>()
 			.Event<DeadEvent>()
 			.EntityType<Crate>()
+			.EntityType<Door>()
 			.EntityType<Dummy>()
 			.EntityType<NavCharacter>()
 			.EntityType<Player>()
+			.EntityType<PressurePlate>()
 			.EntityType<Projectile>();
 
 #if DEBUG
@@ -71,13 +77,13 @@ public static class GameTypes {
 
 	// Mirrors the list above; only consulted by the debug-time coverage check.
 	private static readonly HashSet<Type> s_registered = [
-		typeof(Body), typeof(CharacterMoveIntent), typeof(Contact), typeof(Health), typeof(LootDrop), typeof(Mover), typeof(NavAgent), typeof(NavZoneState), typeof(PatrolRail), typeof(PendingRespawn), typeof(PendingShot),
-		typeof(PlayerInfo), typeof(ProjectileOrigin), typeof(ProjectileRange), typeof(RailSlot), typeof(Shape), typeof(Transform), typeof(ViewId),
-		typeof(ChasesNearestPlayer), typeof(IsProjectile), typeof(OutOfPhysicsBounds),
+		typeof(Body), typeof(CharacterMoveIntent), typeof(DoorState), typeof(Contact), typeof(Health), typeof(LootDrop), typeof(Mover), typeof(NavAgent), typeof(NavZoneState), typeof(PatrolRail), typeof(PendingRespawn), typeof(PendingShot),
+		typeof(PlayerInfo), typeof(PressurePlateState), typeof(ProjectileOrigin), typeof(ProjectileRange), typeof(RailSlot), typeof(SensorProxy), typeof(Shape), typeof(Transform), typeof(ViewId),
+		typeof(ChasesNearestPlayer), typeof(HasSensorProxy), typeof(IsProjectile), typeof(OutOfPhysicsBounds),
 		typeof(Shapes), typeof(BodyOwner), typeof(ShapeA), typeof(ShapeB), typeof(Shooter),
 		typeof(ContactBeginTouchEvent), typeof(ContactEndTouchEvent), typeof(ContactHitEvent), typeof(ContinuousHitEvent),
 		typeof(SensorBeginTouchEvent), typeof(SensorEndTouchEvent), typeof(DamageEvent), typeof(DeadEvent),
-		typeof(Crate), typeof(Dummy), typeof(NavCharacter), typeof(Player), typeof(Projectile),
+		typeof(Crate), typeof(Door), typeof(Dummy), typeof(NavCharacter), typeof(Player), typeof(PressurePlate), typeof(Projectile),
 	];
 
 	/// <summary>

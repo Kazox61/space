@@ -29,15 +29,20 @@ public abstract partial class Core<TWorld> where TWorld : struct, ISessionType, 
 			// Controllers write CharacterMoveIntent; CharacterMoverSystem executes it.
 			Systems.Add(new PlayerIntentSystem(), order: 2);
 			Systems.Add(new NavChaseSystem(), order: 3);
+			Systems.Add(new DoorSystem(), order: 3);
 			// Zone states are final for the tick once gameplay above has run; agents plan against them.
 			Systems.Add(new NavZoneApplySystem(), order: 4);
 			Systems.Add(new NavAgentSystem(), order: 5);
 			Systems.Add(new CharacterMoverSystem(), order: 6);
+			// Proxies follow the characters' final positions, before shape proxies and contacts update.
+			Systems.Add(new SensorProxySystem(), order: 7);
 			Systems.Add(new ShootSystem(), order: 7);
 			Systems.Add(new ProjectileRangeSystem(), order: 8);
 			Systems.Add(new ShapeProxySystem(), order: 9);
 			Systems.Add(new ContactSystem(), order: 10);
 			Systems.Add(new DummyPatrolSystem(), order: 11);
+			// Sensor events from ContactSystem this tick; toggled doors move from the next tick on.
+			Systems.Add(new PressurePlateSystem(), order: 11);
 			Systems.Add(new ContactSolverSystem(), order: 12);
 			Systems.Add(new BodyTransformSyncSystem(), order: 13);
 			Systems.Add(new ProjectileHitSystem(), order: 14);
