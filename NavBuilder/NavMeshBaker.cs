@@ -22,7 +22,7 @@ public readonly record struct NavMeshBakeResult(NavMesh Mesh, NavMeshBakeReport 
 }
 
 /// <summary>
-/// Offline bake: rasterizes the level's static collider triangles with DotRecast's Recast stage,
+/// Offline bake: rasterizes the level's static geometry triangles with DotRecast's Recast stage,
 /// then turns the resulting detail mesh into a fixed-point <see cref="NavMesh"/> with
 /// <see cref="NavMeshBuilder"/>. Floats exist only between the two conversions in this class.
 /// </summary>
@@ -34,27 +34,27 @@ public static class NavMeshBaker {
 	private const int FirstZoneRecastArea = 1;
 	private const int MaxHeightfieldCells = NavMesh.MaxGridCells;
 
-	public static NavMeshBakeResult Bake(IEnumerable<StaticBox> boxes, NavBakeSettings settings) {
-		return Bake(StaticBoxTriangulator.Build(boxes), [], settings);
+	public static NavMeshBakeResult Bake(IEnumerable<NavSourceBox> boxes, NavBakeSettings settings) {
+		return Bake(NavSourceTriangulator.Build(boxes), [], settings);
 	}
 
-	public static NavMeshBakeResult Bake(IEnumerable<StaticBox> boxes, IEnumerable<NavZoneVolume> zones, NavBakeSettings settings) {
-		return Bake(StaticBoxTriangulator.Build(boxes), zones, settings);
+	public static NavMeshBakeResult Bake(IEnumerable<NavSourceBox> boxes, IEnumerable<NavZoneVolume> zones, NavBakeSettings settings) {
+		return Bake(NavSourceTriangulator.Build(boxes), zones, settings);
 	}
 
 	/// <summary>
-	/// The level with its navigation baked from its static boxes and navigation zones, replacing any
-	/// it had. A level without a <see cref="NavContribution.Walkable"/> box gets no navigation and a
-	/// null report.
+	/// The level with its navigation baked from its static geometry and navigation zones, replacing
+	/// any it had. A level without <see cref="NavContribution.Walkable"/> static geometry gets no
+	/// navigation and a null report.
 	/// </summary>
 	public static LevelData BakeLevel(LevelData level, NavBakeSettings settings, out NavMeshBakeReport? report) {
 		ArgumentNullException.ThrowIfNull(level);
-		if (!level.StaticBoxes.Any(static box => box.Navigation == NavContribution.Walkable)) {
+		if (!level.NavigationSources.Any(static box => box.Navigation == NavContribution.Walkable)) {
 			CollectZones(OrderZones(level.NavZones), []);
 			report = null;
 			return level.WithNavigation(null);
 		}
-		var result = Bake(level.StaticBoxes, level.NavZones, settings);
+		var result = Bake(level.NavigationSources, level.NavZones, settings);
 		report = result.Report;
 		return level.WithNavigation(new LevelNavigation(settings, new NavMeshData(result.Mesh), result.Zones));
 	}

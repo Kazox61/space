@@ -3,28 +3,31 @@
 [ext_resource type="Script" uid="uid://bunjjm6vn7d3h" path="res://level_authoring/EntitySpawn.cs" id="1_spawn"]
 [ext_resource type="Resource" uid="uid://do3lqdeifscq8" path="res://maps/crate_recipe.tres" id="2_recipe"]
 [ext_resource type="Material" uid="uid://crh4edqr4kdta" path="res://material/grid_mat.tres" id="3_grid"]
-[ext_resource type="Script" uid="uid://g1k55xspht3p" path="res://level_authoring/LevelCollider.cs" id="4_collider"]
-[ext_resource type="Resource" uid="uid://b0vu13fjtjuch" path="res://maps/static_box_recipe.tres" id="5_collider_recipe"]
-[ext_resource type="Script" uid="uid://xgjvft0g5vnd" path="res://level_authoring/ColliderComponent.cs" id="6_collider_component"]
-[ext_resource type="Script" uid="uid://d4dh3ymbrr865" path="res://level_authoring/BoxColliderComponent.cs" id="7_box_collider"]
+[ext_resource type="Resource" uid="uid://b0vu13fjtjuch" path="res://maps/static_box_recipe.tres" id="5_static_recipe"]
+[ext_resource type="Script" uid="uid://d3ws8oeafa2hk" path="res://level_authoring/BoxShapeComponent.cs" id="7_box_shape"]
 [ext_resource type="Script" uid="uid://crcwfs64lq55j" path="res://level_authoring/EntityComponent.cs" id="8_entity_component"]
 [ext_resource type="Script" uid="uid://eb4g86y84qna" path="res://level_authoring/HealthComponent.cs" id="9_health"]
 [ext_resource type="Script" uid="uid://dysc1e0oy7v13" path="res://level_authoring/NavZone.cs" id="10_nav_zone"]
+[ext_resource type="Script" uid="uid://dho3jcli7i2b7" path="res://level_authoring/NavigationComponent.cs" id="11_navigation"]
 
 [sub_resource type="Resource" id="StrongCrateHealth"]
 script = ExtResource("9_health")
 Value = 250
 
 [sub_resource type="Resource" id="GroundBox"]
-script = ExtResource("7_box_collider")
+script = ExtResource("7_box_shape")
 Size = Vector3(80, 1, 80)
 
 [sub_resource type="BoxMesh" id="GroundMesh"]
 size = Vector3(80, 1, 80)
 
 [sub_resource type="Resource" id="TestBoxBox"]
-script = ExtResource("7_box_collider")
+script = ExtResource("7_box_shape")
 Size = Vector3(4, 1, 4)
+
+[sub_resource type="Resource" id="TestBoxNavigation"]
+script = ExtResource("11_navigation")
+Value = 1
 
 [sub_resource type="StandardMaterial3D" id="StandardMaterial3D_jh5dx"]
 albedo_color = Color(1, 0.6, 0, 1)
@@ -46,9 +49,9 @@ Recipe = ExtResource("2_recipe")
 Overrides = Array[ExtResource("8_entity_component")]([SubResource("StrongCrateHealth")])
 
 [node name="Ground" type="Node3D" parent="." unique_id=1150829718]
-script = ExtResource("4_collider")
-Recipe = ExtResource("5_collider_recipe")
-Overrides = Array[ExtResource("6_collider_component")]([SubResource("GroundBox")])
+script = ExtResource("1_spawn")
+Recipe = ExtResource("5_static_recipe")
+Overrides = Array[ExtResource("8_entity_component")]([SubResource("GroundBox")])
 
 [node name="Mesh" type="MeshInstance3D" parent="Ground" unique_id=407939433]
 material_override = ExtResource("3_grid")
@@ -56,10 +59,9 @@ mesh = SubResource("GroundMesh")
 
 [node name="TestBox" type="Node3D" parent="." unique_id=962479745]
 transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 1, -6)
-script = ExtResource("4_collider")
-Recipe = ExtResource("5_collider_recipe")
-Overrides = Array[ExtResource("6_collider_component")]([SubResource("TestBoxBox")])
-Navigation = 1
+script = ExtResource("1_spawn")
+Recipe = ExtResource("5_static_recipe")
+Overrides = Array[ExtResource("8_entity_component")]([SubResource("TestBoxBox"), SubResource("TestBoxNavigation")])
 
 [node name="Mesh" type="MeshInstance3D" parent="TestBox" unique_id=1400662265]
 material_override = SubResource("StandardMaterial3D_jh5dx")

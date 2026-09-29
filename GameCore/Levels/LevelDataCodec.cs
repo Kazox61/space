@@ -9,24 +9,21 @@ public static class LevelDataCodec {
 	private static readonly Encoding s_strictUtf8 = new UTF8Encoding(encoderShouldEmitUTF8Identifier: false, throwOnInvalidBytes: true);
 
 	private const uint Magic = 0x4C564C53; // "SLVL" in little-endian byte order.
-	private const ushort Version = 5;
+	private const ushort Version = 6;
 	internal const int HashSize = 32;
 	internal const int HashOffset = sizeof(uint) + sizeof(ushort) + sizeof(int);
 	internal const int EnvelopeSize = HashOffset + HashSize;
 	private const int MaximumSourcePathLength = 1024;
 	private const int MaximumEntityCount = 100_000;
-	private const int MaximumStaticBoxCount = 100_000;
 	private const int MaximumNavZoneCount = NavZoneData.MaxZones;
 	private const int MaximumPayloadSize = 64 * 1024 * 1024;
+	private const int ComponentKindCount = (int)LevelEntityComponentKind.Navigation + 1;
+	private const int KnownComponentMask = (1 << ComponentKindCount) - 1;
 
 	public static byte[] Serialize(LevelData level) {
 		var ordered = level.Entities.OrderBy(static entity => entity.SourcePath, StringComparer.Ordinal).ToArray();
 		if (ordered.Length > MaximumEntityCount) {
 			throw new InvalidDataException($"Level contains {ordered.Length} entities; maximum is {MaximumEntityCount}.");
-		}
-		var orderedBoxes = level.StaticBoxes.OrderBy(static box => box.SourcePath, StringComparer.Ordinal).ToArray();
-		if (orderedBoxes.Length > MaximumStaticBoxCount) {
-			throw new InvalidDataException($"Level contains {orderedBoxes.Length} static boxes; maximum is {MaximumStaticBoxCount}.");
 		}
 		var orderedZones = OrderZones(level.NavZones);
 		ValidateNavigationZones(orderedZones, level.Navigation);
@@ -43,18 +40,6 @@ public static class LevelDataCodec {
 				}
 				LevelDataValidation.Validate(placement);
 				WritePlacement(writer, placement);
-			}
-
-			writer.Write(orderedBoxes.Length);
-			sourcePaths.Clear();
-			foreach (var box in orderedBoxes) {
-				if (string.IsNullOrWhiteSpace(box.SourcePath)
-					|| box.SourcePath.Length > MaximumSourcePathLength
-					|| !sourcePaths.Add(box.SourcePath)) {
-					throw new InvalidDataException($"Level static box source path '{box.SourcePath}' is empty, too long, or duplicated.");
-				}
-				LevelDataValidation.Validate(box);
-				WriteStaticBox(writer, box);
 			}
 
 			writer.Write(orderedZones.Length);
@@ -127,21 +112,6 @@ public static class LevelDataCodec {
 				LevelDataValidation.Validate(placements[i]);
 			}
 
-			var boxCount = payloadReader.ReadInt32();
-			if (boxCount is < 0 or > MaximumStaticBoxCount) {
-				throw new InvalidDataException($"Level static box count {boxCount} is invalid.");
-			}
-			var boxes = new StaticBox[boxCount];
-			previousSourcePath = null;
-			for (var i = 0; i < boxCount; i++) {
-				boxes[i] = ReadStaticBox(payloadReader, i);
-				if (previousSourcePath is not null
-					&& StringComparer.Ordinal.Compare(previousSourcePath, boxes[i].SourcePath) >= 0) {
-					throw new InvalidDataException("Level static box source paths are duplicated or not canonically ordered.");
-				}
-				previousSourcePath = boxes[i].SourcePath;
-				LevelDataValidation.Validate(boxes[i]);
-			}
 			var zoneCount = payloadReader.ReadInt32();
 			if (zoneCount is < 0 or > MaximumNavZoneCount) {
 				throw new InvalidDataException($"Level navigation zone count {zoneCount} is invalid.");
@@ -160,7 +130,7 @@ public static class LevelDataCodec {
 				throw new InvalidDataException("Level payload contains trailing data.");
 			}
 			ValidateNavigationZones(zones, navigation);
-			return new LevelData(placements, boxes, navigation, zones);
+			return new LevelData(placements, navigation, zones);
 		} catch (EndOfStreamException exception) {
 			throw new InvalidDataException("Level data is truncated.", exception);
 		} catch (FormatException exception) {
@@ -174,52 +144,68 @@ public static class LevelDataCodec {
 
 	public static string ContentHash(ReadOnlySpan<byte> bytes) => Convert.ToHexString(SHA256.HashData(bytes));
 
+	/// <remarks>
+	/// Source path, type, transform, then a mask with bit <c>1 &lt;&lt; kind</c> set per present
+	/// <see cref="LevelEntityComponentKind"/>, then each present component in kind order.
+	/// </remarks>
 	private static void WritePlacement(BinaryWriter writer, in EntityPlacement placement) {
 		writer.Write(placement.SourcePath);
 		writer.Write((byte)placement.Type);
 		WriteTransform(writer, placement.Transform);
-		writer.Write(placement.Crate.Health);
-		writer.Write((byte)placement.Crate.Loot);
-		writer.Write((byte)placement.Crate.BodyType);
-		writer.Write(placement.Crate.BoxHalfExtents.X.RawValue);
-		writer.Write(placement.Crate.BoxHalfExtents.Y.RawValue);
-		writer.Write(placement.Crate.BoxHalfExtents.Z.RawValue);
-		writer.Write(placement.Crate.Density.RawValue);
-		writer.Write((int)placement.Crate.View);
+		var components = placement.Components;
+		byte mask = 0;
+		for (var kind = 0; kind < ComponentKindCount; kind++) {
+			if (components.Has((LevelEntityComponentKind)kind)) {
+				mask |= (byte)(1 << kind);
+			}
+		}
+		writer.Write(mask);
+		if (components.Health is { } health) {
+			writer.Write(health);
+		}
+		if (components.Loot is { } loot) {
+			writer.Write((byte)loot);
+		}
+		if (components.Body is { } body) {
+			writer.Write((byte)body);
+		}
+		if (components.BoxShape is { } box) {
+			writer.Write(box.HalfExtents.X.RawValue);
+			writer.Write(box.HalfExtents.Y.RawValue);
+			writer.Write(box.HalfExtents.Z.RawValue);
+			writer.Write(box.Density.RawValue);
+		}
+		if (components.View is { } view) {
+			writer.Write((int)view);
+		}
+		if (components.Navigation is { } navigation) {
+			writer.Write((byte)navigation);
+		}
 	}
 
 	private static EntityPlacement ReadPlacement(BinaryReader reader, int index) {
 		var sourcePath = ReadSourcePath(reader, "entity", index);
-		return new EntityPlacement(
-			sourcePath,
-			(LevelEntityType)reader.ReadByte(),
-			ReadTransform(reader),
-			new CratePlacementData(
-				reader.ReadInt32(),
-				(LootKind)reader.ReadByte(),
-				(BodyType)reader.ReadByte(),
-				new FVector3(FP.FromRaw(reader.ReadInt32()), FP.FromRaw(reader.ReadInt32()), FP.FromRaw(reader.ReadInt32())),
-				FP.FromRaw(reader.ReadInt32()),
-				(ViewAsset)reader.ReadInt32()
-			)
-		);
+		var type = (LevelEntityType)reader.ReadByte();
+		var transform = ReadTransform(reader);
+		var mask = reader.ReadByte();
+		if ((mask & ~KnownComponentMask) != 0) {
+			throw new InvalidDataException($"{sourcePath}: unknown entity components in mask 0x{mask:X2}.");
+		}
+		bool Has(LevelEntityComponentKind kind) => (mask & (1 << (int)kind)) != 0;
+		return new EntityPlacement(sourcePath, type, transform, new PlacementComponents(
+			Health: Has(LevelEntityComponentKind.Health) ? reader.ReadInt32() : null,
+			Loot: Has(LevelEntityComponentKind.Loot) ? (LootKind)reader.ReadByte() : null,
+			Body: Has(LevelEntityComponentKind.Body) ? (BodyType)reader.ReadByte() : null,
+			BoxShape: Has(LevelEntityComponentKind.BoxShape)
+				? new BoxShapeData(
+					new FVector3(FP.FromRaw(reader.ReadInt32()), FP.FromRaw(reader.ReadInt32()), FP.FromRaw(reader.ReadInt32())),
+					FP.FromRaw(reader.ReadInt32())
+				)
+				: null,
+			View: Has(LevelEntityComponentKind.View) ? (ViewAsset)reader.ReadInt32() : null,
+			Navigation: Has(LevelEntityComponentKind.Navigation) ? (NavContribution)reader.ReadByte() : null
+		));
 	}
-
-	private static void WriteStaticBox(BinaryWriter writer, in StaticBox box) {
-		writer.Write(box.SourcePath);
-		WriteTransform(writer, box.Transform);
-		writer.Write(box.HalfExtents.X.RawValue);
-		writer.Write(box.HalfExtents.Y.RawValue);
-		writer.Write(box.HalfExtents.Z.RawValue);
-		writer.Write((byte)box.Navigation);
-	}
-
-	private static StaticBox ReadStaticBox(BinaryReader reader, int index) => new(
-		ReadSourcePath(reader, "static box", index),
-		ReadTransform(reader),
-		new FVector3(FP.FromRaw(reader.ReadInt32()), FP.FromRaw(reader.ReadInt32()), FP.FromRaw(reader.ReadInt32())),
-		(NavContribution)reader.ReadByte()
-	);
 
 	private static NavZoneVolume[] OrderZones(IReadOnlyList<NavZoneVolume> zones) {
 		var ordered = zones.OrderBy(static zone => zone.Id, StringComparer.Ordinal).ToArray();

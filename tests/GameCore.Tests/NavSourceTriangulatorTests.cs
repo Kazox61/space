@@ -6,12 +6,12 @@ using Space.NavBuilder;
 namespace Space.GameCore.Tests;
 
 [TestFixture]
-public sealed class StaticBoxTriangulatorTests {
+public sealed class NavSourceTriangulatorTests {
 	[Test]
 	public void BoxProducesTransformedVerticesAndOutwardTriangles() {
 		var box = Box("Map/Box", 10, NavContribution.Walkable);
 
-		var soup = StaticBoxTriangulator.Build([box]);
+		var soup = NavSourceTriangulator.Build([box]);
 
 		Assert.Multiple(() => {
 			Assert.That(soup.Vertices, Has.Count.EqualTo(8));
@@ -48,7 +48,7 @@ public sealed class StaticBoxTriangulatorTests {
 
 	[Test]
 	public void BuildSortsBoxesAndExcludesDisabledGeometry() {
-		var soup = StaticBoxTriangulator.Build([
+		var soup = NavSourceTriangulator.Build([
 			Box("Map/B", 20, NavContribution.ObstacleOnly),
 			Box("Map/Excluded", 30, NavContribution.Excluded),
 			Box("Map/A", 10, NavContribution.Walkable),
@@ -75,7 +75,7 @@ public sealed class StaticBoxTriangulatorTests {
 		var rotation = FQuaternion.Normalize(box.Transform.Rotation);
 		var expected = box.Transform.Position + rotation * localCorner;
 
-		var soup = StaticBoxTriangulator.Build([box]);
+		var soup = NavSourceTriangulator.Build([box]);
 
 		Assert.That(soup.Vertices[0], Is.EqualTo(new Fixed64.FVector3(expected.X, expected.Y, expected.Z)));
 		AssertOutwardNormals(soup, rotation);
@@ -83,7 +83,7 @@ public sealed class StaticBoxTriangulatorTests {
 
 	[Test]
 	public void BuildRejectsDuplicateSourcePaths() {
-		Assert.That(() => StaticBoxTriangulator.Build([
+		Assert.That(() => NavSourceTriangulator.Build([
 			Box("Map/Box", 10, NavContribution.Walkable),
 			Box("Map/Box", 20, NavContribution.ObstacleOnly),
 		]), Throws.TypeOf<InvalidDataException>().With.Message.Contains("Map/Box"));
@@ -95,7 +95,7 @@ public sealed class StaticBoxTriangulatorTests {
 			HalfExtents = new FVector3(FP.Zero, 3.ToFP(), 4.ToFP())
 		};
 
-		Assert.That(() => StaticBoxTriangulator.Build([box]),
+		Assert.That(() => NavSourceTriangulator.Build([box]),
 			Throws.TypeOf<InvalidDataException>().With.Message.Contains("Map/Box"));
 	}
 
@@ -108,13 +108,13 @@ public sealed class StaticBoxTriangulatorTests {
 			)
 		};
 
-		var soup = StaticBoxTriangulator.Build([box]);
+		var soup = NavSourceTriangulator.Build([box]);
 
 		Assert.That(soup.Vertices[0], Is.EqualTo(new Fixed64.FVector3(F64(8), F64(17), F64(26))));
 		AssertOutwardNormals(soup, FQuaternion.Identity);
 	}
 
-	private static StaticBox Box(string path, int x, NavContribution navigation) => new(
+	private static NavSourceBox Box(string path, int x, NavContribution navigation) => new(
 		path,
 		new FWorldTransform(new FPos(F64(x), F64(20), F64(30)), FQuaternion.Identity),
 		new FVector3(2.ToFP(), 3.ToFP(), 4.ToFP()),

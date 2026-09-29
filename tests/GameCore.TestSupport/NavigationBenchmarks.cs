@@ -168,7 +168,7 @@ public static partial class Program {
 			if (File.Exists(candidate)) {
 				var data = LevelFile.ReadFromDisk(candidate).Data;
 				// The sample's crates would add physics cost to both runs; only navigation is measured.
-				return new LevelData([], data.StaticBoxes, data.Navigation);
+				return new LevelData(data.Entities.Where(static entity => entity.Type == LevelEntityType.StaticGeometry), data.Navigation);
 			}
 		}
 		throw new FileNotFoundException("Could not find Client/maps/level_pipeline_test.level.bytes.");

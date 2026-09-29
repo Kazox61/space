@@ -25,7 +25,7 @@ public static class NavTestSession {
 		return MemoryMarshal.AsBytes(new ReadOnlySpan<T>(in value)).ToArray();
 	}
 
-	/// <summary>The committed sample level's colliders, zones and navmesh, without its dynamic crates.</summary>
+	/// <summary>The committed sample level's static geometry, zones and navmesh, without its dynamic crates.</summary>
 	public static LevelData Level() {
 		if (s_level is not null) {
 			return s_level;
@@ -34,7 +34,7 @@ public static class NavTestSession {
 			var candidate = Path.Combine(directory.FullName, "Client", "maps", "level_pipeline_test.level.bytes");
 			if (File.Exists(candidate)) {
 				var data = LevelFile.ReadFromDisk(candidate).Data;
-				return s_level = new LevelData([], data.StaticBoxes, data.Navigation, data.NavZones);
+				return s_level = new LevelData(data.Entities.Where(static entity => entity.Type == LevelEntityType.StaticGeometry), data.Navigation, data.NavZones);
 			}
 		}
 		throw new FileNotFoundException("Could not find the sample level file.");

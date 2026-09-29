@@ -1,3 +1,4 @@
+using System.Security.Cryptography;
 using FFS.Libraries.StaticEcs;
 using Fixed;
 using Fixed32;
@@ -25,10 +26,11 @@ public sealed class LevelDataTests {
 		Assert.That(decoded.Entities, Has.Count.EqualTo(2));
 		Assert.Multiple(() => {
 			Assert.That(decoded.Entities[0].SourcePath, Is.EqualTo("Map/A"));
-			Assert.That(decoded.Entities[0].Crate.Health, Is.EqualTo(250));
-			Assert.That(decoded.Entities[0].Crate.Loot, Is.EqualTo(LootKind.Ammo));
+			Assert.That(decoded.Entities[0].Components.Health, Is.EqualTo(250));
+			Assert.That(decoded.Entities[0].Components.Loot, Is.EqualTo(LootKind.Ammo));
+			Assert.That(decoded.Entities[0].Components.Navigation, Is.Null);
 			Assert.That(decoded.Entities[0].Transform.Position.X, Is.EqualTo(a.Transform.Position.X));
-			Assert.That(decoded.Entities[1].Crate.Health, Is.EqualTo(40));
+			Assert.That(decoded.Entities[1].Components.Health, Is.EqualTo(40));
 		});
 	}
 
@@ -53,62 +55,142 @@ public sealed class LevelDataTests {
 	}
 
 	[Test]
-	public void CodecRoundTripsStaticBoxes() {
-		var level = new LevelData([], [
-			Box("Map/WallB", 3) with { Navigation = NavContribution.Excluded },
-			Box("Map/WallA", -5) with { Navigation = NavContribution.ObstacleOnly }
+	public void CodecRoundTripsStaticGeometry() {
+		var level = new LevelData([
+			Box("Map/WallB", 3, NavContribution.Excluded),
+			Box("Map/WallA", -5, NavContribution.ObstacleOnly)
 		]);
 		var bytes = LevelDataCodec.Serialize(level);
 		var decoded = LevelDataCodec.Deserialize(bytes);
 
 		Assert.That(LevelDataCodec.Serialize(decoded), Is.EqualTo(bytes));
-		Assert.That(decoded.StaticBoxes, Has.Count.EqualTo(2));
+		Assert.That(decoded.Entities, Has.Count.EqualTo(2));
 		Assert.Multiple(() => {
-			Assert.That(decoded.StaticBoxes[0].SourcePath, Is.EqualTo("Map/WallA"));
-			Assert.That(decoded.StaticBoxes[0].Transform.Position.X, Is.EqualTo(Fixed64.FP.FromRatio(-5, 1)));
-			Assert.That(decoded.StaticBoxes[0].HalfExtents, Is.EqualTo(new FVector3(40.ToFP(), 3.ToFP(), FP.One)));
-			Assert.That(decoded.StaticBoxes[0].Navigation, Is.EqualTo(NavContribution.ObstacleOnly));
-			Assert.That(decoded.StaticBoxes[1].Navigation, Is.EqualTo(NavContribution.Excluded));
+			var wallA = decoded.Entities[0];
+			Assert.That(wallA.SourcePath, Is.EqualTo("Map/WallA"));
+			Assert.That(wallA.Type, Is.EqualTo(LevelEntityType.StaticGeometry));
+			Assert.That(wallA.Transform.Position.X, Is.EqualTo(Fixed64.FP.FromRatio(-5, 1)));
+			Assert.That(wallA.Components, Is.EqualTo(new PlacementComponents(
+				Body: BodyType.Static,
+				BoxShape: new BoxShapeData(new FVector3(40.ToFP(), 3.ToFP(), FP.One), FP.One),
+				Navigation: NavContribution.ObstacleOnly
+			)));
+			Assert.That(decoded.Entities[1].Components.Navigation, Is.EqualTo(NavContribution.Excluded));
 		});
 	}
 
 	[Test]
 	public void CodecRejectsInvalidNavigationContribution() {
-		var box = Box("Map/Wall", 0) with { Navigation = (NavContribution)byte.MaxValue };
+		var box = Box("Map/Wall", 0, (NavContribution)byte.MaxValue);
 
-		Assert.That(() => LevelDataCodec.Serialize(new LevelData([], [box])),
+		Assert.That(() => LevelDataCodec.Serialize(new LevelData([box])),
 			Throws.TypeOf<InvalidDataException>().With.Message.Contains("Map/Wall"));
 	}
 
 	[Test]
 	public void LevelFileConnectionKeyDependsOnNavigationContribution() {
-		var walkable = LevelDataCodec.Serialize(new LevelData([], [Box("Map/Ground", 0)]));
-		var obstacle = LevelDataCodec.Serialize(new LevelData([], [
-			Box("Map/Ground", 0) with { Navigation = NavContribution.ObstacleOnly }
-		]));
+		var walkable = LevelDataCodec.Serialize(new LevelData([Box("Map/Ground", 0)]));
+		var obstacle = LevelDataCodec.Serialize(new LevelData([Box("Map/Ground", 0, NavContribution.ObstacleOnly)]));
 
 		Assert.That(LevelFile.Read("walkable", walkable).ConnectionKey,
 			Is.Not.EqualTo(LevelFile.Read("obstacle", obstacle).ConnectionKey));
 	}
 
 	[Test]
-	public void CodecRejectsOversizedStaticBox() {
-		var box = Box("Map/Wall", 0) with { HalfExtents = new FVector3(41.ToFP(), FP.One, FP.One) };
-		Assert.That(() => LevelDataCodec.Serialize(new LevelData([], [box])),
+	public void CodecRejectsOversizedStaticGeometry() {
+		var box = Box("Map/Wall", 0) with {
+			Components = Box("Map/Wall", 0).Components with {
+				BoxShape = new BoxShapeData(new FVector3(41.ToFP(), FP.One, FP.One), FP.One)
+			}
+		};
+		Assert.That(() => LevelDataCodec.Serialize(new LevelData([box])),
 			Throws.TypeOf<InvalidDataException>().With.Message.Contains("Map/Wall"));
 	}
 
 	[Test]
+	public void StaticGeometryRequiresNavigation() {
+		var box = Box("Map/Wall", 0);
+		box = box with { Components = box.Components with { Navigation = null } };
+
+		Assert.That(() => LevelDataCodec.Serialize(new LevelData([box])),
+			Throws.TypeOf<InvalidDataException>().With.Message.Contains("Map/Wall").And.Message.Contains("missing").And.Message.Contains("Navigation"));
+	}
+
+	[Test]
+	public void CrateRejectsNavigation() {
+		var crate = Placement("Map/Crate", 100, LootKind.None, Fixed64.FP.Zero);
+		crate = crate with { Components = crate.Components with { Navigation = NavContribution.Walkable } };
+
+		Assert.That(() => LevelDataCodec.Serialize(new LevelData([crate])),
+			Throws.TypeOf<InvalidDataException>().With.Message.Contains("Navigation not allowed on Crate"));
+	}
+
+	[TestCase(LevelEntityComponentKind.Health)]
+	[TestCase(LevelEntityComponentKind.Loot)]
+	[TestCase(LevelEntityComponentKind.View)]
+	public void StaticGeometryRejectsCrateComponents(LevelEntityComponentKind kind) {
+		var box = Box("Map/Wall", 0);
+		var components = kind switch {
+			LevelEntityComponentKind.Health => box.Components with { Health = 100 },
+			LevelEntityComponentKind.Loot => box.Components with { Loot = LootKind.None },
+			LevelEntityComponentKind.View => box.Components with { View = ViewAsset.Crate },
+			_ => throw new ArgumentOutOfRangeException(nameof(kind)),
+		};
+
+		Assert.That(() => LevelDataCodec.Serialize(new LevelData([box with { Components = components }])),
+			Throws.TypeOf<InvalidDataException>().With.Message.Contains($"{kind} not allowed on StaticGeometry"));
+	}
+
+	[Test]
+	public void StaticGeometryRejectsDynamicBody() {
+		var box = Box("Map/Wall", 0);
+		box = box with { Components = box.Components with { Body = BodyType.Dynamic } };
+
+		Assert.That(() => LevelDataCodec.Serialize(new LevelData([box])),
+			Throws.TypeOf<InvalidDataException>().With.Message.Contains("Map/Wall").And.Message.Contains("Static body"));
+	}
+
+	[Test]
+	public void CrateRejectsStaticBody() {
+		var crate = Placement("Map/Crate", 100, LootKind.None, Fixed64.FP.Zero);
+		crate = crate with { Components = crate.Components with { Body = BodyType.Static } };
+
+		Assert.That(() => LevelDataCodec.Serialize(new LevelData([crate])),
+			Throws.TypeOf<InvalidDataException>().With.Message.Contains("Map/Crate").And.Message.Contains("Dynamic or Kinematic body"));
+	}
+
+	[Test]
+	public void CodecRejectsUnknownComponentMaskBits() {
+		var bytes = LevelDataCodec.Serialize(new LevelData([Box("Map/Wall", 0)]));
+		// Payload: entity count, source path (length-prefixed), type byte, transform (3 longs, 4 ints), mask.
+		var maskOffset = LevelDataCodec.EnvelopeSize + sizeof(int) + 1 + "Map/Wall".Length + 1 + 3 * sizeof(long) + 4 * sizeof(int);
+		Assert.That(bytes[maskOffset], Is.EqualTo(0b10_1100), "mask of Body, BoxShape and Navigation");
+		bytes[maskOffset] |= 0x80;
+		SHA256.HashData(bytes.AsSpan(LevelDataCodec.EnvelopeSize)).CopyTo(bytes, LevelDataCodec.HashOffset);
+
+		Assert.That(() => LevelDataCodec.Deserialize(bytes),
+			Throws.TypeOf<InvalidDataException>().With.Message.Contains("unknown entity components"));
+	}
+
+	[Test]
+	public void NavigationSourcesAreStaticGeometryOrderedBySourcePath() {
+		var level = new LevelData([
+			Box("Map/WallB", 3, NavContribution.ObstacleOnly),
+			Placement("Map/Crate", 100, LootKind.None, Fixed64.FP.Zero),
+			Box("Map/WallA", -5),
+		]);
+
+		Assert.That(level.NavigationSources, Is.EqualTo(new[] {
+			new NavSourceBox("Map/WallA", Box("Map/WallA", -5).Transform, new FVector3(40.ToFP(), 3.ToFP(), FP.One), NavContribution.Walkable),
+			new NavSourceBox("Map/WallB", Box("Map/WallB", 3).Transform, new FVector3(40.ToFP(), 3.ToFP(), FP.One), NavContribution.ObstacleOnly),
+		}));
+	}
+
+	[Test]
 	public void CodecRejectsDynamicBoxWhoseMassExceedsPhysicsLimit() {
-		var placement = Placement("Map/HeavyCrate", 100, LootKind.None, Fixed64.FP.Zero) with {
-			Crate = new CratePlacementData(
-				100,
-				LootKind.None,
-				BodyType.Dynamic,
-				new FVector3(4.ToFP(), 4.ToFP(), 4.ToFP()),
-				FP.Two,
-				ViewAsset.Crate
-			)
+		var placement = Placement("Map/HeavyCrate", 100, LootKind.None, Fixed64.FP.Zero);
+		placement = placement with {
+			Components = placement.Components with { BoxShape = new BoxShapeData(new FVector3(4.ToFP(), 4.ToFP(), 4.ToFP()), FP.Two) }
 		};
 
 		Assert.That(() => LevelDataCodec.Serialize(new LevelData([placement])),
@@ -117,22 +199,16 @@ public sealed class LevelDataTests {
 
 	[Test]
 	public void DynamicBoxWithinLimitsPassesExportAndRuntimeValidation() {
-		var placement = Placement("Map/Crate", 100, LootKind.None, Fixed64.FP.Zero) with {
-			Crate = new CratePlacementData(
-				100,
-				LootKind.None,
-				BodyType.Dynamic,
-				new FVector3(FP.One, FP.One, FP.One),
-				FP.Two,
-				ViewAsset.Crate
-			)
+		var placement = Placement("Map/Crate", 100, LootKind.None, Fixed64.FP.Zero);
+		placement = placement with {
+			Components = placement.Components with { BoxShape = new BoxShapeData(new FVector3(FP.One, FP.One, FP.One), FP.Two) }
 		};
-		var shape = Shape.MakeBox(FVector3.Zero, placement.Crate.BoxHalfExtents);
-		shape.Density = placement.Crate.Density;
+		var shape = Shape.MakeBox(FVector3.Zero, placement.Components.BoxShape!.Value.HalfExtents);
+		shape.Density = placement.Components.BoxShape.Value.Density;
 
 		Assert.Multiple(() => {
 			Assert.That(() => LevelDataCodec.Serialize(new LevelData([placement])), Throws.Nothing);
-			Assert.That(() => PhysicsValidation.ValidateShape(shape, placement.Crate.BodyType, placement.Transform, placement.SourcePath), Throws.Nothing);
+			Assert.That(() => PhysicsValidation.ValidateShape(shape, placement.Components.Body!.Value, placement.Transform, placement.SourcePath), Throws.Nothing);
 		});
 	}
 
@@ -158,7 +234,7 @@ public sealed class LevelDataTests {
 		GameTypes.Register<LevelTestWorld>();
 		W.Initialize();
 		try {
-			LevelLoader.Load(new LevelData([], [Box("Map/WallA", 0), Box("Map/WallB", 20)]));
+			LevelLoader.Load(new LevelData([Box("Map/WallA", 0), Box("Map/WallB", 20)]));
 			var count = 0;
 			foreach (var wall in W.Query<All<Body, Transform>>().Entities()) {
 				count++;
@@ -201,9 +277,8 @@ public sealed class LevelDataTests {
 		var level = LevelFile.Read("runtime-invalid", validBytes);
 		var entities = (EntityPlacement[])level.Data.Entities;
 		entities[0] = entities[0] with {
-			Crate = entities[0].Crate with {
-				BoxHalfExtents = new FVector3(4.ToFP(), 4.ToFP(), 4.ToFP()),
-				Density = FP.Two
+			Components = entities[0].Components with {
+				BoxShape = new BoxShapeData(new FVector3(4.ToFP(), 4.ToFP(), 4.ToFP()), FP.Two)
 			}
 		};
 		var listener = new TestRemoteClientListener();
@@ -231,13 +306,15 @@ public sealed class LevelDataTests {
 		var level = LevelFile.ReadFromDisk(path);
 		var defaultCrate = level.Data.Entities.Single(static entity => entity.SourcePath == "DefaultCrate");
 		var strongCrate = level.Data.Entities.Single(static entity => entity.SourcePath == "StrongCrate");
-		var ground = level.Data.StaticBoxes.Single(static box => box.SourcePath == "Ground");
-		var testBox = level.Data.StaticBoxes.Single(static box => box.SourcePath == "TestBox");
+		var ground = level.Data.Entities.Single(static entity => entity.SourcePath == "Ground");
+		var testBox = level.Data.Entities.Single(static entity => entity.SourcePath == "TestBox");
 
 		Assert.Multiple(() => {
-			Assert.That(strongCrate.Crate.Health, Is.Not.EqualTo(defaultCrate.Crate.Health));
-			Assert.That(ground.Navigation, Is.EqualTo(NavContribution.Walkable));
-			Assert.That(testBox.Navigation, Is.EqualTo(NavContribution.ObstacleOnly));
+			Assert.That(strongCrate.Components.Health, Is.Not.EqualTo(defaultCrate.Components.Health));
+			Assert.That(ground.Type, Is.EqualTo(LevelEntityType.StaticGeometry));
+			Assert.That(ground.Components.Navigation, Is.EqualTo(NavContribution.Walkable));
+			Assert.That(testBox.Type, Is.EqualTo(LevelEntityType.StaticGeometry));
+			Assert.That(testBox.Components.Navigation, Is.EqualTo(NavContribution.ObstacleOnly));
 		});
 	}
 
@@ -265,23 +342,50 @@ public sealed class LevelDataTests {
 		}
 	}
 
-	private static StaticBox Box(string path, int x) => new(
+	[Test]
+	public void LoaderSpawnsStaticGeometryBeforeCrates() {
+		W.Create(GameWorldSetup.WorldConfig);
+		GameTypes.Register<LevelTestWorld>();
+		W.Initialize();
+		try {
+			LevelLoader.Load(new LevelData([
+				Placement("Map/Crate", 100, LootKind.None, Fixed64.FP.Zero),
+				Box("Map/Wall", 20),
+			]));
+			var crateIds = new List<uint>();
+			foreach (var crate in W.Query<All<ViewId>>().Entities()) {
+				crateIds.Add(crate.ID);
+			}
+			var wallIds = new List<uint>();
+			foreach (var wall in W.Query<All<Body>, None<ViewId>>().Entities()) {
+				wallIds.Add(wall.ID);
+			}
+
+			Assert.That(crateIds, Has.Count.EqualTo(1));
+			Assert.That(wallIds, Has.Count.EqualTo(1));
+			Assert.That(wallIds[0], Is.LessThan(crateIds[0]));
+		} finally {
+			W.Destroy();
+		}
+	}
+
+	private static EntityPlacement Box(string path, int x, NavContribution navigation = NavContribution.Walkable) => PhysicsSmokeTest.TestLevels.StaticBox(
 		path,
 		new FWorldTransform(new FPos(Fixed64.FP.FromRatio(x, 1), Fixed64.FP.FromRatio(3, 1), Fixed64.FP.Zero), FQuaternion.Identity),
-		new FVector3(40.ToFP(), 3.ToFP(), FP.One)
+		new FVector3(40.ToFP(), 3.ToFP(), FP.One),
+		navigation
 	);
 
 	private static EntityPlacement Placement(string path, int health, LootKind loot, Fixed64.FP x) => new(
 		path,
 		LevelEntityType.Crate,
 		new FWorldTransform(new FPos(x, Fixed64.FP.Half, Fixed64.FP.Zero), FQuaternion.Identity),
-		new CratePlacementData(
-			health,
-			loot,
-			BodyType.Dynamic,
-			new FVector3(FP.Half, FP.Half, FP.Half),
-			FP.One,
-			ViewAsset.Crate
+		new PlacementComponents(
+			Health: health,
+			Loot: loot,
+			Body: BodyType.Dynamic,
+			BoxShape: new BoxShapeData(new FVector3(FP.Half, FP.Half, FP.Half), FP.One),
+			View: ViewAsset.Crate
 		)
 	);
 

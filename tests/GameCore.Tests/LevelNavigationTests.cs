@@ -18,10 +18,10 @@ public struct NavigationTestWorldB : IWorldType, ISessionType;
 public sealed class LevelNavigationTests {
 	private static LevelData? s_baked;
 
-	/// <summary>The sample level's colliders and zones with navigation baked by the offline pipeline.</summary>
+	/// <summary>The sample level's static geometry and zones with navigation baked by the offline pipeline.</summary>
 	private static LevelData Baked() {
 		var sample = NavTestSession.Level();
-		return s_baked ??= NavMeshBaker.BakeLevel(new LevelData([], sample.StaticBoxes, navZones: sample.NavZones), NavBakeSettings.Default, out _);
+		return s_baked ??= NavMeshBaker.BakeLevel(new LevelData(sample.Entities, navZones: sample.NavZones), NavBakeSettings.Default, out _);
 	}
 
 	[Test]
@@ -40,8 +40,8 @@ public sealed class LevelNavigationTests {
 	[Test]
 	public void NavigationZonesMustMatchTheLevelsZoneVolumes() {
 		var baked = Baked();
-		var withoutVolumes = new LevelData([], baked.StaticBoxes, baked.Navigation);
-		var renamed = new LevelData([], baked.StaticBoxes, baked.Navigation, baked.NavZones.Select(static zone => zone with { Id = "other" }));
+		var withoutVolumes = new LevelData(baked.Entities, baked.Navigation);
+		var renamed = new LevelData(baked.Entities, baked.Navigation, baked.NavZones.Select(static zone => zone with { Id = "other" }));
 
 		Assert.Multiple(() => {
 			Assert.That(() => LevelDataCodec.Serialize(withoutVolumes), Throws.InstanceOf<InvalidDataException>().With.Message.Contains("bake the level again"));
@@ -52,7 +52,7 @@ public sealed class LevelNavigationTests {
 	[Test]
 	public void ZoneVolumesRoundTripWithoutNavigation() {
 		var zone = Baked().NavZones[0];
-		var level = new LevelData([], TestLevels(), navZones: [zone with { Id = "b" }, zone with { Id = "a" }]);
+		var level = new LevelData(TestLevels(), navZones: [zone with { Id = "b" }, zone with { Id = "a" }]);
 		var bytes = LevelDataCodec.Serialize(level);
 		var decoded = LevelDataCodec.Deserialize(bytes);
 
@@ -92,7 +92,7 @@ public sealed class LevelNavigationTests {
 	public void MalformedZoneStringLengthIsReportedAsInvalidData() {
 		var zone = Baked().NavZones[0];
 		var bytes = LevelDataCodec.Serialize(new LevelData([], navZones: [zone]));
-		var zoneIdOffset = LevelDataCodec.EnvelopeSize + 3 * sizeof(int);
+		var zoneIdOffset = LevelDataCodec.EnvelopeSize + 2 * sizeof(int);
 		new byte[] { 0xFF, 0xFF, 0xFF, 0xFF, 0x10 }.CopyTo(bytes, zoneIdOffset);
 		Rehash(bytes);
 
@@ -101,7 +101,7 @@ public sealed class LevelNavigationTests {
 
 	[Test]
 	public void LevelWithoutNavigationRoundTrips() {
-		var level = new LevelData([], TestLevels());
+		var level = new LevelData(TestLevels());
 		var bytes = LevelDataCodec.Serialize(level);
 
 		Assert.That(LevelDataCodec.Deserialize(bytes).Navigation, Is.Null);
@@ -265,7 +265,7 @@ public sealed class LevelNavigationTests {
 	[Test]
 	public void WorldWithoutNavigationHasAnEmptyResource() {
 		try {
-			NavTestSession.CreateWorld<NavigationTestWorldA>(new LevelData([], TestLevels()));
+			NavTestSession.CreateWorld<NavigationTestWorldA>(new LevelData(TestLevels()));
 
 			Assert.That(Core<NavigationTestWorldA>.Systems.GetResource<NavigationRes>().HasMesh, Is.False);
 		} finally {
@@ -288,8 +288,8 @@ public sealed class LevelNavigationTests {
 		});
 	}
 
-	private static StaticBox[] TestLevels() {
-		return PhysicsSmokeTest.TestLevels.Arena.StaticBoxes.ToArray();
+	private static EntityPlacement[] TestLevels() {
+		return PhysicsSmokeTest.TestLevels.Arena.Entities.ToArray();
 	}
 
 }

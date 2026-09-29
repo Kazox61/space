@@ -52,11 +52,11 @@ public sealed class NavAgentTests {
 	public void CollidersMissingFromTheNavmeshStillBlockMovement() {
 		// A wall across the straight route that the shipped navmesh does not know about.
 		var level = Level();
-		var wall = new StaticBox(
+		var wall = PhysicsSmokeTest.TestLevels.StaticBox(
 			"Test/UnbakedWall",
 			new FWorldTransform(new FPos(F.FP.Zero, F.FP.One, F.FP.FromRatio(-15, 1)), Fixed32.FQuaternion.Identity),
 			new Fixed32.FVector3(Fixed32.FP.FromRatio(3, 1), Fixed32.FP.Half, Fixed32.FP.FromRatio(1, 4)));
-		CreateWorld<NavAgentTestWorldA>(new LevelData([], level.StaticBoxes.Append(wall), level.Navigation));
+		CreateWorld<NavAgentTestWorldA>(new LevelData(level.Entities.Append(wall), level.Navigation));
 		var character = TakeOverCharacter<NavAgentTestWorldA>();
 		character.Ref<NavAgent>().SetDestination(Point(0, -20));
 

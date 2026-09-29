@@ -3,42 +3,61 @@ using Fixed32;
 namespace Space.GameCore;
 
 internal static class LevelDataValidation {
+	private readonly record struct TypeRules(
+		LevelEntityComponentKind[] Required,
+		LevelEntityComponentKind[] Forbidden,
+		BodyType[] Bodies
+	);
+
+	private static readonly TypeRules s_crate = new(
+		[LevelEntityComponentKind.Health, LevelEntityComponentKind.Loot, LevelEntityComponentKind.Body, LevelEntityComponentKind.BoxShape, LevelEntityComponentKind.View],
+		[LevelEntityComponentKind.Navigation],
+		[BodyType.Dynamic, BodyType.Kinematic]
+	);
+
+	// No View: the client draws static geometry from the map scene itself, so a view would draw it twice.
+	private static readonly TypeRules s_staticGeometry = new(
+		[LevelEntityComponentKind.Body, LevelEntityComponentKind.BoxShape, LevelEntityComponentKind.Navigation],
+		[LevelEntityComponentKind.Health, LevelEntityComponentKind.Loot, LevelEntityComponentKind.View],
+		[BodyType.Static]
+	);
+
 	public static void Validate(in EntityPlacement placement) {
-		if (placement.Type != LevelEntityType.Crate) {
-			throw new InvalidDataException($"{placement.SourcePath}: unsupported entity type {placement.Type}.");
+		if (string.IsNullOrWhiteSpace(placement.SourcePath)) {
+			throw new InvalidDataException("Level entity source path is required.");
 		}
-		if (placement.Crate.Health is < 1 or > 1000) {
-			throw new InvalidDataException($"{placement.SourcePath}: crate health must be between 1 and 1000.");
+		var rules = placement.Type switch {
+			LevelEntityType.Crate => s_crate,
+			LevelEntityType.StaticGeometry => s_staticGeometry,
+			_ => throw new InvalidDataException($"{placement.SourcePath}: unsupported entity type {placement.Type}."),
+		};
+		var components = placement.Components;
+		var missing = rules.Required.Where(kind => !components.Has(kind)).ToArray();
+		if (missing.Length > 0) {
+			throw new InvalidDataException($"{placement.SourcePath}: missing required entity components: {string.Join(", ", missing)}.");
 		}
-		if (!Enum.IsDefined(placement.Crate.Loot)) {
-			throw new InvalidDataException($"{placement.SourcePath}: invalid loot value {placement.Crate.Loot}.");
+		var forbidden = rules.Forbidden.Where(kind => components.Has(kind)).ToArray();
+		if (forbidden.Length > 0) {
+			throw new InvalidDataException($"{placement.SourcePath}: {string.Join(", ", forbidden)} not allowed on {placement.Type}.");
 		}
-		if (placement.Crate.BodyType is not (BodyType.Dynamic or BodyType.Kinematic)) {
-			throw new InvalidDataException($"{placement.SourcePath}: map entities must use a dynamic or kinematic body.");
+
+		if (components.Health is < 1 or > 1000) {
+			throw new InvalidDataException($"{placement.SourcePath}: health must be between 1 and 1000.");
 		}
-		if (placement.Crate.BoxHalfExtents.X <= FP.Zero
-			|| placement.Crate.BoxHalfExtents.Y <= FP.Zero
-			|| placement.Crate.BoxHalfExtents.Z <= FP.Zero) {
-			throw new InvalidDataException($"{placement.SourcePath}: box half-extents must be positive.");
+		if (components.Loot is { } loot && !Enum.IsDefined(loot)) {
+			throw new InvalidDataException($"{placement.SourcePath}: invalid loot value {loot}.");
 		}
-		var extentLimit = placement.Crate.BodyType == BodyType.Dynamic ? FP.FromRatio(4, 1) : FP.FromRatio(40, 1);
-		if (placement.Crate.BoxHalfExtents.X > extentLimit
-			|| placement.Crate.BoxHalfExtents.Y > extentLimit
-			|| placement.Crate.BoxHalfExtents.Z > extentLimit) {
-			throw new InvalidDataException($"{placement.SourcePath}: box half-extents exceed the {extentLimit} physics limit.");
+		if (components.Body is { } body && !rules.Bodies.Contains(body)) {
+			throw new InvalidDataException($"{placement.SourcePath}: {placement.Type} must use a {string.Join(" or ", rules.Bodies)} body.");
 		}
-		if (placement.Crate.Density <= FP.Zero || placement.Crate.Density > FP.Two) {
-			throw new InvalidDataException($"{placement.SourcePath}: density must be in (0, 2].");
+		if (components.BoxShape is { } box) {
+			ValidateBoxShape(box, components.Body ?? BodyType.Static, placement.SourcePath);
 		}
-		var shape = Shape.MakeBox(FVector3.Zero, placement.Crate.BoxHalfExtents);
-		shape.Density = placement.Crate.Density;
-		try {
-			PhysicsMassValidation.ValidateShape(shape, placement.Crate.BodyType, placement.SourcePath);
-		} catch (ArgumentOutOfRangeException exception) {
-			throw new InvalidDataException($"{placement.SourcePath}: {exception.Message}", exception);
+		if (components.View is { } view && !Enum.IsDefined(view)) {
+			throw new InvalidDataException($"{placement.SourcePath}: invalid view {view}.");
 		}
-		if (!Enum.IsDefined(placement.Crate.View)) {
-			throw new InvalidDataException($"{placement.SourcePath}: invalid view {placement.Crate.View}.");
+		if (components.Navigation is { } navigation && !Enum.IsDefined(navigation)) {
+			throw new InvalidDataException($"{placement.SourcePath}: invalid navigation contribution {navigation}.");
 		}
 		if (FQuaternion.LengthSqr(placement.Transform.Rotation) <= FP.CalculationsEpsilonSqr) {
 			throw new InvalidDataException($"{placement.SourcePath}: rotation must be non-zero.");
@@ -47,9 +66,29 @@ internal static class LevelDataValidation {
 		ValidateOrigin(placement.Transform.Position, placement.SourcePath);
 	}
 
-	public static void Validate(in StaticBox box) {
+	private static void ValidateBoxShape(in BoxShapeData box, BodyType body, string sourcePath) {
+		if (box.HalfExtents.X <= FP.Zero || box.HalfExtents.Y <= FP.Zero || box.HalfExtents.Z <= FP.Zero) {
+			throw new InvalidDataException($"{sourcePath}: box half-extents must be positive.");
+		}
+		var extentLimit = body == BodyType.Dynamic ? FP.FromRatio(4, 1) : FP.FromRatio(40, 1);
+		if (box.HalfExtents.X > extentLimit || box.HalfExtents.Y > extentLimit || box.HalfExtents.Z > extentLimit) {
+			throw new InvalidDataException($"{sourcePath}: box half-extents exceed the {extentLimit} physics limit; split the box.");
+		}
+		if (box.Density <= FP.Zero || box.Density > FP.Two) {
+			throw new InvalidDataException($"{sourcePath}: density must be in (0, 2].");
+		}
+		var shape = Shape.MakeBox(FVector3.Zero, box.HalfExtents);
+		shape.Density = box.Density;
+		try {
+			PhysicsMassValidation.ValidateShape(shape, body, sourcePath);
+		} catch (ArgumentOutOfRangeException exception) {
+			throw new InvalidDataException($"{sourcePath}: {exception.Message}", exception);
+		}
+	}
+
+	public static void Validate(in NavSourceBox box) {
 		if (string.IsNullOrWhiteSpace(box.SourcePath)) {
-			throw new InvalidDataException("Static box source path is required.");
+			throw new InvalidDataException("Navigation source path is required.");
 		}
 		if (!Enum.IsDefined(box.Navigation)) {
 			throw new InvalidDataException($"{box.SourcePath}: invalid navigation contribution {box.Navigation}.");

@@ -4,7 +4,7 @@ using Space.GameCore;
 
 namespace Space.NavBuilder;
 
-public static class StaticBoxTriangulator {
+public static class NavSourceTriangulator {
 	private static readonly int[] s_boxIndices = [
 		0, 1, 2, 0, 2, 3, // Bottom (-Y)
 		4, 7, 6, 4, 6, 5, // Top (+Y)
@@ -14,7 +14,7 @@ public static class StaticBoxTriangulator {
 		1, 5, 6, 1, 6, 2, // Right (+X)
 	];
 
-	public static NavTriangleSoup Build(IEnumerable<StaticBox> boxes) {
+	public static NavTriangleSoup Build(IEnumerable<NavSourceBox> boxes) {
 		var ordered = boxes.OrderBy(static box => box.SourcePath, StringComparer.Ordinal).ToArray();
 		var vertices = new List<Fixed64.FVector3>();
 		var indices = new List<int>();
@@ -24,7 +24,7 @@ public static class StaticBoxTriangulator {
 		foreach (var box in ordered) {
 			box.Validate();
 			if (previousSourcePath is not null && StringComparer.Ordinal.Equals(previousSourcePath, box.SourcePath)) {
-				throw new InvalidDataException($"Static box source path '{box.SourcePath}' is duplicated.");
+				throw new InvalidDataException($"Navigation source path '{box.SourcePath}' is duplicated.");
 			}
 			previousSourcePath = box.SourcePath;
 			if (box.Navigation == NavContribution.Excluded) {
@@ -43,7 +43,7 @@ public static class StaticBoxTriangulator {
 		return new NavTriangleSoup(vertices.ToArray(), indices.ToArray(), contributions.ToArray());
 	}
 
-	private static void AddVertices(List<Fixed64.FVector3> vertices, in StaticBox box) {
+	private static void AddVertices(List<Fixed64.FVector3> vertices, in NavSourceBox box) {
 		var h = box.HalfExtents;
 		var transform = box.Transform;
 		transform.Rotation = FQuaternion.Normalize(transform.Rotation);

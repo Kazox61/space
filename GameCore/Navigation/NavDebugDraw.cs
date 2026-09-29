@@ -58,7 +58,7 @@ public enum NavDebugDrawFlags {
 	/// <summary>Interior and boundary edges.</summary>
 	Edges = 1 << 1,
 	/// <summary>
-	/// The level's colliders by <see cref="NavContribution"/>, each obstacle's clearance footprint, and
+	/// The level's static geometry by <see cref="NavContribution"/>, each obstacle's clearance footprint, and
 	/// each navigation zone's volume by its state.
 	/// </summary>
 	Sources = 1 << 2,
@@ -91,7 +91,7 @@ public abstract partial class Core<TWorld> where TWorld : struct, ISessionType, 
 	/// drawing between ticks cannot change what the simulation computes.
 	/// </summary>
 	public sealed class NavDebugDraw {
-		private readonly IReadOnlyList<StaticBox> _sources;
+		private readonly IReadOnlyList<NavSourceBox> _sources;
 		private readonly IReadOnlyList<NavZoneVolume> _zones;
 		private readonly FP _agentRadius;
 		private NavMesh? _mesh;
@@ -99,10 +99,10 @@ public abstract partial class Core<TWorld> where TWorld : struct, ISessionType, 
 		private NavFunnel? _funnel;
 		private FVector3[] _waypoints = [];
 
-		/// <param name="level">The level the world was set up from; supplies the colliders and bake settings.</param>
+		/// <param name="level">The level the world was set up from; supplies the static geometry and bake settings.</param>
 		public NavDebugDraw(LevelData level) {
 			ArgumentNullException.ThrowIfNull(level);
-			_sources = level.StaticBoxes;
+			_sources = level.NavigationSources;
 			_zones = level.NavZones;
 			_agentRadius = level.Navigation?.Settings.AgentRadius ?? FP.Zero;
 		}

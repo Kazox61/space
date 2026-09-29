@@ -74,7 +74,7 @@ public sealed class NavMeshBakerTests {
 	[Test]
 	public void AgentHeightDecidesWhetherTheSpaceUnderASlabIsWalkable() {
 		// The slab's underside is 1.5 above the ground.
-		StaticBox[] boxes = [
+		NavSourceBox[] boxes = [
 			Ground(),
 			Box("Slab", new FPos(P(0), P(9, 4), P(0)), new FVector3(3.ToFP(), FP.Quarter, 3.ToFP()), NavContribution.ObstacleOnly),
 		];
@@ -92,7 +92,7 @@ public sealed class NavMeshBakerTests {
 	public void AgentMaxClimbDecidesWhetherAStepIsConnected() {
 		// A walkable 6x6 step whose top is 0.3 above the ground: three voxels, against a climb of
 		// four voxels and of one.
-		StaticBox[] boxes = [
+		NavSourceBox[] boxes = [
 			Ground(),
 			Box("Step", new FPos(P(0), P(2, 5), P(0)), new FVector3(3.ToFP(), FP.FromRatio(2, 5), 3.ToFP()), NavContribution.Walkable),
 		];
@@ -109,7 +109,7 @@ public sealed class NavMeshBakerTests {
 	[Test]
 	public void AgentMaxSlopeDecidesWhetherARampIsWalkable() {
 		// A 30 degree ramp floating well above the ground, beside a flat pad.
-		StaticBox[] boxes = [
+		NavSourceBox[] boxes = [
 			Box("Pad", new FPos(P(20), P(0), P(0)), new FVector3(3.ToFP(), FP.Half, 3.ToFP()), NavContribution.Walkable),
 			Box("Ramp", new FPos(P(0), P(5), P(0)), new FVector3(3.ToFP(), FP.Quarter, 3.ToFP()), NavContribution.Walkable,
 				FQuaternion.AxisAngleDegrees(FVector3.Right, 30.ToFP())),
@@ -149,7 +149,7 @@ public sealed class NavMeshBakerTests {
 
 	[Test]
 	public void BakeWithoutWalkableGeometryFails() {
-		StaticBox[] obstacles = [Box("Wall", new FPos(P(0), P(0), P(0)), new FVector3(3.ToFP(), FP.Half, 3.ToFP()), NavContribution.ObstacleOnly)];
+		NavSourceBox[] obstacles = [Box("Wall", new FPos(P(0), P(0), P(0)), new FVector3(3.ToFP(), FP.Half, 3.ToFP()), NavContribution.ObstacleOnly)];
 
 		Assert.That(() => NavMeshBaker.Bake(obstacles, NavBakeSettings.Default), Throws.InstanceOf<InvalidDataException>());
 	}
@@ -212,7 +212,7 @@ public sealed class NavMeshBakerTests {
 
 	[Test]
 	public void ZonedBakesAreByteIdenticalWhateverTheInputOrder() {
-		StaticBox[] boxes = [Ground()];
+		NavSourceBox[] boxes = [Ground()];
 		NavZoneVolume[] zones = [
 			Zone("b", new FPos(P(5), P(1, 2), P(0)), FQuaternion.AxisAngleDegrees(FVector3.Up, 30.ToFP())),
 			Zone("a", new FPos(P(-5), P(1, 2), P(0))),
@@ -233,7 +233,7 @@ public sealed class NavMeshBakerTests {
 
 	[Test]
 	public void InvalidZonesFailTheBake() {
-		StaticBox[] boxes = [Ground()];
+		NavSourceBox[] boxes = [Ground()];
 		var floating = Zone("floating", new FPos(P(0), P(10), P(0)));
 		var many = Enumerable.Range(0, NavZoneData.MaxZones + 1).Select(i => Zone($"z{i:D2}", new FPos(P(0), P(1, 2), P(0)))).ToArray();
 
@@ -269,12 +269,12 @@ public sealed class NavMeshBakerTests {
 		return pathfinder.FindPath(start, end, 1, new int[128], out _);
 	}
 
-	private static StaticBox Ground() {
+	private static NavSourceBox Ground() {
 		return Box("Ground", new FPos(P(0), P(0), P(0)), new FVector3(10.ToFP(), FP.Half, 10.ToFP()), NavContribution.Walkable);
 	}
 
-	private static StaticBox Box(string path, FPos position, FVector3 halfExtents, NavContribution navigation, FQuaternion? rotation = null) {
-		return new StaticBox(path, new FWorldTransform(position, rotation ?? FQuaternion.Identity), halfExtents, navigation);
+	private static NavSourceBox Box(string path, FPos position, FVector3 halfExtents, NavContribution navigation, FQuaternion? rotation = null) {
+		return new NavSourceBox(path, new FWorldTransform(position, rotation ?? FQuaternion.Identity), halfExtents, navigation);
 	}
 
 	/// <summary>A 4x2x4 zone volume.</summary>
@@ -286,8 +286,8 @@ public sealed class NavMeshBakerTests {
 		return LevelFile.ReadFromDisk(FindRepositoryFile("Client", "maps", "level_pipeline_test.level.bytes")).Data.NavZones.ToArray();
 	}
 
-	private static StaticBox[] LoadSampleBoxes() {
-		return LevelFile.ReadFromDisk(FindRepositoryFile("Client", "maps", "level_pipeline_test.level.bytes")).Data.StaticBoxes.ToArray();
+	private static NavSourceBox[] LoadSampleBoxes() {
+		return LevelFile.ReadFromDisk(FindRepositoryFile("Client", "maps", "level_pipeline_test.level.bytes")).Data.NavigationSources.ToArray();
 	}
 
 	private static F64.FP P(int numerator, int denominator = 1) {
