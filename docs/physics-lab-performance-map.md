@@ -12,7 +12,7 @@ complete for the user-accepted defined lab route**, including a warmed Metal GPU
 capture, matched Debug/ExportRelease frame breakdowns, and explicit manual warm
 windows. ExportRelease stays near 60 Hz; Debug reproduces sustained slowdown with
 physics and replay amplification dominating. B is implemented and differentially
-verified below; C is implemented and verified below, and D remains proposed. The original editor session is not reconstructed;
+verified below; C and D are implemented and verified below. The original editor session is not reconstructed;
 the user accepted the defined route and settings as A's comparison workload.
 
 ## Measured baseline
@@ -838,6 +838,160 @@ dotnet run --project benchmarks/GameCore.Benchmarks/GameCore.Benchmarks.csproj \
 dotnet test tests/GameCore.Tests/GameCore.Tests.csproj -c Release
 ```
 
+### D completion: 2026-10-03
+
+**Status:** implemented and verified after committing the accepted pre-D baseline
+as **`665585a`** (`Add physics lab profiling and persistent box SAT caching`). That
+commit includes A–C, authored lab content, physics fixes and the existing
+navigation/level work, as explicitly requested. Its formatting hook passed after
+applying the repository formatter. Submodule `bin/obj` artifacts were not committed.
+D is committed separately from that pre-D baseline.
+
+#### Packed gather / solve / scatter
+
+`ContactSolverSystem` now gathers awake non-static bodies in the existing ECS
+query order into `PhysicsRuntime.SolverStates`. `SolverBodyState` holds only the
+hot velocities, accumulated deltas, inverse mass and world inverse inertia.
+`SolverBodyInput` separately holds cold force/torque, gravity/damping, motion-lock
+and fast-rotation inputs. Both are reused contiguous lists, exposed as spans only
+after all gathers are complete. No list can grow while those spans are in use.
+
+Prepared constraints retain tick-local entity handles for final impulse/event
+storage and integer `IndexA/IndexB` for the hot solve. Warm start, biased solve,
+relaxation, restitution and substep integration use indexed state rather than
+repeated `Entity.Ref<Body>()` lookup. The port follows the reference's indexed
+`b3BodyState`/`b3BodySim` pattern in `references/box3d/src/contact_solver.c` and
+`solver.c`; it does not add graph coloring, SIMD, scheduling or gyroscopic torque.
+
+- Awake entries form an integration prefix; referenced static bodies are appended
+  only when a prepared constraint needs them. The existing body-index dictionary
+  deduplicates participants, so multiple contacts see the same static or dynamic
+  working state. Unlike Box3D's identity dummy for statics, this first exact-result
+  version gathers each referenced static body's actual values. It preserves this
+  port's shared-static-body behavior and never integrates or resets static deltas.
+- Awake deltas are reset at the same boundary as before. All fixed-point
+  expressions, constraint/point order, warm-start order, force/damping integration,
+  speed clamps, motion-lock application, normal/friction/rolling/twist/restitution
+  operations and substep count are unchanged.
+- Scatter writes **only linear/angular velocity and accumulated translation/
+  rotation** back to each participant, once after restitution and **before CCD**.
+  CCD reads authoritative ECS velocities/sweeps and can edit them. Hit-event
+  anchors subsequently read the CCD-adjusted ECS state; finalization updates
+  transforms/inertia and sleeping as before. No later packed-state scatter can
+  overwrite CCD clipping, waking, disabling or sleep decisions.
+- ECS `Body` and `Contact` remain authoritative at system/snapshot boundaries.
+  The packed arrays/index map are derived scratch in the existing unserialized
+  `PhysicsRuntime`. No component layout/schema or registration changes are needed.
+  Rollback/full sync can retain that runtime resource safely: every update clears
+  and rebuilds scratch. A `finally` clears all solver body/constraint handles,
+  packed arrays, indices and island scratch even if an update fails. Capacities
+  remain reusable; no `Entity` handle is retained logically between ticks.
+- Gather/index construction is timed in SolverPrepare; solving **and scatter**
+  are timed in Solve. Entry/finally scratch clearing is outside the existing
+  per-phase timers, but inside the complete session-tick measurement. Report both
+  rather than treating the sum of phase timings as the complete session cost.
+  Array/dictionary growth remains structural warm-up work, not steady-state GC.
+
+#### Exact-result and fidelity verification
+
+`PackedSolverTests.AuthoredLabMatchesEveryPreDTickHash` records the full authored
+480-tick push/settling route from the committed ECS solver **before any D production
+edits**, with a fixed player GUID. The fixture stores all 480 FNV-1a world-snapshot
+hashes, not a final-pose or final-hash proxy. D matches **every tick exactly** in
+Release, Debug and ExportRelease, including the same C cache histories, contact
+features/impulses, broad phase, gameplay and sleep state. The encoded fixture is
+the pre-D oracle; it must not be regenerated from the packed solver to make a
+failure pass. Snapshot schema changes or intentional gameplay changes will need
+explicit rebaselining against an identified reference implementation.
+
+The second focused test full-snapshot-restores a populated world with an awake
+box contacting ground, deliberately poisons the surviving runtime state buffer,
+body-index map and state/entity lists, and compares **every one of 30 replay tick
+hashes**. It requires nonzero awake-body and prepared-constraint counts and verifies
+all tick-local scratch is empty after every update. Existing production rollback,
+distinct-world full-sync, sleep/wake and CCD regressions also pass.
+
+Final verification (configurations run sequentially):
+
+- Full Release suite **345/345** passed, including zero steady-state physics
+  allocation, pre-D equivalence, C reference/fallback checks, pushed/toppled crates
+  and dense stacks, normal/friction persistence, motion/force mutation, mover and
+  platform behavior, sleeping/support removal, bullet/rotational CCD, rollback
+  and distinct-world full synchronization.
+- Debug and ExportRelease physics/manifold/toy/cache/equivalence/platform/packed
+  sets **152/152 each** passed. Client builds in both configurations have zero
+  warnings/errors. C's original full-search equivalence tests are unchanged.
+- Default-runtime Release budgets pass: average regular tick **0.226 ms**, worst
+  **1.531 ms** (the gate is the average); 30-tick rollback **3.775 ms**, 125-tick
+  rollback **16.321 ms**. These are a fresh unpaired budget run, not isolated D
+  before/after gains. Steady-state allocation remains **0 bytes/tick**.
+- Standards review found no actionable issue. Spec review found that the first
+  poisoned-scratch fixture did not guarantee a prepared contact. It now explicitly
+  creates an awake ground-contacting box, asserts actual solver work, and poisons
+  both mappings and state arrays. Re-review found no remaining actionable issues.
+
+#### Controlled active / late measurements and limits
+
+Both comparison executables use **ExportRelease, .NET 10.0.9**, the same authored
+level, headless input route and unchanged simulation settings. The pre-D executable
+was retained from C verification; the candidate was built into a separate ignored
+`tests/GameCore.Tests/bin/PackedComparison/` tree so building D did not overwrite
+the reference before comparison. Each process runs three fresh worlds; compare
+only run 2. Body/constraint/CCD counts match, and the independent golden regression
+confirms the route's complete authoritative state is unchanged.
+
+Default-tiered runs varied with promotion/host scheduling. One final-candidate
+comparison had push Solve **0.133 → 0.126 ms**, but complete session **0.278 →
+0.295 ms**; late Solve **0.111 → 0.116 ms**, session **0.191 → 0.217 ms**. This
+does not establish a default-runtime total-phase speedup.
+
+To control ongoing tiered-JIT promotion, ran a separately labelled **ABBA**
+comparison with `DOTNET_TieredCompilation=0` for **both** pre-D and D executables.
+This affects compilation policy only, not authoritative simulation or project
+defaults. Two chronological pairs, third replay, mean milliseconds/tick:
+
+| Window / pair | Pre-D Solve | D Solve (including scatter) | Pre-D prepare | D prepare | Pre-D session | D session |
+| --- | ---: | ---: | ---: | ---: | ---: | ---: |
+| Push 120–239, A→B | 0.053 | 0.049 | 0.016 | 0.016 | 0.132 | 0.125 |
+| Push 120–239, B→A | 0.054 | 0.052 | 0.016 | 0.017 | 0.133 | 0.131 |
+| Late 360–479, A→B | 0.048 | 0.042 | 0.015 | 0.015 | 0.101 | 0.092 |
+| Late 360–479, B→A | 0.048 | 0.048 | 0.015 | 0.016 | 0.102 | 0.101 |
+
+The controlled active solve reduction is modest, about **4–8%** using rounded
+reported means; late results overlap (**0–12.5%**). This is phase-level evidence
+on a deterministic complete workload, not the stronger same-process frozen-row
+microbenchmark used for B/C. Only two pairs were collected, and other phases vary
+slightly too; complete-session rows are observations, not an isolated causal tick
+gain. No new rendered-client capture or frame-rate improvement is claimed. A did
+not establish an ExportRelease physics bottleneck. Wider hardware/workloads and
+default tiered-JIT behavior still require their own measurement.
+
+#### Reproduction
+
+```sh
+dotnet test tests/GameCore.Tests/GameCore.Tests.csproj -c Release \
+  --filter FullyQualifiedName~PackedSolverTests
+
+# Run Debug and ExportRelease sequentially; extend C's broad filter with PackedSolverTests.
+dotnet test tests/GameCore.Tests/GameCore.Tests.csproj -c CONFIG \
+  --filter 'FullyQualifiedName~PhysicsScenarioTests|FullyQualifiedName~ManifoldBoxBoxTests|FullyQualifiedName~PhysicsToyTests|FullyQualifiedName~BoxSatEquivalenceTests|FullyQualifiedName~BoxSatCacheTests|FullyQualifiedName~PlatformTests|FullyQualifiedName~PackedSolverTests'
+dotnet build Client/Space.csproj -c CONFIG
+dotnet run --project benchmarks/GameCore.Benchmarks/GameCore.Benchmarks.csproj \
+  -c Release -- --physics --enforce
+dotnet test tests/GameCore.Tests/GameCore.Tests.csproj -c Release
+
+# Compile a pre-D checkout of 665585a and D into different output roots first.
+# Use outputs inside their checkout trees so the lab diagnostic can locate Client/maps.
+dotnet test tests/GameCore.Tests/GameCore.Tests.csproj -c ExportRelease \
+  -p:BaseOutputPath="<absolute-checkout>/tests/GameCore.Tests/bin/Comparison/" \
+  --filter 'FullyQualifiedName~AuthoredLabTickBudget&Name~True'
+# Run the two compiled test DLLs sequentially in A,B,B,A order. No rebuild in this loop.
+DOTNET_TieredCompilation=0 dotnet vstest "<absolute-output>/ExportRelease/net10.0/GameCore.Tests.dll" \
+  '--TestCaseFilter:FullyQualifiedName~AuthoredLabTickBudget&Name~True' \
+  '--logger:console;verbosity=normal'
+# Omit the environment override for default-tiered measurements; label them separately.
+```
+
 ## Dependency map
 
 ```text
@@ -960,6 +1114,10 @@ correct, pushed stacks stay stable, and replay produces identical per-tick state
 ### D. Use packed solver body state
 
 **Priority:** first solver optimization; can proceed independently of B/C.
+
+**Current status:** implemented and verified; see D completion above for the
+gather/scatter boundary, exact pre-D replay oracle, transient-state lifetime,
+fidelity verification and modest controlled solver-phase measurements.
 
 **Locations:**
 

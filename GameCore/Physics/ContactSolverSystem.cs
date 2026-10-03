@@ -11,15 +11,58 @@ namespace Space.GameCore;
 public abstract partial class Core<TWorld> where TWorld : struct, ISessionType, IWorldType {
 	/// <summary>
 	/// Box3d's sub-stepped "soft" contact solver (solver.c/contact_solver.c), ported single-threaded
-	/// without solver sets or graph coloring — every awake body and touching contact is iterated
-	/// directly each tick. Sleeping islands (see <see cref="PhysicsSleep"/>) are excluded entirely.
+	/// without solver sets or graph coloring — awake body state is gathered into packed buffers,
+	/// solved by index, then scattered before CCD. Sleeping islands are excluded entirely.
 	/// Also out of scope for this pass: joints, gyroscopic torque correction (box3d calls it
-	/// "optional polish"), and conveyor-belt tangent velocity. Runs after
+	/// "optional polish"). Runs after
 	/// <see cref="ContactSystem"/> each tick, so it always solves against that tick's freshly
 	/// recomputed manifolds. Body and constraint buffers live in the world's
 	/// <see cref="PhysicsRuntime"/> and are reused every tick.
 	/// </summary>
 	public struct ContactSolverSystem : ISystem {
+		/// <summary>
+		/// Contiguous tick-local working state, following Box3D's indexed BodyState/BodySim access.
+		/// Only velocities/deltas are scattered; immutable integration inputs are gathered verbatim.
+		/// Referenced static bodies have distinct shared entries rather than a mutable dummy body.
+		/// </summary>
+		internal struct SolverBodyState {
+			public FVector3 LinearVelocity;
+			public FVector3 AngularVelocity;
+			public FVector3 DeltaPosition;
+			public FQuaternion DeltaRotation;
+			public FP InvMass;
+			public FMatrix3 InvInertiaWorld;
+
+			public static SolverBodyState Gather(in Body body) => new() {
+				LinearVelocity = body.LinearVelocity,
+				AngularVelocity = body.AngularVelocity,
+				DeltaPosition = body.DeltaPosition,
+				DeltaRotation = body.DeltaRotation,
+				InvMass = body.InvMass,
+				InvInertiaWorld = body.InvInertiaWorld,
+			};
+		}
+
+		/// <summary>Cold integration inputs, kept apart from the state used by every constraint row.</summary>
+		internal struct SolverBodyInput {
+			public FVector3 Force;
+			public FVector3 Torque;
+			public FP GravityScale;
+			public FP LinearDamping;
+			public FP AngularDamping;
+			public MotionLocks MotionLocks;
+			public bool AllowFastRotation;
+
+			public static SolverBodyInput Gather(in Body body) => new() {
+				Force = body.Force,
+				Torque = body.Torque,
+				GravityScale = body.GravityScale,
+				LinearDamping = body.LinearDamping,
+				AngularDamping = body.AngularDamping,
+				MotionLocks = body.MotionLocks,
+				AllowFastRotation = body.AllowFastRotation,
+			};
+		}
 		/// <summary>Per-manifold-point normal constraint row; friction stays manifold-level (see <see cref="ContactConstraint.FrictionAnchorRA"/>), matching box3d's single friction anchor per manifold.</summary>
 		internal struct ContactConstraintPoint {
 			/// <summary>World-frame anchor (center-of-mass relative), fixed at prepare time; rotated
@@ -43,6 +86,8 @@ public abstract partial class Core<TWorld> where TWorld : struct, ISessionType, 
 			public W.Entity ContactEntity;
 			public W.Entity BodyA;
 			public W.Entity BodyB;
+			public int IndexA;
+			public int IndexB;
 			public FVector3 Normal;
 			public FVector3 Tangent1;
 			public FVector3 Tangent2;
@@ -126,6 +171,15 @@ public abstract partial class Core<TWorld> where TWorld : struct, ISessionType, 
 			var world = W.GetResource<PhysicsWorld>();
 			PhysicsValidation.ValidateWorld(world);
 			var runtime = PhysicsRuntime.Get();
+			runtime.ClearSolverScratch();
+			try {
+				UpdateCore(world, runtime);
+			} finally {
+				runtime.ClearSolverScratch();
+			}
+		}
+
+		private static void UpdateCore(PhysicsWorld world, PhysicsRuntime runtime) {
 			var timestamp = PhysicsRuntime.Timestamp();
 
 			var dt = Const.DeltaTime.To32();
@@ -159,6 +213,8 @@ public abstract partial class Core<TWorld> where TWorld : struct, ISessionType, 
 					PhysicsSleep.WakeBody(ref body);
 				}
 				bodies.Add(entity);
+				AddSolverState(runtime, entity, body);
+				runtime.SolverInputs.Add(SolverBodyInput.Gather(body));
 			}
 			runtime.Pending.AwakeBodies = bodies.Count;
 			runtime.Pending.SleepingBodies = sleepingBodies;
@@ -176,14 +232,16 @@ public abstract partial class Core<TWorld> where TWorld : struct, ISessionType, 
 #pragma warning disable FFSECS0050 // Link<ShapeA> and Link<ShapeB> are distinct relation types; the analyzer's duplicate check compares by open-generic definition and can't tell them apart.
 			foreach (var contactEntity in W.Query<All<Contact, W.Link<ShapeA>, W.Link<ShapeB>>>().Entities()) {
 #pragma warning restore FFSECS0050
-				if (TryPrepare(contactEntity, world.EnableWarmStarting, contactSoftness, staticSoftness, out var constraint)) {
+				if (TryPrepare(runtime, contactEntity, world.EnableWarmStarting, contactSoftness, staticSoftness, out var constraint)) {
 					constraints.Add(constraint);
 				}
 			}
 			runtime.Pending.Constraints = constraints.Count;
 
-			foreach (var entity in bodies) {
-				ref var body = ref entity.Ref<Body>()!; // bodies is built from a Query<All<Body>> filter.
+			var states = CollectionsMarshal.AsSpan(runtime.SolverStates);
+			var awakeStates = states[..bodies.Count];
+			var inputs = CollectionsMarshal.AsSpan(runtime.SolverInputs);
+			foreach (ref var body in awakeStates) {
 				body.DeltaPosition = FVector3.Zero;
 				body.DeltaRotation = FQuaternion.Identity;
 			}
@@ -192,14 +250,17 @@ public abstract partial class Core<TWorld> where TWorld : struct, ISessionType, 
 			timestamp = PhysicsRuntime.Timestamp();
 			var constraintSpan = CollectionsMarshal.AsSpan(constraints);
 			for (var substep = 0; substep < subStepCount; substep++) {
-				IntegrateVelocities(bodies, h, world.Gravity);
-				WarmStart(constraintSpan);
-				Solve(constraintSpan, h, invH, world.ContactSpeed, useBias: true);
-				IntegratePositions(bodies, h, world.MaximumLinearSpeed, invDt);
-				Solve(constraintSpan, h, invH, world.ContactSpeed, useBias: false);
+				IntegrateVelocities(awakeStates, inputs, h, world.Gravity);
+				WarmStart(constraintSpan, states);
+				Solve(constraintSpan, states, h, invH, world.ContactSpeed, useBias: true);
+				IntegratePositions(awakeStates, inputs, h, world.MaximumLinearSpeed, invDt);
+				Solve(constraintSpan, states, h, invH, world.ContactSpeed, useBias: false);
 			}
 
-			ApplyRestitution(constraintSpan, world.RestitutionThreshold);
+			ApplyRestitution(constraintSpan, states, world.RestitutionThreshold);
+			// CCD reads and edits ECS motion, and hit events read its CCD-adjusted anchors. Scatter
+			// exactly once before either boundary; never scatter stale packed state after CCD/sleep.
+			ScatterSolverStates(runtime, states);
 			runtime.AddTime(PhysicsPhase.Solve, timestamp);
 
 			timestamp = PhysicsRuntime.Timestamp();
@@ -211,6 +272,34 @@ public abstract partial class Core<TWorld> where TWorld : struct, ISessionType, 
 			FinalizeBodies(runtime, bodies, world.EnableSleep, dt, invDt);
 			runtime.AddTime(PhysicsPhase.Finalize, timestamp);
 			runtime.CompleteTick();
+		}
+
+		private static int GetSolverIndex(PhysicsRuntime runtime, W.Entity entity, in Body body) {
+			if (runtime.BodyIndices.TryGetValue(entity, out var index)) {
+				return index;
+			}
+			return AddSolverState(runtime, entity, body);
+		}
+
+		private static int AddSolverState(PhysicsRuntime runtime, W.Entity entity, in Body body) {
+			var index = runtime.SolverStates.Count;
+			runtime.BodyIndices.Add(entity, index);
+			runtime.SolverStateBodies.Add(entity);
+			runtime.SolverStates.Add(SolverBodyState.Gather(body));
+			return index;
+		}
+
+		private static void ScatterSolverStates(PhysicsRuntime runtime, ReadOnlySpan<SolverBodyState> states) {
+			for (var i = 0; i < states.Length; i++) {
+#pragma warning disable FFSECS0042 // Gather admits bodies only from All<Body> or TryPrepare's validated Body references; no structural changes occur before scatter.
+				ref var body = ref runtime.SolverStateBodies[i].Ref<Body>();
+#pragma warning restore FFSECS0042
+				ref readonly var state = ref states[i];
+				body.LinearVelocity = state.LinearVelocity;
+				body.AngularVelocity = state.AngularVelocity;
+				body.DeltaPosition = state.DeltaPosition;
+				body.DeltaRotation = state.DeltaRotation;
+			}
 		}
 
 		private static void SolveContinuousCollisions(PhysicsRuntime runtime, List<W.Entity> bodies, BroadPhase broadPhase) {
@@ -392,7 +481,7 @@ public abstract partial class Core<TWorld> where TWorld : struct, ISessionType, 
 			return new FAABB(FVector3.MinComponents(start, end) - radius, FVector3.MaxComponents(start, end) + radius);
 		}
 
-		private static bool TryPrepare(W.Entity contactEntity, bool enableWarmStarting, Softness contactSoftness, Softness staticSoftness, out ContactConstraint constraint) {
+		private static bool TryPrepare(PhysicsRuntime runtime, W.Entity contactEntity, bool enableWarmStarting, Softness contactSoftness, Softness staticSoftness, out ContactConstraint constraint) {
 			constraint = default;
 
 			// contactEntity always comes from Query<All<Contact, Link<ShapeA>, Link<ShapeB>>> in Update().
@@ -457,6 +546,8 @@ public abstract partial class Core<TWorld> where TWorld : struct, ISessionType, 
 			constraint.ContactEntity = contactEntity;
 			constraint.BodyA = bodyAEntity;
 			constraint.BodyB = bodyBEntity;
+			constraint.IndexA = GetSolverIndex(runtime, bodyAEntity, bodyA);
+			constraint.IndexB = GetSolverIndex(runtime, bodyBEntity, bodyB);
 			constraint.Normal = worldNormal;
 			constraint.ShapeA = shapeAEntity.GID;
 			constraint.ShapeB = shapeBEntity.GID;
@@ -575,54 +666,56 @@ public abstract partial class Core<TWorld> where TWorld : struct, ISessionType, 
 			return owner.Value.TryUnpack<TWorld>(out bodyEntity);
 		}
 
-		private static void IntegrateVelocities(List<W.Entity> bodies, FP h, FVector3 gravity) {
-			foreach (var entity in bodies) {
-				ref var body = ref entity.Ref<Body>()!; // bodies is built from a Query<All<Body>> filter.
+		private static void IntegrateVelocities(Span<SolverBodyState> bodies, ReadOnlySpan<SolverBodyInput> inputs, FP h, FVector3 gravity) {
+			for (var i = 0; i < bodies.Length; i++) {
+				ref var body = ref bodies[i];
+				ref readonly var input = ref inputs[i];
 
-				var gravityScale = body.InvMass > FP.Zero ? body.GravityScale : FP.Zero;
-				var linearDamping = FP.One / (FP.One + h * body.LinearDamping);
-				var angularDamping = FP.One / (FP.One + h * body.AngularDamping);
+				var gravityScale = body.InvMass > FP.Zero ? input.GravityScale : FP.Zero;
+				var linearDamping = FP.One / (FP.One + h * input.LinearDamping);
+				var angularDamping = FP.One / (FP.One + h * input.AngularDamping);
 
-				body.LinearVelocity = h * gravityScale * gravity + body.InvMass * (h * body.Force) + linearDamping * body.LinearVelocity;
-				body.AngularVelocity = body.InvInertiaWorld * (h * body.Torque) + angularDamping * body.AngularVelocity;
+				body.LinearVelocity = h * gravityScale * gravity + body.InvMass * (h * input.Force) + linearDamping * body.LinearVelocity;
+				body.AngularVelocity = body.InvInertiaWorld * (h * input.Torque) + angularDamping * body.AngularVelocity;
 
 				// Locks before solving (box3d enforces them on every velocity write-back, e.g.
 				// b3ScatterBodies): without this, the relax pass after IntegratePositions can leave
 				// impulse-added velocity on locked axes stored in the body across ticks.
-				BodyOperations.ApplyLinearLocks(ref body.LinearVelocity, body.MotionLocks);
-				BodyOperations.ApplyAngularLocks(ref body.AngularVelocity, body.MotionLocks);
+				BodyOperations.ApplyLinearLocks(ref body.LinearVelocity, input.MotionLocks);
+				BodyOperations.ApplyAngularLocks(ref body.AngularVelocity, input.MotionLocks);
 			}
 		}
 
-		private static void IntegratePositions(List<W.Entity> bodies, FP h, FP maxLinearSpeed, FP invDt) {
+		private static void IntegratePositions(Span<SolverBodyState> bodies, ReadOnlySpan<SolverBodyInput> inputs, FP h, FP maxLinearSpeed, FP invDt) {
 			var maxLinearSpeedSquared = maxLinearSpeed * maxLinearSpeed;
 			var maxAngularSpeed = B3Config.MaxRotation * invDt;
 			var maxAngularSpeedSquared = maxAngularSpeed * maxAngularSpeed;
 
-			foreach (var entity in bodies) {
-				ref var body = ref entity.Ref<Body>()!; // bodies is built from a Query<All<Body>> filter.
+			for (var i = 0; i < bodies.Length; i++) {
+				ref var body = ref bodies[i];
+				ref readonly var input = ref inputs[i];
 
 				var v = body.LinearVelocity;
 				var w = body.AngularVelocity;
 
-				if (body.MotionLocks.LinearX)
+				if (input.MotionLocks.LinearX)
 					v.X = FP.Zero;
-				if (body.MotionLocks.LinearY)
+				if (input.MotionLocks.LinearY)
 					v.Y = FP.Zero;
-				if (body.MotionLocks.LinearZ)
+				if (input.MotionLocks.LinearZ)
 					v.Z = FP.Zero;
-				if (body.MotionLocks.AngularX)
+				if (input.MotionLocks.AngularX)
 					w.X = FP.Zero;
-				if (body.MotionLocks.AngularY)
+				if (input.MotionLocks.AngularY)
 					w.Y = FP.Zero;
-				if (body.MotionLocks.AngularZ)
+				if (input.MotionLocks.AngularZ)
 					w.Z = FP.Zero;
 
 				if (FVector3.LengthSqr(v) > maxLinearSpeedSquared) {
 					v *= maxLinearSpeed / FVector3.Length(v);
 				}
 
-				if (!body.AllowFastRotation && FVector3.LengthSqr(w) > maxAngularSpeedSquared) {
+				if (!input.AllowFastRotation && FVector3.LengthSqr(w) > maxAngularSpeedSquared) {
 					w *= maxAngularSpeed / FVector3.Length(w);
 				}
 
@@ -633,26 +726,28 @@ public abstract partial class Core<TWorld> where TWorld : struct, ISessionType, 
 			}
 		}
 
-		private static void WarmStart(Span<ContactConstraint> constraints) {
+		private static void WarmStart(Span<ContactConstraint> constraints, Span<SolverBodyState> states) {
 			foreach (ref readonly var c in constraints) {
+				ref var bodyA = ref states[c.IndexA];
+				ref var bodyB = ref states[c.IndexB];
 				for (var k = 0; k < c.PointCount; k++) {
 					var pt = c.GetPoint(k);
-					ApplyImpulse(c.BodyA, c.BodyB, pt.RA, pt.RB, pt.NormalImpulse * c.Normal);
+					ApplyImpulse(ref bodyA, ref bodyB, pt.RA, pt.RB, pt.NormalImpulse * c.Normal);
 				}
 
 				var friction = c.FrictionImpulseX * c.Tangent1 + c.FrictionImpulseY * c.Tangent2;
-				ApplyImpulse(c.BodyA, c.BodyB, c.FrictionAnchorRA, c.FrictionAnchorRB, friction);
+				ApplyImpulse(ref bodyA, ref bodyB, c.FrictionAnchorRA, c.FrictionAnchorRB, friction);
 
-				ApplyAngularImpulse(c.BodyA, c.BodyB, c.RollingImpulse + c.TwistImpulse * c.Normal);
+				ApplyAngularImpulse(ref bodyA, ref bodyB, c.RollingImpulse + c.TwistImpulse * c.Normal);
 			}
 		}
 
-		private static void Solve(Span<ContactConstraint> constraints, FP h, FP invH, FP contactSpeed, bool useBias) {
+		private static void Solve(Span<ContactConstraint> constraints, Span<SolverBodyState> states, FP h, FP invH, FP contactSpeed, bool useBias) {
 			for (var i = 0; i < constraints.Length; i++) {
 				ref var c = ref constraints[i];
 
-				ref var bodyA = ref c.BodyA.Ref<Body>()!; // TryPrepare only stores entities with Body.
-				ref var bodyB = ref c.BodyB.Ref<Body>()!;
+				ref var bodyA = ref states[c.IndexA];
+				ref var bodyB = ref states[c.IndexB];
 
 				var dp = bodyB.DeltaPosition - bodyA.DeltaPosition;
 				var totalNormalImpulse = FP.Zero;
@@ -770,7 +865,7 @@ public abstract partial class Core<TWorld> where TWorld : struct, ISessionType, 
 			}
 		}
 
-		private static void ApplyRestitution(Span<ContactConstraint> constraints, FP restitutionThreshold) {
+		private static void ApplyRestitution(Span<ContactConstraint> constraints, Span<SolverBodyState> states, FP restitutionThreshold) {
 			for (var i = 0; i < constraints.Length; i++) {
 				ref var c = ref constraints[i];
 
@@ -778,8 +873,8 @@ public abstract partial class Core<TWorld> where TWorld : struct, ISessionType, 
 					continue;
 				}
 
-				ref var bodyA = ref c.BodyA.Ref<Body>()!; // TryPrepare only stores entities with Body.
-				ref var bodyB = ref c.BodyB.Ref<Body>()!;
+				ref var bodyA = ref states[c.IndexA];
+				ref var bodyB = ref states[c.IndexB];
 
 				for (var k = 0; k < c.PointCount; k++) {
 					var pt = c.GetPoint(k);
@@ -899,18 +994,12 @@ public abstract partial class Core<TWorld> where TWorld : struct, ISessionType, 
 		}
 
 		/// <summary>Pure angular impulse (no linear component, no application point) -- used by the rolling-resistance constraint.</summary>
-		private static void ApplyAngularImpulse(W.Entity bodyAEntity, W.Entity bodyBEntity, FVector3 angularImpulse) {
-			ref var bodyA = ref bodyAEntity.Ref<Body>()!; // Callers only pass entities with Body (WarmStart's constraint bodies).
-			ref var bodyB = ref bodyBEntity.Ref<Body>()!;
-
+		private static void ApplyAngularImpulse(ref SolverBodyState bodyA, ref SolverBodyState bodyB, FVector3 angularImpulse) {
 			bodyA.AngularVelocity -= bodyA.InvInertiaWorld * angularImpulse;
 			bodyB.AngularVelocity += bodyB.InvInertiaWorld * angularImpulse;
 		}
 
-		private static void ApplyImpulse(W.Entity bodyAEntity, W.Entity bodyBEntity, FVector3 rA, FVector3 rB, FVector3 p) {
-			ref var bodyA = ref bodyAEntity.Ref<Body>()!; // Callers only pass entities with Body (WarmStart's constraint bodies).
-			ref var bodyB = ref bodyBEntity.Ref<Body>()!;
-
+		private static void ApplyImpulse(ref SolverBodyState bodyA, ref SolverBodyState bodyB, FVector3 rA, FVector3 rB, FVector3 p) {
 			bodyA.LinearVelocity -= bodyA.InvMass * p;
 			bodyA.AngularVelocity -= bodyA.InvInertiaWorld * FVector3.Cross(rA, p);
 			bodyB.LinearVelocity += bodyB.InvMass * p;

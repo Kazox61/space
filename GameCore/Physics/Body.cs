@@ -63,10 +63,9 @@ public struct Body : IComponent, IComponentConfig<Body> {
 	/// <summary>
 	/// Solver working state: translation accumulated since the start of the current step, in world
 	/// orientation. Reset to zero by <see cref="ContactSolver"/> at the start of a step and applied
-	/// to <see cref="Transform"/> at the end. Kept on Body directly (rather than a separate
-	/// BodyState) since this port has no BodySim/BodyState split, but the delta-position/rotation
-	/// pattern itself is load-bearing for the sub-stepping math, not just a SoA artifact - see
-	/// contact_solver.c's separation formula.
+	/// to <see cref="Transform"/> at the end. The discrete solver works on tick-local packed copies,
+	/// then scatters these fields before CCD and finalization. Body remains authoritative at system
+	/// and snapshot boundaries; contact_solver.c's accumulated-delta separation formula is unchanged.
 	/// </summary>
 	internal FVector3 DeltaPosition;
 

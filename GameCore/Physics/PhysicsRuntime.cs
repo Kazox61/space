@@ -90,12 +90,28 @@ public abstract partial class Core<TWorld> where TWorld : struct, ISessionType, 
 		internal PhysicsStepStats Pending;
 
 		internal readonly List<W.Entity> SolverBodies = new();
+		internal readonly List<W.Entity> SolverStateBodies = new();
+		internal readonly List<ContactSolverSystem.SolverBodyState> SolverStates = new();
+		internal readonly List<ContactSolverSystem.SolverBodyInput> SolverInputs = new();
 		internal readonly List<ContactSolverSystem.ContactConstraint> SolverConstraints = new();
 		internal readonly List<EntityGID> ContinuousCandidates = new();
 		internal readonly List<(W.Entity, W.Entity)> IslandEdges = new();
 		internal readonly List<int> IslandParents = new();
 		internal readonly List<FP> IslandSleepTimes = new();
 		internal readonly Dictionary<W.Entity, int> BodyIndices = new();
+
+		/// <summary>Discard all tick-local handles and indices, including on a failed solver update.</summary>
+		internal void ClearSolverScratch() {
+			SolverBodies.Clear();
+			SolverStateBodies.Clear();
+			SolverStates.Clear();
+			SolverInputs.Clear();
+			SolverConstraints.Clear();
+			BodyIndices.Clear();
+			IslandEdges.Clear();
+			IslandParents.Clear();
+			IslandSleepTimes.Clear();
+		}
 
 		public static PhysicsRuntime Get() {
 			if (!W.HasResource<PhysicsRuntime>()) {
