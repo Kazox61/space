@@ -762,6 +762,17 @@ expanded if non-projectile gameplay requires physically persistent fast bodies.
 
 ## Phase 5 Implementation Status
 
+### Large-ground stack regression
+
+The many-object test area exposed a tilted crate losing its ground manifold
+after a player toppled a four-high column. The accepted edge-pair line distance
+could report separation although the boxes' projection intervals overlapped.
+Box-box edge SAT now uses full-box supports along the normalized cross axis;
+unit edge directions also avoid oversized Q16.16 squared cross products.
+The face/edge contact builders and solver iteration counts are unchanged.
+Regression coverage includes both shape orders, positions across the large
+ground, separated boxes, pushed columns, and the complete 96-prop scene.
+
 Phase 5 (fixed-point and rollback hardening) is implemented:
 
 - Operating envelope: `PhysicsValidation` centralizes and enforces coordinate,

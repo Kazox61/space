@@ -145,7 +145,7 @@ public sealed class NavRollbackTests {
 			$"(NavAgent {System.Runtime.CompilerServices.Unsafe.SizeOf<NavAgent>()}), room for {capacity} characters in the {Core<NavRollbackWorldA>.GameWorldRollback.WorldSnapshotLength}-byte frame");
 
 		Assert.Multiple(() => {
-			Assert.That(System.Runtime.CompilerServices.Unsafe.SizeOf<NavAgent>(), Is.EqualTo(400), "update the documented snapshot cost");
+			Assert.That(System.Runtime.CompilerServices.Unsafe.SizeOf<NavAgent>(), Is.EqualTo(656), "update the documented snapshot cost");
 			Assert.That(perAgent, Is.LessThan(1024));
 			Assert.That(capacity, Is.GreaterThanOrEqualTo(256), "rollback frames must hold at least 256 navigation characters");
 		});

@@ -197,6 +197,8 @@ public abstract partial class Core<TWorld> where TWorld : struct, ISessionType, 
 			public FVector3 Normal;
 			public EntityGID BodyGid;
 			public FPos Point;
+			public FVector3 SurfaceVelocity;
+			public FP CharacterBounceSpeed;
 		}
 
 		/// <summary>
@@ -270,6 +272,9 @@ public abstract partial class Core<TWorld> where TWorld : struct, ISessionType, 
 					result.Fraction = output.Fraction;
 					result.Normal = candidateXf.Rotation * output.Normal;
 					result.Point = FWorldTransform.TransformPoint(candidateXf, output.Point);
+					var surfaceVelocity = candidateXf.Rotation * shape.Material.TangentVelocity;
+					result.SurfaceVelocity = surfaceVelocity - FVector3.Dot(surfaceVelocity, result.Normal) * result.Normal;
+					result.CharacterBounceSpeed = shape.CharacterBounceSpeed;
 					if (shapeEntity.Has<W.Link<BodyOwner>>()) {
 						ref readonly var owner = ref shapeEntity.Read<W.Link<BodyOwner>>();
 						result.BodyGid = owner.Value;
@@ -314,8 +319,13 @@ public abstract partial class Core<TWorld> where TWorld : struct, ISessionType, 
 		}
 
 		public static bool UpdatePogoGrounding(BroadPhase broadPhase, FWorldTransform moverXf, Capsule capsule, FP dt, FP hertz, FP dampingRatio, FP jumpCooldown, FP maxSlopeNormalThreshold, Filter filter, ref FP pogoVelocity, out FVector3 supportVelocity, FP predictionTime = default) {
+			return UpdatePogoGrounding(broadPhase, moverXf, capsule, dt, hertz, dampingRatio, jumpCooldown, maxSlopeNormalThreshold, filter, ref pogoVelocity, out supportVelocity, out _, predictionTime);
+		}
+
+		public static bool UpdatePogoGrounding(BroadPhase broadPhase, FWorldTransform moverXf, Capsule capsule, FP dt, FP hertz, FP dampingRatio, FP jumpCooldown, FP maxSlopeNormalThreshold, Filter filter, ref FP pogoVelocity, out FVector3 supportVelocity, out FP characterBounceSpeed, FP predictionTime = default) {
 			PhysicsValidation.ValidateCapsuleQuery(moverXf, capsule, FVector3.Zero);
 			supportVelocity = FVector3.Zero;
+			characterBounceSpeed = FP.Zero;
 			// See Mover.JumpCooldown's remarks: skip the trace entirely while a jump is still in its
 			// cooldown window, matching box3d's CategorizeGround gating re-grounding on m_jumpCooldown.
 			if (jumpCooldown > FP.Zero) {
@@ -362,9 +372,14 @@ public abstract partial class Core<TWorld> where TWorld : struct, ISessionType, 
 			pogoVelocity = (pogoVelocity - omega * omegaH * (pogoCurrentLength - pogoRestLength))
 				/ (FP.One + 2 * dampingRatio * omegaH + omegaH * omegaH);
 
+			supportVelocity = trace.SurfaceVelocity;
+			// Grounding probes reach below the feet; pads must wait for contact, not mere probe reach.
+			if (pogoCurrentLength <= capsule.Radius + B3Config.LinearSlop) {
+				characterBounceSpeed = trace.CharacterBounceSpeed;
+			}
 			if (trace.BodyGid.TryUnpack<TWorld>(out var support) && support.Has<Body>()) {
 				ref readonly var body = ref support.Read<Body>();
-				supportVelocity = body.LinearVelocity + FVector3.Cross(body.AngularVelocity, trace.Point - body.Center);
+				supportVelocity += body.LinearVelocity + FVector3.Cross(body.AngularVelocity, trace.Point - body.Center);
 			}
 
 			return true;

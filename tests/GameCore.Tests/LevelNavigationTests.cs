@@ -118,7 +118,7 @@ public sealed class LevelNavigationTests {
 			Assert.That(NavMeshBytes.Of(navigation.Mesh.CreateMesh()), Is.EqualTo(NavMeshBytes.Of(Baked().Navigation!.Mesh.CreateMesh())),
 				"the committed navmesh differs from a fresh bake of the committed colliders; re-export the sample level");
 			Assert.That(ZoneTable(navigation), Is.EqualTo(ZoneTable(Baked().Navigation!)), "the committed zone table differs from a fresh bake");
-			Assert.That(navigation.Zones.Select(static zone => zone.Id), Is.EqualTo(new[] { "elevator", "gate", "vault" }));
+			Assert.That(navigation.Zones.Select(static zone => zone.Id), Is.EqualTo(new[] { "elevator", "gate", "lift_4m", "lift_8m", "platform_diagonal", "platform_shuttle", "vault" }));
 		});
 	}
 

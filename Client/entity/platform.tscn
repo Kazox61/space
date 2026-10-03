@@ -2,7 +2,7 @@
 
 [ext_resource type="Script" uid="uid://cip1dwd0y0jcp" path="res://synchronizer/EntityView.cs" id="1_s8bxr"]
 [ext_resource type="Script" uid="uid://dgbo3w1kixhiy" path="res://synchronizer/view_behavior/TransformViewBehavior.cs" id="2_c1gtx"]
-[ext_resource type="Material" uid="uid://crh4edqr4kdta" path="res://material/grid_mat.tres" id="2_ry5bi"]
+[ext_resource type="Material" path="res://material/platform_mat.tres" id="2_ry5bi"]
 [ext_resource type="Script" path="res://synchronizer/view_behavior/BoxShapeSizeBehavior.cs" id="3_size"]
 
 [sub_resource type="BoxMesh" id="BoxMesh_ry5bi"]

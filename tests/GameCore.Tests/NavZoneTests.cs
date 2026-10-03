@@ -64,10 +64,10 @@ public sealed class NavZoneTests {
 		}
 
 		Assert.Multiple(() => {
-			Assert.That(navigation.Zones.Select(static zone => zone.Id), Is.EqualTo(new[] { "elevator", "gate", "vault" }));
+			Assert.That(navigation.Zones.Select(static zone => zone.Id), Is.EqualTo(new[] { "elevator", "gate", "lift_4m", "lift_8m", "platform_diagonal", "platform_shuttle", "vault" }));
 			Assert.That(navigation.FindZone("gate"), Is.EqualTo(GateZoneIndex));
 			Assert.That(navigation.FindZone("missing"), Is.EqualTo(-1));
-			Assert.That(states, Is.EqualTo(new[] { NavZoneState.Open(0), NavZoneState.Open(1), NavZoneState.Open(2) }));
+			Assert.That(states, Is.EqualTo(Enumerable.Range(0, navigation.Zones.Count).Select(NavZoneState.Open)));
 			Assert.That(AreaBytes(navigation.Mesh!), Is.EqualTo(BakedAreaBytes()));
 		});
 	}

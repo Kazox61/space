@@ -28,7 +28,7 @@ public struct NavCorridor {
 /// </summary>
 public struct NavAgent : IComponent {
 	/// <summary>Longest corridor kept per plan. A longer route keeps its start side and is re-planned from its end.</summary>
-	public const int CorridorCapacity = 64;
+	public const int CorridorCapacity = 128;
 
 	/// <summary>Horizontal speed in world units per second.</summary>
 	public FP Speed;

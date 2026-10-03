@@ -74,8 +74,37 @@ public abstract partial class Core<TWorld> where TWorld : struct, ISessionType, 
 				}
 				var speed = FP.Min(agent.Speed, distance * Const.InvDeltaTime);
 				intent.Velocity = toCorner / distance * speed;
+
+				// Match the mover's Q16.16 integration: a boundary-following funnel leg can drift
+				// into a closed triangle after narrowing, even when its ideal direction is passable.
+				var nextXZ = PredictedXZ(feet, intent.Velocity);
+				var query = navigation.Query!;
+				if (query.IsPassable(located, agent.AreaMask) && query.FindPassableTriangleForEndpoint(nextXZ, feet.Y, agent.AreaMask) < 0) {
+					var safeXZ = query.ProjectToPassable(nextXZ, feet.Y, agent.Speed * Const.DeltaTime, agent.AreaMask, out var safeTriangle);
+					if (safeTriangle < 0) {
+						intent.Velocity = default;
+						continue;
+					}
+					// A small inset prevents the corrected velocity from rounding across the same edge.
+					var inward = navigation.Mesh!.Triangles[safeTriangle].CenterXZ - safeXZ;
+					var inwardDistance = FVector2.Length(inward);
+					if (inwardDistance > FP.CalculationsEpsilon) {
+						safeXZ += inward * FP.Min(FP.One, FP.FromRatio(1, 400) / inwardDistance);
+					}
+					intent.Velocity = (safeXZ - NavGeometry.ToXZ(feet)) * Const.InvDeltaTime;
+					if (FVector2.LengthSqr(intent.Velocity) > agent.Speed * agent.Speed) {
+						intent.Velocity = FVector2.NormalizeSafe(intent.Velocity) * agent.Speed;
+					}
+					if (query.FindPassableTriangleForEndpoint(PredictedXZ(feet, intent.Velocity), feet.Y, agent.AreaMask) < 0) {
+						intent.Velocity = default;
+					}
+				}
 			}
 		}
+
+		private static FVector2 PredictedXZ(FVector3 feet, FVector2 velocity) => NavGeometry.ToXZ(feet) + new FVector2(
+			(velocity.X.To32() * Const.DeltaTime.To32()).To64(),
+			(velocity.Y.To32() * Const.DeltaTime.To32()).To64());
 
 		/// <summary>Bottom of the character's capsule, the point the agent is located and steered by.</summary>
 		internal static FVector3 Feet(in Transform transform, in Mover mover) {

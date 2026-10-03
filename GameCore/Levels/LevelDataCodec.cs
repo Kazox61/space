@@ -9,7 +9,7 @@ public static class LevelDataCodec {
 	private static readonly Encoding s_strictUtf8 = new UTF8Encoding(encoderShouldEmitUTF8Identifier: false, throwOnInvalidBytes: true);
 
 	private const uint Magic = 0x4C564C53; // "SLVL" in little-endian byte order.
-	private const ushort Version = 8;
+	private const ushort Version = 9;
 	private const ushort PreviousVersion = 7;
 	internal const int HashSize = 32;
 	internal const int HashOffset = sizeof(uint) + sizeof(ushort) + sizeof(int);
@@ -18,7 +18,7 @@ public static class LevelDataCodec {
 	private const int MaximumEntityCount = 100_000;
 	private const int MaximumNavZoneCount = NavZoneData.MaxZones;
 	private const int MaximumPayloadSize = 64 * 1024 * 1024;
-	private const int ComponentKindCount = (int)LevelEntityComponentKind.RailMotion + 1;
+	private const int ComponentKindCount = (int)LevelEntityComponentKind.SurfaceProperties + 1;
 	private const int KnownComponentMask = (1 << ComponentKindCount) - 1;
 	private const int PreviousKnownComponentMask = (1 << (int)LevelEntityComponentKind.RailMotion) - 1;
 
@@ -79,7 +79,7 @@ public static class LevelDataCodec {
 				throw new InvalidDataException("Level has an invalid magic header.");
 			}
 			var version = reader.ReadUInt16();
-			if (version is not Version and not PreviousVersion) {
+			if (version < PreviousVersion || version > Version) {
 				throw new InvalidDataException($"Level version {version} is unsupported; expected {PreviousVersion} or {Version}.");
 			}
 
@@ -202,6 +202,21 @@ public static class LevelDataCodec {
 			writer.Write(rail.Speed.RawValue);
 			writer.Write(rail.StartsAtEnd);
 		}
+		if (components.SphereShape is { } sphere) {
+			writer.Write(sphere.Radius.RawValue);
+			writer.Write(sphere.Density.RawValue);
+		}
+		if (components.SurfaceProperties is { } surface) {
+			writer.Write(surface.Material.Friction.RawValue);
+			writer.Write(surface.Material.Restitution.RawValue);
+			writer.Write(surface.Material.RollingResistance.RawValue);
+			writer.Write(surface.Material.TangentVelocity.X.RawValue);
+			writer.Write(surface.Material.TangentVelocity.Y.RawValue);
+			writer.Write(surface.Material.TangentVelocity.Z.RawValue);
+			writer.Write(surface.Material.UserMaterialId);
+			writer.Write(surface.Material.CustomColor);
+			writer.Write(surface.CharacterBounceSpeed.RawValue);
+		}
 	}
 
 	private static EntityPlacement ReadPlacement(BinaryReader reader, int index, ushort version) {
@@ -209,7 +224,11 @@ public static class LevelDataCodec {
 		var type = (LevelEntityType)reader.ReadByte();
 		var transform = ReadTransform(reader);
 		var mask = reader.ReadUInt16();
-		var knownMask = version == PreviousVersion ? PreviousKnownComponentMask : KnownComponentMask;
+		var knownMask = version switch {
+			7 => PreviousKnownComponentMask,
+			8 => (1 << ((int)LevelEntityComponentKind.RailMotion + 1)) - 1,
+			_ => KnownComponentMask,
+		};
 		if ((mask & ~knownMask) != 0) {
 			throw new InvalidDataException($"{sourcePath}: unknown entity components in mask 0x{mask:X4}.");
 		}
@@ -248,7 +267,18 @@ public static class LevelDataCodec {
 						var value => throw new InvalidDataException($"{sourcePath}: invalid rail start state {value}."),
 					}
 				)
-				: null
+				: null,
+			SphereShape: Has(LevelEntityComponentKind.SphereShape)
+				? new SphereShapeData(FP.FromRaw(reader.ReadInt32()), FP.FromRaw(reader.ReadInt32())) : null,
+			SurfaceProperties: Has(LevelEntityComponentKind.SurfaceProperties)
+				? new SurfacePropertiesData(new SurfaceMaterial {
+					Friction = FP.FromRaw(reader.ReadInt32()),
+					Restitution = FP.FromRaw(reader.ReadInt32()),
+					RollingResistance = FP.FromRaw(reader.ReadInt32()),
+					TangentVelocity = new FVector3(FP.FromRaw(reader.ReadInt32()), FP.FromRaw(reader.ReadInt32()), FP.FromRaw(reader.ReadInt32())),
+					UserMaterialId = reader.ReadUInt64(),
+					CustomColor = reader.ReadUInt32(),
+				}, FP.FromRaw(reader.ReadInt32())) : null
 		));
 	}
 

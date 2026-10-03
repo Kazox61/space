@@ -425,9 +425,9 @@ public sealed class LevelDataTests {
 			Assert.That(level.Data.Entities.Where(static entity => entity.Type == LevelEntityType.StaticGeometry).Any(static entity =>
 				entity.Transform.Position.X - entity.Components.BoxShape!.Value.HalfExtents.X.To64() < Fixed64.FP.FromRatio(-12, 1)
 				&& entity.Transform.Position.X + entity.Components.BoxShape.Value.HalfExtents.X.To64() > Fixed64.FP.FromRatio(-12, 1)
-				&& entity.Transform.Position.Z - entity.Components.BoxShape.Value.HalfExtents.Z.To64() < Fixed64.FP.FromRatio(8, 1)
-				&& entity.Transform.Position.Z + entity.Components.BoxShape.Value.HalfExtents.Z.To64() > Fixed64.FP.FromRatio(8, 1)), Is.False,
-				"no static collider fills the elevator shaft");
+				&& entity.Transform.Position.Z - entity.Components.BoxShape.Value.HalfExtents.Z.To64() < Fixed64.FP.FromRatio(32, 1)
+				&& entity.Transform.Position.Z + entity.Components.BoxShape.Value.HalfExtents.Z.To64() > Fixed64.FP.FromRatio(32, 1)), Is.True,
+				"continuous ground remains underneath the elevator");
 			Assert.That(level.Data.Entities.Single(static entity => entity.SourcePath == "VaultDoor").Components.ZoneLink, Is.EqualTo("vault"));
 			Assert.That(level.Data.Entities.Single(static entity => entity.SourcePath == "VaultPlate").Type, Is.EqualTo(LevelEntityType.PressurePlate));
 		});

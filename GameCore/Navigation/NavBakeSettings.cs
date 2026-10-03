@@ -38,7 +38,8 @@ public readonly record struct NavBakeSettings(
 	/// Sized for the player capsule (radius 0.5, height 2) and its 45 degree standable slope.
 	/// </summary>
 	public static NavBakeSettings Default => new(
-		VoxelSize: FP.Quarter,
+		// Keep near-limit ramps below the ledge filter's quantized climb budget.
+		VoxelSize: FP.FromRatio(1, 8),
 		VoxelHeight: FP.FromRatio(1, 10),
 		AgentRadius: FP.Half,
 		AgentHeight: 2.ToFP(),

@@ -68,6 +68,7 @@ public abstract partial class Core<TWorld> where TWorld : struct, ISessionType, 
 
 			public FP Friction;
 			public FP Restitution;
+			public FVector3 TangentVelocity;
 
 			public FP FrictionImpulseX;
 			public FP FrictionImpulseY;
@@ -540,6 +541,9 @@ public abstract partial class Core<TWorld> where TWorld : struct, ISessionType, 
 
 			constraint.Friction = FP.Sqrt(shapeDataA.Material.Friction * shapeDataB.Material.Friction);
 			constraint.Restitution = FP.Max(shapeDataA.Material.Restitution, shapeDataB.Material.Restitution);
+			// Relative material motion is local to each shape; only its tangent projections enter friction.
+			constraint.TangentVelocity = bodyB.Transform.Rotation * shapeDataB.Material.TangentVelocity
+				- bodyA.Transform.Rotation * shapeDataA.Material.TangentVelocity;
 			var hasPersistedPoint = false;
 			for (var i = 0; i < manifold.PointCount; i++) {
 				hasPersistedPoint |= manifold.GetPoint(i).Persisted;
@@ -731,7 +735,7 @@ public abstract partial class Core<TWorld> where TWorld : struct, ISessionType, 
 
 					var vrA = bodyA.LinearVelocity + FVector3.Cross(bodyA.AngularVelocity, c.FrictionAnchorRA);
 					var vrB = bodyB.LinearVelocity + FVector3.Cross(bodyB.AngularVelocity, c.FrictionAnchorRB);
-					var vr = vrB - vrA;
+					var vr = vrB - vrA + c.TangentVelocity;
 					var vtX = FVector3.Dot(vr, c.Tangent1);
 					var vtY = FVector3.Dot(vr, c.Tangent2);
 

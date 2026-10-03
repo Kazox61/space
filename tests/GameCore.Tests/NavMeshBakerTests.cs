@@ -33,7 +33,7 @@ public sealed class NavMeshBakerTests {
 	}
 
 	[Test]
-	public void SampleObstacleIsBlockedAndShaftPlatformIsWalkable() {
+	public void SampleObstacleIsBlockedAndElevatorPlatformIsWalkable() {
 		var mesh = Sample().Mesh;
 		var query = new NavMeshQuery(mesh);
 
@@ -41,8 +41,9 @@ public sealed class NavMeshBakerTests {
 			Assert.That(query.FindTriangle(XZ(0, -6)), Is.EqualTo(-1), "box centre");
 			Assert.That(query.FindTriangle(new F64.FVector2(F64.FP.Zero, F64.FP.FromRatio(-39, 10))), Is.EqualTo(-1), "0.1 from the box side");
 			Assert.That(query.FindTriangle(XZ(0, -3)), Is.GreaterThanOrEqualTo(0), "1.0 from the box side");
-			Assert.That(mesh.Vertices.ToArray().Max(static v => v.Y), Is.LessThanOrEqualTo(F64.FP.Half + MaxSurfaceLift), "all walkable floor starts flush");
-			Assert.That(query.FindTriangle(XZ(-12, 8)), Is.GreaterThanOrEqualTo(0), "the platform supplies walkable floor over the shaft");
+			var elevatorTriangle = query.FindTriangle(XZ(-12, 32));
+			Assert.That(elevatorTriangle, Is.GreaterThanOrEqualTo(0), "the elevator start pose is walkable");
+			Assert.That(query.SampleHeight(XZ(-12, 32), elevatorTriangle), Is.InRange(F64.FP.One, F64.FP.One + MaxSurfaceLift), "the elevator starts above the continuous ground");
 		});
 	}
 

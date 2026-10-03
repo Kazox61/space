@@ -88,7 +88,17 @@ public abstract partial class Core<TWorld> where TWorld : struct, ISessionType, 
 
 				mover.Grounded = CharacterMover.UpdatePogoGrounding(
 					broadPhase, moverXf, capsule, dt, characterRes.PogoHertz.To32(), characterRes.PogoDampingRatio.To32(), mover.JumpCooldown,
-					characterRes.MaxSlopeNormalThreshold.To32(), moverFilter, ref mover.PogoVelocity, out var supportVelocity, dt);
+					characterRes.MaxSlopeNormalThreshold.To32(), moverFilter, ref mover.PogoVelocity, out var supportVelocity, out var bounceSpeed, dt);
+
+				if (mover.Grounded && bounceSpeed > FP.Zero && mover.Velocity.Y <= FP.Zero) {
+					// Movers have no rigid body: launch explicitly rather than relying on restitution.
+					mover.Velocity.Y = bounceSpeed;
+					mover.JumpCooldown = characterRes.JumpCooldownTime.To32();
+					mover.PogoVelocity = FP.Zero;
+					mover.Grounded = false;
+					mover.InheritedVelocity = supportVelocity;
+					wasGrounded = false;
+				}
 
 				if (mover.Grounded) {
 					mover.SupportVelocity = supportVelocity;
@@ -109,7 +119,8 @@ public abstract partial class Core<TWorld> where TWorld : struct, ISessionType, 
 					planes.Clear();
 					CharacterMover.CollideMover(broadPhase, moverXf, capsule, moverFilter, dt, ref planes);
 
-					var (delta, _) = MoverSolver.SolvePlanes(target - moverXf.Position, ref planes);
+					var desiredDelta = MoverSolver.ClipSteepSlopeMotion(target - moverXf.Position, in planes, characterRes.MaxSlopeNormalThreshold.To32());
+					var (delta, _) = MoverSolver.SolvePlanes(desiredDelta, ref planes);
 					var fraction = CharacterMover.CastMover(broadPhase, moverXf, capsule, delta, FP.One, moverFilter, dt);
 					delta *= fraction;
 					moverXf.Position += delta;
@@ -121,9 +132,11 @@ public abstract partial class Core<TWorld> where TWorld : struct, ISessionType, 
 
 				CharacterMover.ApplyPushImpulses(moverXf, effectiveVelocity, in planes);
 
-				var clippedVelocity = MoverSolver.ClipVector(mover.Velocity, in planes);
+				var slopeLimitedVelocity = MoverSolver.ClipSteepSlopeMotion(mover.Velocity, in planes, characterRes.MaxSlopeNormalThreshold.To32());
+				var clippedVelocity = MoverSolver.ClipVector(slopeLimitedVelocity, in planes);
 				if (!mover.Grounded) {
-					mover.InheritedVelocity = MoverSolver.ClipVector(effectiveVelocity, in planes) - clippedVelocity;
+					var slopeLimitedEffectiveVelocity = MoverSolver.ClipSteepSlopeMotion(effectiveVelocity, in planes, characterRes.MaxSlopeNormalThreshold.To32());
+					mover.InheritedVelocity = MoverSolver.ClipVector(slopeLimitedEffectiveVelocity, in planes) - clippedVelocity;
 				}
 				mover.Velocity = clippedVelocity;
 				transform.SetFromWorldTransform(moverXf);

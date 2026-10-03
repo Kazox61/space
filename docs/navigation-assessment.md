@@ -421,8 +421,8 @@ Phase 5 is complete:
   distance, repath interval and area mask; the requested destination; status
   (`Idle`, `Moving`, `Arrived`, `Failed`) and the last `NavPathStatus`; the
   destination the corridor was planned for; the path target; the current
-  triangle; the next repath tick; and corridor progress plus a 64-entry
-  `[InlineArray]` corridor (384 bytes per agent). Nothing about a path
+   triangle; the next repath tick; and corridor progress plus a 128-entry
+   `[InlineArray]` corridor (656 bytes per agent). Nothing about a path
   lives in `NavigationRes`, which still only holds the mesh and per-call scratch.
 - `NavAgentSystem` locates the agent's feet on the mesh (height-aware, or the
   nearest mesh point when it stands off the mesh), updates its corridor index,
@@ -490,7 +490,7 @@ Phase 6 is complete:
   and away again, so which player it chases, and therefore its destination and
   corridor, depends on that input.
 - Snapshot restore: every `NavAgent` field, set to distinct non-zero values
-  including all 64 corridor slots, round-trips byte-exactly.
+   including all 128 corridor slots, round-trips byte-exactly.
 - Rollback: an uninterrupted `ForwardOnly` run is compared with an
   `AutomaticRollbacks` run whose remote input arrives 12 ticks late. The late
   run re-simulates more ticks than it plays, its predictions planned
@@ -506,14 +506,20 @@ Phase 6 is complete:
   `LiteNetLibRemoteClientListener` and `LiteNetLibServerConnection` succeeds
   with equal level keys and is refused when the client's level differs only in
   its navmesh.
-- Snapshot cost: a navigation character adds 533 bytes to the world snapshot
+- Original snapshot baseline: a navigation character adds 533 bytes to the world snapshot
   (`NavAgent` is 384 of them). The sample world is 13,285 bytes, so the
   640,000-byte rollback frame holds about 1,175 characters; the test requires
   room for at least 256.
-- Corridor capacity: the longest corridor between any two triangles of the
-  sample mesh is 23 of its 45 triangles, against a 64-entry buffer. Longer
-  routes are truncated and re-planned from their end (Phase 5), so 64 stays;
-  larger levels should re-run the measurement.
+- Corridor capacity: the expanded physics/platform sample measured a longest
+   corridor of 109 across 787 triangles, so the inline buffer is now 128
+   entries (`NavAgent` is 656 bytes). The original sample measured 23 of 45 triangles against a
+   64-entry buffer. Longer routes are still truncated and re-planned from
+   their end (Phase 5); larger levels should re-run the measurement.
+- Many-object-map timing follow-up: after adding the 96-prop enclosure, the
+   committed mesh has 829 triangles. Local enforced navigation benchmarks
+   exceed the timing targets with 16 characters re-planning every tick;
+   functional navigation tests pass, but timing acceptance needs profiling
+   and revalidation on this enlarged map. The timing thresholds are unchanged.
 - Allocations: with the character planning every tick for 480 ticks, the run
   allocates exactly as much as the same run without a navmesh, so navigation
   adds zero bytes. The test fails on a single 40-byte allocation per plan.

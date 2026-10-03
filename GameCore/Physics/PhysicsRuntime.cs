@@ -36,6 +36,12 @@ public struct PhysicsStepStats {
 	public int Islands;
 	public int IslandsFellAsleep;
 	public int BodiesWoken;
+	public int BoxSatFullSearches;
+	/// <summary>Full searches after an existing feature failed reuse or was invalidated.</summary>
+	public int BoxSatFallbacks;
+	public int BoxSatSeparationHits;
+	public int BoxSatFaceHits;
+	public int BoxSatEdgeHits;
 
 	internal PhaseTimes Ticks;
 

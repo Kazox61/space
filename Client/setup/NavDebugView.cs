@@ -56,6 +56,7 @@ public partial class NavDebugView : Node3D, INavDebugDraw {
 	private int _boundaryEdges;
 
 	public override void _Ready() {
+		_enabled = ClientPerformanceCapture.DebugDrawing;
 		_draw = new NavDebugDraw(Level ?? LevelData.Empty);
 		_mesh = new ImmediateMesh();
 		AddChild(new MeshInstance3D { Mesh = _mesh, CastShadow = GeometryInstance3D.ShadowCastingSetting.Off });
@@ -73,11 +74,12 @@ public partial class NavDebugView : Node3D, INavDebugDraw {
 
 		var layer = new CanvasLayer();
 		AddChild(layer);
-		_label = new Label { Visible = false, HorizontalAlignment = HorizontalAlignment.Right };
+		_label = new Label { Visible = _enabled, HorizontalAlignment = HorizontalAlignment.Right };
 		layer.AddChild(_label);
 	}
 
 	public override void _Process(double delta) {
+		using var timing = ClientPerformanceCapture.Measure(ClientPerformanceCapture.Section.NavDebug);
 		if (Pressed(Key.F5, ref _toggleHeld)) {
 			_enabled = !_enabled;
 			_label.Visible = _enabled;
@@ -89,6 +91,7 @@ public partial class NavDebugView : Node3D, INavDebugDraw {
 			_selectedAgent = _selectedAgent + 1 >= _draw.AgentCount ? -1 : _selectedAgent + 1;
 		}
 
+		ClientPerformanceCapture.RecordNavOverlay(_enabled, (int)s_layers[_layer], _selectedAgent);
 		_mesh.ClearSurfaces();
 		if (!_enabled) {
 			return;

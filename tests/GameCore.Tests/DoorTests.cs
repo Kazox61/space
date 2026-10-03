@@ -19,8 +19,8 @@ public struct DoorRolledBackWorld : IWorldType, ISessionType;
 /// Pressure plates, doors and navigation zones together, on the committed sample level. Its vault is
 /// a walled room (inside x in [16, 24], z in [-4, 4]) whose only way in is a 3 m doorway in the west
 /// wall at x=15.75, covered by the <c>vault</c> zone. The door fills the doorway when closed and
-/// starts open, slid 3 m along +Z into the wall. One plate is at (-7, 0.5, 0), left of the player
-/// spawns; another is inside the room at (22, 0.5, 0).
+/// starts open, slid 3 m along +Z into the wall. One plate is just outside at (13, 0.5, 0);
+/// another is inside at (18.5, 0.5, 2.5), offset from the walking path.
 /// </summary>
 [TestFixture]
 [NonParallelizable]
@@ -217,7 +217,7 @@ public sealed class DoorTests {
 
 	private static readonly Vector ClosedDoor = new(15.75, 1.5, 0);
 	private static readonly Vector OpenDoor = ClosedDoor + new Vector(0, 0, 3);
-	private static readonly Vector OutsidePlate = new(-7, 1.5, 0);
+	private static readonly Vector OutsidePlate = new(13, 1.5, 0);
 	private static readonly Vector Spawn = new(0, 1.5, 0);
 
 	private readonly record struct Vector(double X, double Y, double Z) {
@@ -327,16 +327,16 @@ public sealed class DoorTests {
 
 	/// <summary>
 	/// The remote player (spawned at x=3, walking 7 m/s) stops with its capsule 0.7 m short of the
-	/// plate (its edge is at x=-6), then steps on about six ticks after walking on: less than the input
-	/// delay, so the prediction (still standing) misses the step. It waits, walks right off the plate,
-	/// then left onto it again. The local player stands still at x=0.
+	/// plate (its near edge is at x=12), then steps on about six ticks after walking on: less than the input
+	/// delay, so the prediction (still standing) misses the step. It waits, walks left off the plate,
+	/// then right onto it again. The local player stands still at x=0.
 	/// </summary>
 	private static PlayerInput ScriptedRemoteInput(int tick) {
 		return tick switch {
-			>= 10 and < 77 => new PlayerInput { MoveX = -F.FP.One },
-			>= 110 and < 130 => new PlayerInput { MoveX = -F.FP.One },
-			>= 170 and < 210 => new PlayerInput { MoveX = F.FP.One },
-			>= 230 and < 270 => new PlayerInput { MoveX = -F.FP.One },
+			>= 10 and < 77 => new PlayerInput { MoveX = F.FP.One },
+			>= 110 and < 130 => new PlayerInput { MoveX = F.FP.One },
+			>= 170 and < 210 => new PlayerInput { MoveX = -F.FP.One },
+			>= 230 and < 270 => new PlayerInput { MoveX = F.FP.One },
 			_ => default,
 		};
 	}

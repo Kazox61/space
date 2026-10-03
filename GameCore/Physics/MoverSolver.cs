@@ -74,4 +74,24 @@ public static class MoverSolver {
 
 		return v;
 	}
+
+	/// <summary>
+	/// Removes horizontal uphill drive against non-standable, upward-facing contact planes before
+	/// the plane solver can turn it into lift. Keeps vertical motion, downhill motion and motion
+	/// across the slope, so gravity still slides the character and jumps retain their upward speed.
+	/// </summary>
+	public static FVector3 ClipSteepSlopeMotion(FVector3 vector, in MoverPlaneBuffer planes, FP maxSlopeNormalThreshold) {
+		for (var i = 0; i < planes.Count; i++) {
+			var normal = planes.GetPlane(i).Normal;
+			if (normal.Y <= FP.Zero || normal.Y >= maxSlopeNormalThreshold) {
+				continue;
+			}
+			var horizontalNormal = new FVector3(normal.X, FP.Zero, normal.Z);
+			var intoSlope = FVector3.Dot(vector, horizontalNormal);
+			if (intoSlope < FP.Zero) {
+				vector -= (intoSlope / FVector3.LengthSqr(horizontalNormal)) * horizontalNormal;
+			}
+		}
+		return vector;
+	}
 }

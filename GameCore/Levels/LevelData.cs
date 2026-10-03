@@ -13,6 +13,7 @@ public enum LevelEntityType : byte {
 	PressurePlate = 4,
 	/// <summary>A kinematic box that patrols between two stops and can represent a navigation link.</summary>
 	Platform = 5,
+	Sphere = 6,
 }
 
 public enum LootKind : byte {
@@ -28,6 +29,8 @@ public enum NavContribution : byte {
 }
 
 public readonly record struct BoxShapeData(FVector3 HalfExtents, FP Density);
+public readonly record struct SphereShapeData(FP Radius, FP Density);
+public readonly record struct SurfacePropertiesData(SurfaceMaterial Material, FP CharacterBounceSpeed);
 
 /// <summary>
 /// How a door moves: from its placed (closed) pose by <see cref="OpenOffset"/>, given in the door's
@@ -50,7 +53,9 @@ public readonly record struct PlacementComponents(
 	NavContribution? Navigation = null,
 	string? ZoneLink = null,
 	DoorMotionData? DoorMotion = null,
-	RailMotionData? RailMotion = null
+	RailMotionData? RailMotion = null,
+	SphereShapeData? SphereShape = null,
+	SurfacePropertiesData? SurfaceProperties = null
 ) {
 	public bool Has(LevelEntityComponentKind kind) => kind switch {
 		LevelEntityComponentKind.Health => Health.HasValue,
@@ -62,6 +67,8 @@ public readonly record struct PlacementComponents(
 		LevelEntityComponentKind.ZoneLink => ZoneLink is not null,
 		LevelEntityComponentKind.DoorMotion => DoorMotion.HasValue,
 		LevelEntityComponentKind.RailMotion => RailMotion.HasValue,
+		LevelEntityComponentKind.SphereShape => SphereShape.HasValue,
+		LevelEntityComponentKind.SurfaceProperties => SurfaceProperties.HasValue,
 		_ => false,
 	};
 }

@@ -31,9 +31,9 @@ public static class NavTestSession {
 		return s_level ??= Sample(static entity => entity.Type == LevelEntityType.StaticGeometry);
 	}
 
-	/// <summary>The committed sample level without its crates: static geometry, the gate door and its plate.</summary>
+	/// <summary>The committed sample level without dynamic toy props: static geometry, platforms, the door and its plates.</summary>
 	public static LevelData DoorLevel() {
-		return s_doorLevel ??= Sample(static entity => entity.Type != LevelEntityType.Crate);
+		return s_doorLevel ??= Sample(static entity => entity.Type is not LevelEntityType.Crate and not LevelEntityType.Sphere);
 	}
 
 	private static LevelData Sample(Func<EntityPlacement, bool> keep) {

@@ -227,7 +227,10 @@ client: --level <name>, default level_pipeline_test → res://maps/<name>.level.
   adds ZoneLink (a zone id, which must name one of the level's zone volumes)
   and DoorMotion (open offset, speed, starts open) for the `Door` and
   `PressurePlate` types. Version 8 adds `RailMotion` (travel offset, speed,
-  starts at end) and the `Platform` type. Version 7 files remain readable.
+   starts at end) and the `Platform` type. Version 9 adds `SphereShape`, the
+   dynamic `Sphere` type, and optional `SurfaceProperties` (friction,
+   restitution, rolling resistance, local tangent velocity, material id/debug
+   color, and character bounce speed). Version 7 and 8 files remain readable.
   The file is: placements, zone volumes, navigation. Validation checks each
   type's components:
 
@@ -416,6 +419,79 @@ Acceptance criteria:
 
 - Snapshot size is independent of the number of static colliders.
 - A map with triangle-mesh terrain runs with rollback hashes intact.
+
+## Physics Toy Area in the Test Map
+
+`maps/physics_toys.tscn` is instanced by `level_pipeline_test.tscn` on the
+west side of the arena. It contains:
+
+- A green static conveyor carrying props and idle characters toward +Z at
+  3 units/second through local `TangentVelocity`.
+- A pink pad with restitution 0.95, dropped crates/spheres, and an explicit
+  14 units/second character launch when the feet reach the surface.
+- A blue zero-friction ice lane with spheres using rolling resistance 0 and
+  0.25, plus a normal-friction control lane. Rolling resistance damps spin;
+  without friction it cannot stop linear sliding. Starter ramps and a crate
+  make the lanes usable for manual push/roll comparisons.
+- Labeled 20°, 30°, 40°, 44°, 45°, 46°, 50°, and 60° ramps. The 45° ramp is
+  the boundary case; 44° and 46° bracket it for grounding/navmesh checks.
+
+The default bake uses 0.125-unit horizontal voxels: the earlier 0.25-unit
+resolution rejected the 44° ramp through quantized ledge filtering despite
+its walkable normal. The exported level and navigation are regenerated with
+the map. Dynamic sphere placements are rendered by the sphere view, not by
+static meshes in the map scene.
+
+## Grouped Motion-Test Yard
+
+The test map has one continuous 80 × 104 m ground mesh with no elevator hole.
+Its invisible physics coverage uses a main collider and a northern extension,
+each within the 80-unit-per-axis static-box limit. The grid material is
+world-aligned across the whole floor.
+
+`maps/motion_tests.tscn` groups four additional platforms in the northern yard:
+
+| Station | Travel | Speed | Boarding / landing |
+| --- | --- | --- | --- |
+| Horizontal shuttle | 12 m along X | 2 m/s | Low boarding dock; crate and sphere |
+| Diagonal shuttle | 12 m X + 6 m Z | 3 m/s | Low boarding dock; crate |
+| Low lift | 4 m vertically | 2 m/s | Low dock, upper landing, return ramp; crate |
+| High / fast lift | 8 m vertically | 4 m/s | Starts at the top; upper landing and return ramp; crate |
+
+Together with the entry elevator, moved to (-12, 32) at the yard's entrance,
+there are five moving platforms grouped in the north.
+
+Both return ramps have a 12 m horizontal run, from ground at X = 34, Y = 0.5
+to the deck at X = 22. Their rises are 4.5 m and 8.5 m (deck tops Y = 5 and 9),
+so lengths are `sqrt(12² + rise²)` and rotations around Z are
+`-atan(rise / 12)`. Their origins compensate for the 0.5 m slab thickness so
+the top faces meet both endpoints. Collider and mesh sizes must stay equal.
+
+They all use `material/platform_mat.tres` (orange), distinct from the ground's
+grid and the fixed blue-grey docks. Platforms dwell for three seconds at each
+endpoint. The level has seven navigation zones: the original elevator, gate,
+and vault, plus one zone per new motion station.
+
+## Grouped Door Sensors and Many-Object Physics
+
+The vault's outside pressure plate is at (13, 0.5, 0), beside the doorway at
+X = 15.75. The inside plate is at (18.5, 0.5, 2.5), close to the same door but
+offset from the through-route so crossing the doorway does not immediately
+toggle it again. Both red plates are labeled and control the `vault` zone.
+
+`maps/physics_stress.tscn` adds a southeast enclosure, X = 8…36 and
+Z = -36…-14, on the continuous ground. Sixteen instances of
+`physics_stress_cluster.tscn` supply 64 crates in four-high columns and 32
+dropping spheres. Purple walls contain the piles, with a 6 m front entrance.
+The floor marking is visual only; it does not add another physics floor.
+
+The many-object integration test pushes a character through a row of stacks,
+lets the scene settle, checks that all 96 props stay above ground, and verifies
+that rollback snapshots fit the configured frame buffer. This exposed a
+false box-box edge separation for tilted crates against the large ground;
+the edge SAT query now uses full-box support projections. A navigation
+steering correction also keeps narrowed movement on the passable side of
+closed-zone boundaries after a map rebake changes the triangle layout.
 
 ## Open Questions
 

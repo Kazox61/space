@@ -1,0 +1,156 @@
+[gd_scene format=3]
+
+[ext_resource type="PackedScene" path="res://maps/physics_stress_cluster.tscn" id="1_cluster"]
+[ext_resource type="Script" path="res://level_authoring/EntitySpawn.cs" id="2_spawn"]
+[ext_resource type="Resource" path="res://maps/static_box_recipe.tres" id="3_static"]
+[ext_resource type="Script" path="res://level_authoring/EntityComponent.cs" id="4_component"]
+[ext_resource type="Script" path="res://level_authoring/BoxShapeComponent.cs" id="5_box"]
+[ext_resource type="Script" path="res://level_authoring/NavigationComponent.cs" id="6_nav"]
+
+[sub_resource type="StandardMaterial3D" id="AreaMaterial"]
+albedo_color = Color(0.22, 0.14, 0.3, 1)
+roughness = 0.85
+
+[sub_resource type="StandardMaterial3D" id="WallMaterial"]
+albedo_color = Color(0.55, 0.3, 0.75, 1)
+roughness = 0.7
+
+[sub_resource type="BoxMesh" id="AreaMesh"]
+size = Vector3(28, 0.02, 22)
+
+[sub_resource type="Resource" id="WallNavigation"]
+script = ExtResource("6_nav")
+Value = 1
+
+[sub_resource type="Resource" id="SideBox"]
+script = ExtResource("5_box")
+Size = Vector3(0.5, 1.5, 22)
+
+[sub_resource type="BoxMesh" id="SideMesh"]
+size = Vector3(0.5, 1.5, 22)
+
+[sub_resource type="Resource" id="BackBox"]
+script = ExtResource("5_box")
+Size = Vector3(28, 1.5, 0.5)
+
+[sub_resource type="BoxMesh" id="BackMesh"]
+size = Vector3(28, 1.5, 0.5)
+
+[sub_resource type="Resource" id="FrontBox"]
+script = ExtResource("5_box")
+Size = Vector3(11, 1.5, 0.5)
+
+[sub_resource type="BoxMesh" id="FrontMesh"]
+size = Vector3(11, 1.5, 0.5)
+
+[node name="PhysicsStress" type="Node3D"]
+
+[node name="AreaMarking" type="MeshInstance3D" parent="."]
+position = Vector3(22, 0.51, -25)
+mesh = SubResource("AreaMesh")
+material_override = SubResource("AreaMaterial")
+
+[node name="Label" type="Label3D" parent="."]
+position = Vector3(22, 4, -12)
+billboard = 1
+text = "MANY-OBJECT PHYSICS LAB\n96 objects: 64 crates + 32 spheres\nPush the stacks, mix the piles, test contacts and sleeping\nPurple walls contain the props | Entrance in the middle"
+font_size = 40
+pixel_size = 0.008
+
+[node name="WallWest" type="Node3D" parent="."]
+position = Vector3(8.25, 1.25, -25)
+script = ExtResource("2_spawn")
+Recipe = ExtResource("3_static")
+Overrides = Array[ExtResource("4_component")]([SubResource("SideBox"), SubResource("WallNavigation")])
+
+[node name="Mesh" type="MeshInstance3D" parent="WallWest"]
+mesh = SubResource("SideMesh")
+material_override = SubResource("WallMaterial")
+
+[node name="WallEast" type="Node3D" parent="."]
+position = Vector3(35.75, 1.25, -25)
+script = ExtResource("2_spawn")
+Recipe = ExtResource("3_static")
+Overrides = Array[ExtResource("4_component")]([SubResource("SideBox"), SubResource("WallNavigation")])
+
+[node name="Mesh" type="MeshInstance3D" parent="WallEast"]
+mesh = SubResource("SideMesh")
+material_override = SubResource("WallMaterial")
+
+[node name="WallBack" type="Node3D" parent="."]
+position = Vector3(22, 1.25, -35.75)
+script = ExtResource("2_spawn")
+Recipe = ExtResource("3_static")
+Overrides = Array[ExtResource("4_component")]([SubResource("BackBox"), SubResource("WallNavigation")])
+
+[node name="Mesh" type="MeshInstance3D" parent="WallBack"]
+mesh = SubResource("BackMesh")
+material_override = SubResource("WallMaterial")
+
+[node name="WallFrontWest" type="Node3D" parent="."]
+position = Vector3(13.5, 1.25, -14.25)
+script = ExtResource("2_spawn")
+Recipe = ExtResource("3_static")
+Overrides = Array[ExtResource("4_component")]([SubResource("FrontBox"), SubResource("WallNavigation")])
+
+[node name="Mesh" type="MeshInstance3D" parent="WallFrontWest"]
+mesh = SubResource("FrontMesh")
+material_override = SubResource("WallMaterial")
+
+[node name="WallFrontEast" type="Node3D" parent="."]
+position = Vector3(30.5, 1.25, -14.25)
+script = ExtResource("2_spawn")
+Recipe = ExtResource("3_static")
+Overrides = Array[ExtResource("4_component")]([SubResource("FrontBox"), SubResource("WallNavigation")])
+
+[node name="Mesh" type="MeshInstance3D" parent="WallFrontEast"]
+mesh = SubResource("FrontMesh")
+material_override = SubResource("WallMaterial")
+
+[node name="Cluster00" parent="." instance=ExtResource("1_cluster")]
+position = Vector3(12, 0, -33)
+
+[node name="Cluster01" parent="." instance=ExtResource("1_cluster")]
+position = Vector3(18, 0, -33)
+
+[node name="Cluster02" parent="." instance=ExtResource("1_cluster")]
+position = Vector3(24, 0, -33)
+
+[node name="Cluster03" parent="." instance=ExtResource("1_cluster")]
+position = Vector3(30, 0, -33)
+
+[node name="Cluster04" parent="." instance=ExtResource("1_cluster")]
+position = Vector3(12, 0, -28)
+
+[node name="Cluster05" parent="." instance=ExtResource("1_cluster")]
+position = Vector3(18, 0, -28)
+
+[node name="Cluster06" parent="." instance=ExtResource("1_cluster")]
+position = Vector3(24, 0, -28)
+
+[node name="Cluster07" parent="." instance=ExtResource("1_cluster")]
+position = Vector3(30, 0, -28)
+
+[node name="Cluster08" parent="." instance=ExtResource("1_cluster")]
+position = Vector3(12, 0, -23)
+
+[node name="Cluster09" parent="." instance=ExtResource("1_cluster")]
+position = Vector3(18, 0, -23)
+
+[node name="Cluster10" parent="." instance=ExtResource("1_cluster")]
+position = Vector3(24, 0, -23)
+
+[node name="Cluster11" parent="." instance=ExtResource("1_cluster")]
+position = Vector3(30, 0, -23)
+
+[node name="Cluster12" parent="." instance=ExtResource("1_cluster")]
+position = Vector3(12, 0, -18)
+
+[node name="Cluster13" parent="." instance=ExtResource("1_cluster")]
+position = Vector3(18, 0, -18)
+
+[node name="Cluster14" parent="." instance=ExtResource("1_cluster")]
+position = Vector3(24, 0, -18)
+
+[node name="Cluster15" parent="." instance=ExtResource("1_cluster")]
+position = Vector3(30, 0, -18)

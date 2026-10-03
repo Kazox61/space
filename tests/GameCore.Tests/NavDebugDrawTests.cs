@@ -50,14 +50,14 @@ public sealed class NavDebugDrawTests {
 				&& !Inside(x, z, BoxMinX - AgentRadius, BoxMaxX + AgentRadius, BoxMinZ - AgentRadius, BoxMaxZ + AgentRadius);
 		});
 		var walkableInsideClearance = draw.Triangles.Count(t => t.Color == NavDebugColor.WalkableArea
-			&& Inside(Centroid(t).X, Centroid(t).Z, BoxMinX - AgentRadius, BoxMaxX + AgentRadius, BoxMinZ - AgentRadius, BoxMaxZ + AgentRadius));
+			&& InsideCapsuleClearance(Centroid(t).X, Centroid(t).Z));
 
 		Assert.Multiple(() => {
 			Assert.That(draw.Triangles, Has.Count.EqualTo(mesh.TriangleCount), "every shipped triangle is drawn");
 			Assert.That(draw.Triangles.Select(t => t.Color).Distinct(), Is.EqualTo(new[] { NavDebugColor.WalkableArea }), "the sample ships one walkable area");
-			Assert.That(draw.Segments(NavDebugColor.ObstacleSource), Has.Count.EqualTo(6 * 12), "the test box and the five vault walls are outlined as obstacle-only");
-			Assert.That(draw.Segments(NavDebugColor.ObstacleClearance), Has.Count.EqualTo(6 * 4), "each obstacle gets a clearance ring");
-			Assert.That(draw.Segments(NavDebugColor.WalkableSource), Has.Count.EqualTo(4 * 12), "the four ground boxes around the shaft are outlined as walkable");
+			Assert.That(draw.Segments(NavDebugColor.ObstacleSource), Has.Count.EqualTo(Level().NavigationSources.Count(static source => source.Navigation == NavContribution.ObstacleOnly) * 12), "all obstacle-only sources are outlined");
+			Assert.That(draw.Segments(NavDebugColor.ObstacleClearance), Has.Count.EqualTo(Level().NavigationSources.Count(static source => source.Navigation == NavContribution.ObstacleOnly) * 4), "each obstacle gets a clearance ring");
+			Assert.That(draw.Segments(NavDebugColor.WalkableSource), Has.Count.EqualTo(Level().NavigationSources.Count(static source => source.Navigation == NavContribution.Walkable) * 12), "all walkable sources are outlined");
 			Assert.That(clearance, Has.Count.EqualTo(4));
 			Assert.That(clearance.SelectMany(s => new[] { s.A, s.B }).Select(p => (Math.Round(ToDouble(p.X), 3), Math.Round(ToDouble(p.Z), 3))).Distinct(),
 				Is.EquivalentTo(new[] { (-2.5, -8.5), (2.5, -8.5), (2.5, -3.5), (-2.5, -3.5) }), "footprint grown by the baked agent radius");
@@ -139,7 +139,7 @@ public sealed class NavDebugDrawTests {
 			Assert.That(overlay.Mesh, Is.Null);
 			Assert.That(draw.Triangles, Is.Empty);
 			Assert.That(draw.Agents, Is.Empty);
-			Assert.That(draw.Segments(NavDebugColor.ObstacleSource), Has.Count.EqualTo(6 * 12), "the test box and the five vault walls");
+			Assert.That(draw.Segments(NavDebugColor.ObstacleSource), Has.Count.EqualTo(level.NavigationSources.Count(static source => source.Navigation == NavContribution.ObstacleOnly) * 12), "all obstacle-only sources");
 			Assert.That(draw.Segments(NavDebugColor.ObstacleClearance), Is.Empty, "no bake, no clearance");
 		});
 	}
@@ -208,6 +208,13 @@ public sealed class NavDebugDrawTests {
 
 	private static bool Inside(double x, double z, double minX, double maxX, double minZ, double maxZ) {
 		return x > minX && x < maxX && z > minZ && z < maxZ;
+	}
+
+	private static bool InsideCapsuleClearance(double x, double z) {
+		// A capsule's footprint rounds the obstacle corners; a grown rectangle is too restrictive.
+		var dx = Math.Max(Math.Max(BoxMinX - x, x - BoxMaxX), 0);
+		var dz = Math.Max(Math.Max(BoxMinZ - z, z - BoxMaxZ), 0);
+		return dx * dx + dz * dz < AgentRadius * AgentRadius;
 	}
 
 	private static (double X, double Z) Midpoint((F.FVector3 A, F.FVector3 B, NavDebugColor Color) s) {

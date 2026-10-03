@@ -1,4 +1,4 @@
-[gd_resource type="Resource" script_class="EntityRecipe" format=3]
+[gd_resource type="Resource" script_class="EntityRecipe" format=3 uid="uid://bitcldhh02dvl"]
 
 [ext_resource type="Script" uid="uid://crcwfs64lq55j" path="res://level_authoring/EntityComponent.cs" id="1_component"]
 [ext_resource type="Script" uid="uid://b82fwi3vurpa0" path="res://level_authoring/EntityRecipe.cs" id="2_recipe"]

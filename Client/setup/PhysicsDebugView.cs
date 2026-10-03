@@ -25,6 +25,7 @@ public partial class PhysicsDebugView : MeshInstance3D, IPhysicsDebugDraw {
 	private int _vertexCount;
 
 	public override void _Ready() {
+		_enabled = ClientPerformanceCapture.DebugDrawing;
 		_mesh = new ImmediateMesh();
 		Mesh = _mesh;
 		_material = new StandardMaterial3D {
@@ -36,11 +37,12 @@ public partial class PhysicsDebugView : MeshInstance3D, IPhysicsDebugDraw {
 
 		var layer = new CanvasLayer();
 		AddChild(layer);
-		_label = new Label { Position = new Vector2(8, 8), Visible = false };
+		_label = new Label { Position = new Vector2(8, 8), Visible = _enabled };
 		layer.AddChild(_label);
 	}
 
 	public override void _Process(double delta) {
+		using var timing = ClientPerformanceCapture.Measure(ClientPerformanceCapture.Section.PhysicsDebug);
 		var toggle = Input.IsKeyPressed(Key.F3);
 		if (toggle && !_toggleHeld) {
 			_enabled = !_enabled;
@@ -53,6 +55,7 @@ public partial class PhysicsDebugView : MeshInstance3D, IPhysicsDebugDraw {
 			_flags = _flags == PhysicsDebugDrawFlags.Default ? PhysicsDebugDrawFlags.All : PhysicsDebugDrawFlags.Default;
 		}
 		_cycleHeld = cycle;
+		ClientPerformanceCapture.RecordPhysicsOverlay(_enabled, (int)_flags);
 
 		_mesh.ClearSurfaces();
 		if (!_enabled || !W.IsWorldInitialized || !W.HasResource<BroadPhase>()) {

@@ -69,7 +69,25 @@ public abstract partial class Core<TWorld> where TWorld : struct, ISessionType, 
 				rt.Pending.ContactsUpdated++;
 
 				var oldManifold = contact.Manifold;
-				var manifold = Manifold.Collide(shapeDataA, xfA, shapeDataB, xfB);
+				var hadSatFeature = contact.SatCache.Axis != BoxSatAxis.Invalid;
+				var manifold = Manifold.Collide(shapeDataA, xfA, shapeDataB, xfB, ref contact.SatCache,
+					out var satResult, entityA.GID, entityB.GID);
+				switch (satResult) {
+					case BoxSatResult.FullSearch:
+						rt.Pending.BoxSatFullSearches++;
+						if (hadSatFeature)
+							rt.Pending.BoxSatFallbacks++;
+						break;
+					case BoxSatResult.SeparationHit:
+						rt.Pending.BoxSatSeparationHits++;
+						break;
+					case BoxSatResult.FaceHit:
+						rt.Pending.BoxSatFaceHits++;
+						break;
+					case BoxSatResult.EdgeHit:
+						rt.Pending.BoxSatEdgeHits++;
+						break;
+				}
 				MatchManifoldPoints(oldManifold, ref manifold);
 				var wasTouching = contact.Touching;
 				var isTouching = manifold.PointCount > 0 && manifold.MinSeparation() <= FP.Zero;

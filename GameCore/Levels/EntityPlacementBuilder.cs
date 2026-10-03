@@ -15,6 +15,8 @@ public enum LevelEntityComponentKind : byte {
 	ZoneLink,
 	DoorMotion,
 	RailMotion,
+	SphereShape,
+	SurfaceProperties,
 }
 
 public sealed class EntityPlacementBuilder {
@@ -38,6 +40,8 @@ public sealed class EntityPlacementBuilder {
 	public void SetZoneLink(string zoneId) => _components = _components with { ZoneLink = zoneId };
 	public void SetDoorMotion(FVector3 openOffset, FP speed, bool startsOpen) => _components = _components with { DoorMotion = new DoorMotionData(openOffset, speed, startsOpen) };
 	public void SetRailMotion(FVector3 travelOffset, FP speed, bool startsAtEnd) => _components = _components with { RailMotion = new RailMotionData(travelOffset, speed, startsAtEnd) };
+	public void SetSphereShape(FP radius, FP density) => _components = _components with { SphereShape = new SphereShapeData(radius, density) };
+	public void SetSurfaceProperties(SurfaceMaterial material, FP characterBounceSpeed) => _components = _components with { SurfaceProperties = new SurfacePropertiesData(material, characterBounceSpeed) };
 
 	/// <summary>The placement with the components that were set; validation rejects missing and forbidden ones.</summary>
 	public EntityPlacement Build() {

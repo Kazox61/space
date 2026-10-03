@@ -1,5 +1,6 @@
 using System;
 using System.Collections.Generic;
+using System.Diagnostics;
 using System.IO;
 using System.Linq;
 using Fixed64;
@@ -26,6 +27,8 @@ public partial class ClientGame : Node3D {
 	private LevelFile _level;
 
 	public override void _EnterTree() {
+		ClientPerformanceCapture.Configure();
+		var setupStart = Stopwatch.GetTimestamp();
 		var (host, port, offline, levelName) = ParseLaunchArgs(string.IsNullOrWhiteSpace(_levelName) ? LevelFile.DefaultName : _levelName);
 		try {
 			_level = ReadLevel(levelName);
@@ -51,19 +54,27 @@ public partial class ClientGame : Node3D {
 
 		AddChild(new PhysicsDebugView());
 		AddChild(new NavDebugView { Level = _level.Data });
+		ClientPerformanceCapture.StartRun(this, _level, Stopwatch.GetElapsedTime(setupStart).TotalMilliseconds);
 	}
 
 	public override void _ExitTree() {
+		ClientPerformanceCapture.OnExit();
 		_viewUpdater?.Cleanup();
 		ClientSetup.Destroy();
 		OfflineServer.Destroy();
 	}
 
 	public override void _Process(double delta) {
-		OfflineServer.Update(delta);
+		ClientPerformanceCapture.BeginFrame();
+		using var processTiming = ClientPerformanceCapture.Measure(ClientPerformanceCapture.Section.GameProcess);
+		using (ClientPerformanceCapture.Measure(ClientPerformanceCapture.Section.ServerUpdate)) {
+			OfflineServer.Update(delta);
+		}
 		_clientTime += (float)delta;
 		ClientSetup.CorrectionProbe.BeginUpdate();
-		CLNT.Update(_clientTime);
+		using (ClientPerformanceCapture.Measure(ClientPerformanceCapture.Section.ClientUpdate)) {
+			CLNT.Update(_clientTime);
+		}
 		RenderInterpolation.Alpha = CLNT.CalculateInterpolation(_clientTime);
 		if (ClientSetup.CorrectionProbe.EndUpdate(_corrections)) {
 			ClientSetup.Corrections.Apply(_corrections);
@@ -85,6 +96,9 @@ public partial class ClientGame : Node3D {
 			AttackY = _inputConsumed ? FP.Zero : _attackInput.Y,
 			Jump = jumping
 		};
+		if (ClientPerformanceCapture.Replay) {
+			playerInput = new PlayerInput { MoveX = S.CurrentTick >= ClientPerformanceCapture.RouteStartTick && S.CurrentTick < ClientPerformanceCapture.RouteStartTick + 160 ? FP.One : FP.Zero };
+		}
 		// SetPrediction silently discards the data of a write to a tick that already has input
 		// (returns Duplicate). Edge-triggered inputs -- one-frame flicks and jumps -- must survive
 		// that rejection, so keep them pending until a fresh tick accepts them; a consumed flick
@@ -94,6 +108,14 @@ public partial class ClientGame : Node3D {
 			_inputConsumed = true;
 		}
 		_pendingJump = jumping && !accepted;
+		ClientPerformanceCapture.EndGameProcess(this);
+	}
+
+	public void FinishPerformanceRun() {
+		if (ClientPerformanceCapture.FinishRun())
+			GetTree().Quit();
+		else
+			GetTree().ReloadCurrentScene();
 	}
 
 	public void OnAttack(Vector2 attackInput) {

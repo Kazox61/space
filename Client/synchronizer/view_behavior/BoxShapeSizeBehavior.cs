@@ -10,7 +10,7 @@ namespace Space.Client;
 /// Scales a unit-sized node to its entity's box shape, so one view scene fits boxes of any size (a
 /// door's size comes from its level placement).
 /// </summary>
-[GlobalClass]
+[Tool, GlobalClass]
 public partial class BoxShapeSizeBehavior : EntityBehavior {
 	[Export] private Node3D _target;
 
@@ -23,12 +23,18 @@ public partial class BoxShapeSizeBehavior : EntityBehavior {
 			return;
 		}
 		ref readonly var shape = ref shapeEntity.Read<Shape>();
+		if (shape.Type == ShapeType.Sphere) {
+			SetSize(Vector3.One * (shape.SphereShape.Radius.ToFloat() * 2f));
+			return;
+		}
 		if (shape.Type != ShapeType.Hull) {
 			return;
 		}
 		var h = shape.HullShape.HalfExtents;
-		_target.Scale = new Vector3(h.X.ToFloat(), h.Y.ToFloat(), h.Z.ToFloat()) * 2f;
+		SetSize(new Vector3(h.X.ToFloat(), h.Y.ToFloat(), h.Z.ToFloat()) * 2f);
 	}
+
+	public void SetSize(Vector3 size) => _target.Scale = size;
 
 	public override void OnEntityRemoved(EntityGID entityGid) {
 		_target.Scale = Vector3.One;

@@ -12,13 +12,13 @@ public abstract partial class Core<TWorld> where TWorld : struct, ISessionType, 
 			foreach (var placement in level.Entities) {
 				LevelDataValidation.Validate(placement);
 				var components = placement.Components;
-				PhysicsValidation.ValidateShape(CreateBoxShape(components.BoxShape!.Value), components.Body!.Value, placement.Transform, placement.SourcePath);
+				PhysicsValidation.ValidateShape(LevelShapeFactory.Create(components), components.Body!.Value, placement.Transform, placement.SourcePath);
 				if (components.DoorMotion is { } motion) {
 					// A door must be valid at both ends of its travel.
-					PhysicsValidation.ValidateShape(CreateBoxShape(components.BoxShape.Value), components.Body.Value, OpenTransform(placement.Transform, motion), placement.SourcePath);
+					PhysicsValidation.ValidateShape(LevelShapeFactory.Create(components), components.Body.Value, OpenTransform(placement.Transform, motion), placement.SourcePath);
 				}
 				if (components.RailMotion is { } rail) {
-					PhysicsValidation.ValidateShape(CreateBoxShape(components.BoxShape.Value), components.Body.Value, RailEndTransform(placement.Transform, rail), placement.SourcePath);
+					PhysicsValidation.ValidateShape(LevelShapeFactory.Create(components), components.Body.Value, RailEndTransform(placement.Transform, rail), placement.SourcePath);
 				}
 			}
 			LevelDataValidation.ValidateZoneLinks(level.Entities, level.NavZones);
@@ -39,6 +39,9 @@ public abstract partial class Core<TWorld> where TWorld : struct, ISessionType, 
 						break;
 					case LevelEntityType.Crate:
 						SpawnCrate(placement);
+						break;
+					case LevelEntityType.Sphere:
+						SpawnSphere(placement);
 						break;
 					case LevelEntityType.Door:
 						SpawnDoor(placement, ZoneIndex(zoneIds, placement));
@@ -68,7 +71,17 @@ public abstract partial class Core<TWorld> where TWorld : struct, ISessionType, 
 			crate.Set(transform);
 			BodyOperations.CreateBody(crate, components.Body!.Value, placement.Transform);
 
-			ShapeFactory.CreateShape(crate, CreateBoxShape(components.BoxShape!.Value));
+			ShapeFactory.CreateShape(crate, LevelShapeFactory.Create(components));
+		}
+
+		private static void SpawnSphere(in EntityPlacement placement) {
+			var sphere = W.NewEntity<Default>();
+			var transform = new Transform();
+			transform.SetFromWorldTransform(placement.Transform);
+			sphere.Set(transform);
+			sphere.Set(new ViewId { Value = placement.Components.View!.Value });
+			BodyOperations.CreateBody(sphere, placement.Components.Body!.Value, placement.Transform);
+			ShapeFactory.CreateShape(sphere, LevelShapeFactory.Create(placement.Components));
 		}
 
 		private static void SpawnDoor(in EntityPlacement placement, int zone) {
@@ -91,7 +104,7 @@ public abstract partial class Core<TWorld> where TWorld : struct, ISessionType, 
 			transform.SetFromWorldTransform(start);
 			door.Set(transform);
 			BodyOperations.CreateBody(door, components.Body!.Value, start);
-			ShapeFactory.CreateShape(door, CreateBoxShape(components.BoxShape!.Value));
+			ShapeFactory.CreateShape(door, LevelShapeFactory.Create(components));
 		}
 
 		private static void SpawnPressurePlate(in EntityPlacement placement, int zone) {
@@ -101,7 +114,7 @@ public abstract partial class Core<TWorld> where TWorld : struct, ISessionType, 
 			transform.SetFromWorldTransform(placement.Transform);
 			plate.Set(transform);
 			BodyOperations.CreateBody(plate, placement.Components.Body!.Value, placement.Transform);
-			var shape = CreateBoxShape(placement.Components.BoxShape!.Value);
+			var shape = LevelShapeFactory.Create(placement.Components);
 			shape.IsSensor = true;
 			shape.EnableSensorEvents = true;
 			shape.Filter = Filter.Trigger;
@@ -127,7 +140,7 @@ public abstract partial class Core<TWorld> where TWorld : struct, ISessionType, 
 				Zone = zone,
 			});
 			BodyOperations.CreateBody(platform, components.Body!.Value, startTransform);
-			ShapeFactory.CreateShape(platform, CreateBoxShape(components.BoxShape!.Value));
+			ShapeFactory.CreateShape(platform, LevelShapeFactory.Create(components));
 		}
 
 		/// <summary>The door's open pose: its placed pose moved by the open offset, turned into world space.</summary>
@@ -163,13 +176,7 @@ public abstract partial class Core<TWorld> where TWorld : struct, ISessionType, 
 			transform.SetFromWorldTransform(placement.Transform);
 			entity.Set(transform);
 			BodyOperations.CreateBody(entity, placement.Components.Body!.Value, placement.Transform);
-			ShapeFactory.CreateShape(entity, CreateBoxShape(placement.Components.BoxShape!.Value));
-		}
-
-		private static Shape CreateBoxShape(in BoxShapeData box) {
-			var shape = Shape.MakeBox(FVector3.Zero, box.HalfExtents);
-			shape.Density = box.Density;
-			return shape;
+			ShapeFactory.CreateShape(entity, LevelShapeFactory.Create(placement.Components));
 		}
 	}
 }

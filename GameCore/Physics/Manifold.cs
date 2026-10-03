@@ -133,6 +133,28 @@ public struct Manifold {
 		};
 	}
 
+	/// <summary>Persistent box SAT path. Other pairs clear the cache and use the analytic path.</summary>
+	public static Manifold Collide(in Shape a, FWorldTransform xfA, in Shape b, FWorldTransform xfB,
+		ref BoxSatCache cache, out BoxSatResult result, FFS.Libraries.StaticEcs.EntityGID shapeA = default,
+		FFS.Libraries.StaticEcs.EntityGID shapeB = default) {
+		if (a.Type != ShapeType.Hull || b.Type != ShapeType.Hull) {
+			cache = default;
+			result = BoxSatResult.NotBoxPair;
+			return Collide(a, xfA, b, xfB);
+		}
+		if (!cache.Matches(a.HullShape, b.HullShape, shapeA, shapeB))
+			cache = default;
+		var xf = FWorldTransform.InvMul(xfA, xfB);
+		var manifold = CollideCachedBoxBox(a.HullShape.Center, a.HullShape.Rotation, a.HullShape.HalfExtents,
+			FTransform.TransformPoint(xf, b.HullShape.Center), xf.Rotation * b.HullShape.Rotation,
+			b.HullShape.HalfExtents, ref cache, true, out result);
+		cache.GeometryA = a.HullShape;
+		cache.GeometryB = b.HullShape;
+		cache.ShapeA = shapeA;
+		cache.ShapeB = shapeB;
+		return manifold;
+	}
+
 	/// <summary>
 	/// Reached for any shape-type combination this port doesn't implement yet (mesh/height field/
 	/// compound, on either side). Returns an empty manifold -- these two shapes will never touch,
@@ -545,14 +567,28 @@ public struct Manifold {
 
 	/// <summary>Box versus box. Ported from box3d's b3CollideHulls (cold path, no SAT-axis cache).</summary>
 	private static Manifold CollideBoxBox(FVector3 centerA, FQuaternion rotationA, FVector3 heA, FVector3 centerB, FQuaternion rotationB, FVector3 heB) {
+		var cache = new BoxSatCache();
+		return CollideCachedBoxBox(centerA, rotationA, heA, centerB, rotationB, heB, ref cache, false, out _);
+	}
+
+	private static Manifold CollideCachedBoxBox(FVector3 centerA, FQuaternion rotationA, FVector3 heA,
+		FVector3 centerB, FQuaternion rotationB, FVector3 heB, ref BoxSatCache cache, bool useCache, out BoxSatResult result) {
 		var invRotationA = FQuaternion.Inverse(rotationA);
 		var localCenterB = invRotationA * (centerB - centerA);
 		var localRotationB = invRotationA * rotationB;
+		result = BoxSatResult.FullSearch;
+		if (useCache && TryCachedBoxContact(heA, localCenterB, localRotationB, heB, cache, out var cached, out result)) {
+			return TransformBoxManifold(cached, centerA, rotationA);
+		}
+		cache = default;
 
 		var manifold = new Manifold();
 
 		var faceQueryA = QueryFaceDirectionsBoxBox(heA, localCenterB, localRotationB, heB);
 		if (faceQueryA.Separation > B3Config.SpeculativeDistance) {
+			cache.Axis = BoxSatAxis.FaceA;
+			cache.IndexA = faceQueryA.FaceIndex;
+			cache.Separation = faceQueryA.Separation;
 			return TransformBoxManifold(manifold, centerA, rotationA);
 		}
 
@@ -560,11 +596,18 @@ public struct Manifold {
 		var centerAInB = -(invLocalRotationB * localCenterB);
 		var faceQueryB = QueryFaceDirectionsBoxBox(heB, centerAInB, invLocalRotationB, heA);
 		if (faceQueryB.Separation > B3Config.SpeculativeDistance) {
+			cache.Axis = BoxSatAxis.FaceB;
+			cache.IndexB = faceQueryB.FaceIndex;
+			cache.Separation = faceQueryB.Separation;
 			return TransformBoxManifold(manifold, centerA, rotationA);
 		}
 
 		var edgeQuery = QueryEdgeDirectionsBoxBox(heA, localCenterB, localRotationB, heB);
 		if (edgeQuery.Separation > B3Config.SpeculativeDistance) {
+			cache.Axis = BoxSatAxis.EdgePair;
+			cache.IndexA = edgeQuery.EdgeA;
+			cache.IndexB = edgeQuery.EdgeB;
+			cache.Separation = edgeQuery.Separation;
 			return TransformBoxManifold(manifold, centerA, rotationA);
 		}
 
@@ -572,11 +615,19 @@ public struct Manifold {
 			// Face contact B: build in B's own local frame (B as the reference box), then bring the
 			// result into A's canonical frame.
 			var localManifold = new Manifold();
-			BuildBoxFaceContact(heB, centerAInB, invLocalRotationB, heA, faceQueryB.FaceIndex, ref localManifold);
+			if (BuildBoxFaceContactCore(heB, centerAInB, invLocalRotationB, heA, faceQueryB.FaceIndex, ref localManifold, out var separation)) {
+				cache.Axis = BoxSatAxis.FaceB;
+				cache.IndexB = faceQueryB.FaceIndex;
+				cache.Separation = separation;
+			}
 			TransformManifoldBToA(ref localManifold, localCenterB, localRotationB);
 			manifold = localManifold;
 		} else {
-			BuildBoxFaceContact(heA, localCenterB, localRotationB, heB, faceQueryA.FaceIndex, ref manifold);
+			if (BuildBoxFaceContactCore(heA, localCenterB, localRotationB, heB, faceQueryA.FaceIndex, ref manifold, out var separation)) {
+				cache.Axis = BoxSatAxis.FaceA;
+				cache.IndexA = faceQueryA.FaceIndex;
+				cache.Separation = separation;
+			}
 		}
 
 		if (edgeQuery.EdgeA < 0) {
@@ -602,10 +653,70 @@ public struct Manifold {
 			var edgeManifold = new Manifold();
 			if (BuildBoxEdgeContact(pA, qA - pA, pB, qB - pB, edgeQuery.EdgeA, edgeQuery.EdgeB, ref edgeManifold)) {
 				manifold = edgeManifold;
+				cache.Axis = BoxSatAxis.EdgePair;
+				cache.IndexA = edgeQuery.EdgeA;
+				cache.IndexB = edgeQuery.EdgeB;
+				cache.Separation = edgeManifold.Point0.Separation;
 			}
 		}
 
 		return TransformBoxManifold(manifold, centerA, rotationA);
+	}
+
+	private static bool TryCachedBoxContact(FVector3 heA, FVector3 centerB, FQuaternion rotationB,
+		FVector3 heB, in BoxSatCache cache, out Manifold manifold, out BoxSatResult result) {
+		manifold = default;
+		result = BoxSatResult.FullSearch;
+		var inverseB = FQuaternion.Inverse(rotationB);
+		FP separation;
+		if (cache.Axis == BoxSatAxis.FaceA || cache.Axis == BoxSatAxis.FaceB) {
+			var flipped = cache.Axis == BoxSatAxis.FaceB;
+			var face = flipped ? cache.IndexB : cache.IndexA;
+			if ((uint)face >= 6)
+				return false;
+			var heRef = flipped ? heB : heA;
+			var heInc = flipped ? heA : heB;
+			var centerInc = flipped ? -(inverseB * centerB) : centerB;
+			var rotationInc = flipped ? inverseB : rotationB;
+			var normal = Hull.Faces[face].Normal;
+			var support = centerInc + rotationInc * Hull.SupportLocal(heInc, FQuaternion.Inverse(rotationInc) * -normal);
+			separation = FVector3.Dot(normal, support) - FVector3.Dot(FVector3.AbsComponents(normal), heRef);
+			if (separation >= B3Config.SpeculativeDistance) {
+				result = BoxSatResult.SeparationHit;
+				return true;
+			}
+			if (!BuildBoxFaceContactCore(heRef, centerInc, rotationInc, heInc, face, ref manifold, out separation)
+				|| FP.Abs(cache.Separation - separation) >= B3Config.LinearSlop)
+				return false;
+			if (flipped)
+				TransformManifoldBToA(ref manifold, centerB, rotationB);
+			result = BoxSatResult.FaceHit;
+			return true;
+		}
+		if (cache.Axis != BoxSatAxis.EdgePair || (uint)cache.IndexA >= 12 || (uint)cache.IndexB >= 12)
+			return false;
+		var edgeA = Hull.Edges[cache.IndexA];
+		var edgeB = Hull.Edges[cache.IndexB];
+		var pA = Hull.LocalCorner(heA, edgeA.V0);
+		var qA = Hull.LocalCorner(heA, edgeA.V1);
+		var pB = centerB + rotationB * Hull.LocalCorner(heB, edgeB.V0);
+		var qB = centerB + rotationB * Hull.LocalCorner(heB, edgeB.V1);
+		var unitA = FVector3.NormalizeSafe(qA - pA);
+		var unitB = FVector3.NormalizeSafe(qB - pB);
+		// Same fixed-point Gauss-map guard and full-box support separation as the full query.
+		if (!IsMinkowskiFace(Hull.Faces[edgeA.FaceA].Normal, Hull.Faces[edgeA.FaceB].Normal, unitA,
+			rotationB * Hull.Faces[edgeB.FaceA].Normal, rotationB * Hull.Faces[edgeB.FaceB].Normal, unitB)
+			|| !TryEdgeAxis(heA, centerB, rotationB, inverseB, heB, unitA, unitB, out separation))
+			return false;
+		if (separation > B3Config.SpeculativeDistance) {
+			result = BoxSatResult.SeparationHit;
+			return true;
+		}
+		if (!BuildBoxEdgeContact(pA, qA - pA, pB, qB - pB, cache.IndexA, cache.IndexB, ref manifold)
+			|| FP.Abs(cache.Separation - manifold.Point0.Separation) >= B3Config.LinearSlop)
+			return false;
+		result = BoxSatResult.EdgeHit;
+		return true;
 	}
 
 	/// <summary>Transforms a manifold out of a box's own canonical (unrotated, centered) frame and into the frame <paramref name="boxCenter"/>/<paramref name="boxRotation"/> live in.</summary>
@@ -650,12 +761,13 @@ public struct Manifold {
 	/// <summary>Face SAT query: for each face of box A (half-extents <paramref name="heA"/>, at the origin), the separation to box B's support point. Ported from box3d's b3QueryFaceDirections.</summary>
 	private static FaceQuery QueryFaceDirectionsBoxBox(FVector3 heA, FVector3 centerB, FQuaternion rotationB, FVector3 heB) {
 		var best = new FaceQuery { Separation = FP.MinValue, FaceIndex = 0 };
+		var invRotationB = FQuaternion.Inverse(rotationB);
 
 		for (var f = 0; f < 6; f++) {
 			var normal = Hull.Faces[f].Normal;
 			var offset = FVector3.Dot(FVector3.AbsComponents(normal), heA);
 
-			var localDirection = FQuaternion.Inverse(rotationB) * -normal;
+			var localDirection = invRotationB * -normal;
 			var supportLocal = Hull.SupportLocal(heB, localDirection);
 			var supportWorld = centerB + rotationB * supportLocal;
 
@@ -685,31 +797,49 @@ public struct Manifold {
 		return best;
 	}
 
-	/// <summary>Edge SAT query between box A's 12 edges and box B's 12 edges. Ported from box3d's b3QueryEdgeDirections.</summary>
+	/// <summary>
+	/// Edge SAT query between box A's 12 edges and box B's 12 edges. Ported from box3d's
+	/// b3QueryEdgeDirections. Fixed-point Gauss-map classification can admit an edge pair whose
+	/// endpoints are not the boxes' support features along the common normal. Its line-to-line
+	/// distance can then falsely separate a tilted crate from the large ground box. Measure the
+	/// actual box projection intervals instead, like <see cref="QueryFaceDirectionsBoxBox"/>.
+	/// </summary>
 	private static EdgeQuery QueryEdgeDirectionsBoxBox(FVector3 heA, FVector3 centerB, FQuaternion rotationB, FVector3 heB) {
 		var best = new EdgeQuery { Separation = FP.MinValue, EdgeA = -1, EdgeB = -1 };
+		var invRotationB = FQuaternion.Inverse(rotationB);
+		Span<FVector3> unitEdgesA = stackalloc FVector3[12];
+		Span<FVector3> cornersB = stackalloc FVector3[8];
+		Span<FVector3> normalsB = stackalloc FVector3[6];
+		for (var i = 0; i < Hull.Edges.Length; i++) {
+			var edge = Hull.Edges[i];
+			unitEdgesA[i] = FVector3.NormalizeSafe(Hull.LocalCorner(heA, edge.V1) - Hull.LocalCorner(heA, edge.V0));
+		}
+		for (var i = 0; i < cornersB.Length; i++) {
+			cornersB[i] = centerB + rotationB * Hull.LocalCorner(heB, i);
+		}
+		for (var i = 0; i < normalsB.Length; i++) {
+			normalsB[i] = rotationB * Hull.Faces[i].Normal;
+		}
 
 		for (var j = 0; j < Hull.Edges.Length; j++) {
 			var edgeB = Hull.Edges[j];
-			var pB = centerB + rotationB * Hull.LocalCorner(heB, edgeB.V0);
-			var qB = centerB + rotationB * Hull.LocalCorner(heB, edgeB.V1);
-			var eB = qB - pB;
-			var uB = rotationB * Hull.Faces[edgeB.FaceA].Normal;
-			var vB = rotationB * Hull.Faces[edgeB.FaceB].Normal;
+			// Subtract the fully transformed endpoints before normalizing. Rotating a local edge
+			// instead would change fixed-point rounding and potentially the winning feature.
+			var unitEB = FVector3.NormalizeSafe(cornersB[edgeB.V1] - cornersB[edgeB.V0]);
+			var uB = normalsB[edgeB.FaceA];
+			var vB = normalsB[edgeB.FaceB];
 
 			for (var i = 0; i < Hull.Edges.Length; i++) {
 				var edgeA = Hull.Edges[i];
-				var pA = Hull.LocalCorner(heA, edgeA.V0);
-				var qA = Hull.LocalCorner(heA, edgeA.V1);
-				var eA = qA - pA;
+				var unitEA = unitEdgesA[i];
 				var uA = Hull.Faces[edgeA.FaceA].Normal;
 				var vA = Hull.Faces[edgeA.FaceB].Normal;
 
-				if (!IsMinkowskiFace(uA, vA, eA, uB, vB, eB)) {
+				if (!IsMinkowskiFace(uA, vA, unitEA, uB, vB, unitEB)) {
 					continue;
 				}
 
-				if (!TryEdgeEdgeSeparation(pA, eA, FVector3.Zero, pB, eB, centerB, out var separation)) {
+				if (!TryEdgeAxis(heA, centerB, rotationB, invRotationB, heB, unitEA, unitEB, out var separation)) {
 					continue;
 				}
 
@@ -720,6 +850,36 @@ public struct Manifold {
 		}
 
 		return best;
+	}
+
+	/// <summary>
+	/// Separation of two boxes along the axis cross(<paramref name="unitEA"/>, <paramref name="unitEB"/>),
+	/// oriented from A (at the origin, unrotated) toward B, measured with full-box supports so it
+	/// stays correctly negative under deep overlap.
+	/// </summary>
+	private static bool TryEdgeAxis(FVector3 heA, FVector3 centerB, FQuaternion rotationB, FQuaternion invRotationB, FVector3 heB, FVector3 unitEA, FVector3 unitEB, out FP separation) {
+		// Unit edge directions keep squared cross products inside Q16.16 for large boxes.
+		var u = FVector3.Cross(unitEA, unitEB);
+		var lengthSqr = FVector3.LengthSqr(u);
+
+		// With unit edges, the cross length is sin(alpha). Matches box3d's kTolerance (0.005).
+		var toleranceSqr = FP.FromRatio(25, 1000000);
+		if (lengthSqr < toleranceSqr || lengthSqr < FP.CalculationsEpsilonSqr) {
+			separation = FP.Zero;
+			return false;
+		}
+
+		var n = u / FP.Sqrt(lengthSqr);
+		if (FVector3.Dot(n, centerB) < FP.Zero) {
+			n = -n;
+		}
+
+		var offsetA = FVector3.Dot(FVector3.AbsComponents(n), heA);
+		var supportLocal = Hull.SupportLocal(heB, invRotationB * -n);
+		var supportWorld = centerB + rotationB * supportLocal;
+
+		separation = FVector3.Dot(n, supportWorld) - offsetA;
+		return true;
 	}
 
 	/// <summary>Edge SAT query between box A's 12 edges and the capsule's single axis. Ported from box3d's b3QueryEdgeDirectionHullAndCapsule.</summary>
@@ -769,7 +929,7 @@ public struct Manifold {
 	/// two adjacent face normals) intersect on the Gauss map. Ported from box3d's b3IsMinkowskiFace
 	/// (inlined as in b3QueryEdgeDirections), with one deviation: box3d passes the raw (unnormalized)
 	/// edge vectors and compares the four cross-quadrant products against exactly zero, relying on
-	/// its per-contact SAT-axis cache (dropped here, see this file's remarks) to avoid re-deriving
+	/// its per-contact SAT-axis cache to avoid re-deriving
 	/// the edge query from scratch once a face contact is stable. Without that cache, two boxes
 	/// resting axis-aligned sit exactly on this test's degenerate boundary (an edge-pair axis that
 	/// coincides with a face axis, which should always lose to the face test) — small fixed-point
@@ -779,14 +939,12 @@ public struct Manifold {
 	/// resting contact. Normalizing the edge vectors first bounds the four products to [-1, 1]
 	/// regardless of box size, so a small fixed epsilon reliably rejects that boundary case.
 	/// </summary>
-	private static bool IsMinkowskiFace(FVector3 uA, FVector3 vA, FVector3 eA, FVector3 uB, FVector3 vB, FVector3 eB) {
-		var normEA = FVector3.NormalizeSafe(eA);
-		var normEB = FVector3.NormalizeSafe(eB);
-
-		var cba = FVector3.Dot(uB, normEA);
-		var dba = FVector3.Dot(vB, normEA);
-		var adc = -FVector3.Dot(uA, normEB);
-		var bdc = -FVector3.Dot(vA, normEB);
+	private static bool IsMinkowskiFace(FVector3 uA, FVector3 vA, FVector3 unitEA, FVector3 uB, FVector3 vB, FVector3 unitEB) {
+		// The query supplies the exact NormalizeSafe results once per edge, shared with TryEdgeAxis.
+		var cba = FVector3.Dot(uB, unitEA);
+		var dba = FVector3.Dot(vB, unitEA);
+		var adc = -FVector3.Dot(uA, unitEB);
+		var bdc = -FVector3.Dot(vA, unitEB);
 
 		var epsilon = FP.FromRatio(1, 100);
 		return cba * dba < -epsilon && adc * bdc < -epsilon && cba * bdc > epsilon;
@@ -918,6 +1076,11 @@ public struct Manifold {
 	/// box's regular topology).
 	/// </summary>
 	private static bool BuildBoxFaceContact(FVector3 heRef, FVector3 centerInc, FQuaternion rotationInc, FVector3 heInc, int refFaceIndex, ref Manifold manifold) {
+		return BuildBoxFaceContactCore(heRef, centerInc, rotationInc, heInc, refFaceIndex, ref manifold, out _);
+	}
+
+	private static bool BuildBoxFaceContactCore(FVector3 heRef, FVector3 centerInc, FQuaternion rotationInc, FVector3 heInc, int refFaceIndex, ref Manifold manifold, out FP minSeparation) {
+		minSeparation = FP.MaxValue;
 		var refFace = Hull.Faces[refFaceIndex];
 		var refNormal = refFace.Normal;
 		var refOffset = FVector3.Dot(FVector3.AbsComponents(refNormal), heRef);
@@ -972,7 +1135,6 @@ public struct Manifold {
 		}
 
 		Span<ManifoldPoint> points = stackalloc ManifoldPoint[count];
-		var minSeparation = FP.MaxValue;
 		for (var i = 0; i < count; i++) {
 			var clipPoint = input[i];
 			// The half-way point keeps points in the same position whether A or B ends up the reference face.

@@ -41,6 +41,12 @@ internal static class LevelDataValidation {
 		[BodyType.Kinematic]
 	);
 
+	private static readonly TypeRules s_sphere = new(
+		[LevelEntityComponentKind.Body, LevelEntityComponentKind.SphereShape, LevelEntityComponentKind.View],
+		[LevelEntityComponentKind.BoxShape, LevelEntityComponentKind.Health, LevelEntityComponentKind.Loot, LevelEntityComponentKind.Navigation, LevelEntityComponentKind.ZoneLink, LevelEntityComponentKind.DoorMotion, LevelEntityComponentKind.RailMotion],
+		[BodyType.Dynamic]
+	);
+
 	public static void Validate(in EntityPlacement placement) {
 		if (string.IsNullOrWhiteSpace(placement.SourcePath)) {
 			throw new InvalidDataException("Level entity source path is required.");
@@ -51,9 +57,13 @@ internal static class LevelDataValidation {
 			LevelEntityType.Door => s_door,
 			LevelEntityType.PressurePlate => s_pressurePlate,
 			LevelEntityType.Platform => s_platform,
+			LevelEntityType.Sphere => s_sphere,
 			_ => throw new InvalidDataException($"{placement.SourcePath}: unsupported entity type {placement.Type}."),
 		};
 		var components = placement.Components;
+		if (components.SphereShape.HasValue && placement.Type != LevelEntityType.Sphere) {
+			throw new InvalidDataException($"{placement.SourcePath}: SphereShape only allowed on Sphere.");
+		}
 		var missing = rules.Required.Where(kind => !components.Has(kind)).ToArray();
 		if (missing.Length > 0) {
 			throw new InvalidDataException($"{placement.SourcePath}: missing required entity components: {string.Join(", ", missing)}.");
@@ -74,6 +84,20 @@ internal static class LevelDataValidation {
 		}
 		if (components.BoxShape is { } box) {
 			ValidateBoxShape(box, components.Body ?? BodyType.Static, placement.SourcePath);
+		}
+		if (components.SphereShape is { } sphere && (sphere.Radius <= FP.Zero || sphere.Radius > 4.ToFP() || sphere.Density <= FP.Zero || sphere.Density > FP.Two)) {
+			throw new InvalidDataException($"{placement.SourcePath}: sphere radius must be in (0, 4] and density in (0, 2].");
+		}
+		if (components.SurfaceProperties is { CharacterBounceSpeed: var bounceSpeed } && bounceSpeed > FP.Zero && placement.Type != LevelEntityType.StaticGeometry) {
+			throw new InvalidDataException($"{placement.SourcePath}: only static geometry can launch characters.");
+		}
+		try {
+			PhysicsMassValidation.ValidateShape(LevelShapeFactory.Create(components), components.Body!.Value, placement.SourcePath);
+			if (components.SurfaceProperties is { } surfaceProperties) {
+				PhysicsSurfaceValidation.Validate(surfaceProperties.Material, surfaceProperties.CharacterBounceSpeed);
+			}
+		} catch (ArgumentOutOfRangeException exception) {
+			throw new InvalidDataException($"{placement.SourcePath}: {exception.Message}", exception);
 		}
 		if (components.View is { } view && !Enum.IsDefined(view)) {
 			throw new InvalidDataException($"{placement.SourcePath}: invalid view {view}.");
@@ -139,13 +163,6 @@ internal static class LevelDataValidation {
 		}
 		if (box.Density <= FP.Zero || box.Density > FP.Two) {
 			throw new InvalidDataException($"{sourcePath}: density must be in (0, 2].");
-		}
-		var shape = Shape.MakeBox(FVector3.Zero, box.HalfExtents);
-		shape.Density = box.Density;
-		try {
-			PhysicsMassValidation.ValidateShape(shape, body, sourcePath);
-		} catch (ArgumentOutOfRangeException exception) {
-			throw new InvalidDataException($"{sourcePath}: {exception.Message}", exception);
 		}
 	}
 
