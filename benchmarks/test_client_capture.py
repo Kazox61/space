@@ -9,10 +9,50 @@ import tempfile
 import unittest
 
 from metal_capture import add_gpu_busy, union
-from summarize_client_capture import frame_window, validate_replay_gate
+from summarize_client_capture import frame_window, validate_replay_gate, summarize, join_callbacks, summarize_callbacks, WORKLOAD_COUNTERS
 
 
 class CaptureTests(unittest.TestCase):
+    def test_callbacks_join_by_complete_frame_and_reject_missing_work(self):
+        frames = [{"run": 2, "frame": 10, "server_ticks": 1, "client_forward_ticks": 1, "client_replay_ticks": 1}]
+        base = dict.fromkeys(WORKLOAD_COUNTERS, 0) | {
+            "run": 2, "frame": 10, "tick": 230, "player_gid": 2**63 + 7, "channel": 0,
+            "input_valid": 1, "input_age": 20, "input_fresh": 0, "input_approved": 1,
+            "move_x": 1, "move_y": 0, "player_x": 20, "player_y": 1.5, "player_z": -33,
+            "simulation_ms": 3, "physics_ms": 2, "prepare_ms": .2, "solve_ms": 1, "narrowphase_ms": .3,
+            "constraints": 8,
+        }
+        callbacks = [base | {"kind": kind} for kind in ("server", "forward", "replay")]
+        # The raw tick stream includes terminal incomplete-frame work, which must not leak into windows.
+        joined = join_callbacks(frames, callbacks + [base | {"frame": 11, "kind": "server"}])
+        self.assertEqual(len(joined[(2, 10)]), 3)
+        summary = summarize_callbacks(joined[(2, 10)], 220)
+        self.assertEqual(summary['server']['counters']['constraints']['total'], 8)
+        self.assertEqual(summary['replay']['input']['moving_after_nominal_stop'], 1)
+        self.assertEqual(summary['server']['input']['source_tick_range'], [210, 210])
+        self.assertEqual(summary['forward']['timings']['simulation_ms']['p95'], 3)
+        with self.assertRaisesRegex(ValueError, 'count mismatch'):
+            join_callbacks(frames, callbacks[:-1])
+        with self.assertRaisesRegex(ValueError, 'freshness'):
+            join_callbacks(frames, [callbacks[0] | {'input_fresh': 1}] + callbacks[1:])
+
+    def test_copy_attribution_uses_actual_calls_and_supports_legacy_rows(self):
+        fields = ('wall_ms server_update_ms client_update_ms interpolation_ms views_ms physics_debug_ms '
+                  'nav_debug_ms game_process_ms server_physics_ms client_physics_ms client_replay_ms '
+                  'render_cpu_ms render_gpu_ms render_setup_ms server_ticks client_forward_ticks '
+                  'client_replay_ticks player_x player_y player_z frame server_head_before').split()
+        legacy = dict.fromkeys(fields, 0)
+        self.assertNotIn('interpolation_copy', summarize([legacy]))
+        rows = [legacy | {'interpolation_ms': ms, 'interpolation_calls': calls,
+                          'interpolation_allocated_bytes': allocated, 'interpolation_snapshot_bytes': size}
+                for ms, calls, allocated, size in ((0, 0, 0, 0), (2, 2, 400, 600), (1, 1, 200, 300))]
+        copy = summarize(rows)['interpolation_copy']
+        self.assertEqual(copy['calls'], 3)
+        self.assertEqual(copy['ms_per_call'], 1)
+        self.assertEqual(copy['allocated_bytes_per_call'], 200)
+        self.assertEqual(copy['snapshot_bytes_per_call'], 300)
+        self.assertIsNone(summarize(rows[:1])['interpolation_copy']['ms_per_call'])
+
     def test_union_does_not_double_count_nested_or_parallel_encoders(self):
         self.assertEqual(union([(4, 8), (1, 6), (2, 3), (9, 10), (8, 9)]), [(1, 10)])
 

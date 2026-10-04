@@ -108,6 +108,7 @@ public partial class ClientGame : Node3D {
 			_inputConsumed = true;
 		}
 		_pendingJump = jumping && !accepted;
+		ClientPerformanceCapture.RecordInputSample(S.CurrentTick, CLNT.Channel, playerInput, accepted);
 		ClientPerformanceCapture.EndGameProcess(this);
 	}
 

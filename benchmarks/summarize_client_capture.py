@@ -9,6 +9,63 @@ from pathlib import Path
 from statistics import mean
 
 
+WORKLOAD_COUNTERS = ("awake_bodies", "sleeping_bodies", "moved_proxies", "pairs_created",
+                     "contacts_updated", "contacts_sleeping", "touching_contacts", "constraints",
+                     "ccd_bodies", "ccd_hits", "islands", "islands_fell_asleep", "bodies_woken",
+                     "sat_full_searches", "sat_fallbacks", "sat_separation_hits", "sat_face_hits", "sat_edge_hits")
+
+
+def distribution(values):
+    return {"mean": mean(values), "p50": percentile(values, 50), "p95": percentile(values, 95),
+            "p99": percentile(values, 99), "max": max(values)}
+
+
+def join_callbacks(rows, callbacks):
+    """Validate actual callbacks for complete frames; exclude unfinished terminal frames."""
+    keys = {(int(r["run"]), int(r["frame"])) for r in rows}
+    joined = {key: [] for key in keys}
+    for callback in callbacks:
+        key = (int(callback["run"]), int(callback["frame"]))
+        if callback["kind"] not in ("server", "forward", "replay"):
+            raise ValueError("Unknown callback kind")
+        if callback["input_valid"] and bool(callback["input_fresh"]) != (callback["input_age"] == 0):
+            raise ValueError("Callback input freshness disagrees with age")
+        if key in joined:
+            joined[key].append(callback)
+    for row in rows:
+        counts = Counter(c["kind"] for c in joined[(int(row["run"]), int(row["frame"]))])
+        for kind, field in (("server", "server_ticks"), ("forward", "client_forward_ticks"), ("replay", "client_replay_ticks")):
+            if counts[kind] != row[field]:
+                raise ValueError(f"Callback count mismatch for run {row['run']}, frame {row['frame']}, {kind}")
+    return joined
+
+
+def summarize_callbacks(callbacks, movement_end):
+    result = {}
+    for kind in ("server", "forward", "replay"):
+        samples = [c for c in callbacks if c["kind"] == kind]
+        if not samples:
+            continue
+        valid = [c for c in samples if c["input_valid"]]
+        result[kind] = {
+            "callbacks": len(samples),
+            "timings": {field: distribution([c[field] for c in samples]) for field in
+                        ("simulation_ms", "physics_ms", "prepare_ms", "solve_ms", "narrowphase_ms")},
+            "counters": {field: {"total": int(sum(c[field] for c in samples)),
+                                 **distribution([c[field] for c in samples])} for field in WORKLOAD_COUNTERS},
+            "input": {"valid": len(valid), "fresh": sum(bool(c["input_fresh"]) for c in valid),
+                      "approved": sum(bool(c["input_approved"]) for c in valid),
+                      "age": distribution([c["input_age"] for c in valid]) if valid else None,
+                      "source_tick_range": [min(c["tick"] - c["input_age"] for c in valid if c["input_age"] < 65535),
+                                            max(c["tick"] - c["input_age"] for c in valid if c["input_age"] < 65535)]
+                      if any(c["input_age"] < 65535 for c in valid) else None,
+                      "move_histogram": dict(Counter(f"{c['move_x']:g},{c['move_y']:g}" for c in valid)),
+                      "moving_after_nominal_stop": sum(c["tick"] >= movement_end and (c["move_x"] != 0 or c["move_y"] != 0) for c in valid)},
+            "player_last_xyz": [samples[-1][f"player_{axis}"] for axis in "xyz"],
+        }
+    return result
+
+
 def percentile(values, percent):
     values = sorted(values)
     return values[max(0, math.ceil(len(values) * percent / 100) - 1)]
@@ -19,6 +76,9 @@ def summarize(rows):
               "views_ms", "physics_debug_ms", "nav_debug_ms", "game_process_ms",
               "server_physics_ms", "client_physics_ms", "client_replay_ms",
               "render_cpu_ms", "render_gpu_ms", "render_setup_ms"]
+    fields += [field for field in ("server_simulation_ms", "client_forward_ms",
+               "server_narrowphase_ms", "client_narrowphase_ms", "server_solve_ms", "client_solve_ms", "workload_probe_ms")
+               if field in rows[0]]
     result = {
         "frames": len(rows),
         "timings": {field: {
@@ -29,6 +89,7 @@ def summarize(rows):
             "max": round(max(r[field] for r in rows), 4),
         } for field in fields},
         "ticks_per_frame": {field: {
+            "total": int(sum(r[field] for r in rows)),
             "mean": round(mean(r[field] for r in rows), 3),
             "p95": percentile([r[field] for r in rows], 95),
             "max": max(r[field] for r in rows),
@@ -49,6 +110,16 @@ def summarize(rows):
             f"physics={int(r['physics_overlay'])},flags={int(r['physics_overlay_flags'])};"
             f"nav={int(r['nav_overlay'])},flags={int(r['nav_overlay_flags'])},agent={int(r['nav_selected_agent'])}"
             for r in rows))
+    if "interpolation_calls" in rows[0]:
+        calls = sum(r["interpolation_calls"] for r in rows)
+        result["interpolation_copy"] = {
+            "calls": int(calls),
+            "allocated_bytes": int(sum(r["interpolation_allocated_bytes"] for r in rows)),
+            "snapshot_bytes": int(sum(r["interpolation_snapshot_bytes"] for r in rows)),
+            "ms_per_call": sum(r["interpolation_ms"] for r in rows) / calls if calls else None,
+            "allocated_bytes_per_call": sum(r["interpolation_allocated_bytes"] for r in rows) / calls if calls else None,
+            "snapshot_bytes_per_call": sum(r["interpolation_snapshot_bytes"] for r in rows) / calls if calls else None,
+        }
     if "gpu_busy_ms" in rows[0]:
         values = [r["gpu_busy_ms"] for r in rows]
         result["gpu_wall_interval_busy_ms"] = {
@@ -97,6 +168,7 @@ def main():
     parser.add_argument("--metal-gpu", type=Path, help="xctrace metal-gpu-intervals XML export")
     parser.add_argument("--metal-time", type=Path, help="Matching xctrace time-info XML export")
     parser.add_argument("--metal-toc", type=Path, help="Matching xctrace table of contents XML export")
+    parser.add_argument("--callbacks", type=Path, help="Per-callback workload CSV; defaults to CAPTURE.ticks.csv when metadata declares it")
     args = parser.parse_args()
     metadata = json.loads(Path(str(args.capture) + ".json").read_text())
     with args.capture.open(newline="") as source:
@@ -105,6 +177,13 @@ def main():
         raise ValueError(f"Invalid replay: {metadata['errors']}")
     if not rows:
         parser.error("Capture has no complete frames")
+    joined = None
+    if args.callbacks or metadata.get("workloadDiagnostics"):
+        path = args.callbacks or Path(str(args.capture) + ".ticks.csv")
+        with path.open(newline="") as source:
+            callbacks = [{key: value if key == "kind" else int(value) if key == "player_gid" else float(value)
+                          for key, value in row.items()} for row in csv.DictReader(source)]
+        joined = join_callbacks(rows, callbacks)
     names = [w[0] for w in args.window]
     if len(set(names)) != len(names) or set(args.warm_window) - set(names):
         parser.error("Window names must be unique; --warm-window must name a --window")
@@ -132,6 +211,12 @@ def main():
                 windows[f"route_{tick}-{tick + 119}"] = [r for r in run_rows
                     if start + tick <= r["server_head_before"] < start + tick + 120]
         result["runs"][run] = {name: summarize(window) for name, window in windows.items() if window}
+        if joined is not None:
+            for name, window in windows.items():
+                if window:
+                    result["runs"][run][name]["callbacks"] = summarize_callbacks(
+                        [c for r in window for c in joined[(int(r["run"]), int(r["frame"]))]],
+                        metadata["routeStartTick"] + metadata["routeMovementTicks"])
     if set(names) - {name for windows in result["runs"].values() for name in windows}:
         parser.error("A requested window contains no complete frames")
     result["runs"] = {run: windows for run, windows in result["runs"].items() if windows}
@@ -164,6 +249,8 @@ def main():
             for name, window in windows.items():
                 if "overlay_states" in window:
                     print(f"{run} {name}: overlay states {window['overlay_states']}")
+                if "interpolation_copy" in window:
+                    print(f"{run} {name}: interpolation copy {window['interpolation_copy']}")
                 if "gpu_wall_interval_busy_ms" in window:
                     print(f"{run} {name}: Metal GPU union busy ms per wall interval "
                           f"{window['gpu_wall_interval_busy_ms']}")

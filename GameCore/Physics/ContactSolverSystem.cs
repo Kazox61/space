@@ -30,6 +30,7 @@ public abstract partial class Core<TWorld> where TWorld : struct, ISessionType, 
 			public FVector3 AngularVelocity;
 			public FVector3 DeltaPosition;
 			public FQuaternion DeltaRotation;
+			public FMatrix3 DeltaRotationMatrix;
 			public FP InvMass;
 			public FMatrix3 InvInertiaWorld;
 
@@ -38,9 +39,165 @@ public abstract partial class Core<TWorld> where TWorld : struct, ISessionType, 
 				AngularVelocity = body.AngularVelocity,
 				DeltaPosition = body.DeltaPosition,
 				DeltaRotation = body.DeltaRotation,
+				DeltaRotationMatrix = MakeDeltaRotationMatrix(body.DeltaRotation),
 				InvMass = body.InvMass,
 				InvInertiaWorld = body.InvInertiaWorld,
 			};
+		}
+
+		/// <summary>
+		/// Cache the exact coefficients of FQuaternion * FVector3, not FromQuaternion:
+		/// doubling before multiplication preserves that operator's fixed-point rounding.
+		/// Matrix/vector multiplication retains the same left-to-right component sums.
+		/// </summary>
+		internal static FMatrix3 MakeDeltaRotationMatrix(FQuaternion q) {
+			var twoX = q.X * 2;
+			var twoY = q.Y * 2;
+			var twoZ = q.Z * 2;
+			var xx2 = q.X * twoX;
+			var yy2 = q.Y * twoY;
+			var zz2 = q.Z * twoZ;
+			var xy2 = q.X * twoY;
+			var xz2 = q.X * twoZ;
+			var yz2 = q.Y * twoZ;
+			var wx2 = q.W * twoX;
+			var wy2 = q.W * twoY;
+			var wz2 = q.W * twoZ;
+			return new FMatrix3(
+				new FVector3(FP.One - (yy2 + zz2), xy2 + wz2, xz2 - wy2),
+				new FVector3(xy2 - wz2, FP.One - (xx2 + zz2), yz2 + wx2),
+				new FVector3(xz2 + wy2, yz2 - wx2, FP.One - (xx2 + yy2)));
+		}
+
+		/// <summary>
+		/// Scalar solver matrix/vector product without the FP operator/value-copy call chain.
+		/// Narrow each shifted product before adding, exactly as FMatrix3 * FVector3 does;
+		/// summing wide products and narrowing once would change rounding/overflow behavior.
+		/// </summary>
+		internal static FVector3 MultiplySolverMatrix(in FMatrix3 m, in FVector3 v) {
+#if CHECK_OVERFLOW
+			// Retain the math library's checked-operator diagnostics in that opt-in build mode.
+			return m * v;
+#else
+			unchecked {
+				return new FVector3 {
+					X = new FP {
+						RawValue = (int)(((long)m.Cx.X.RawValue * v.X.RawValue) >> FP.FractionalBits)
+							+ (int)(((long)m.Cy.X.RawValue * v.Y.RawValue) >> FP.FractionalBits)
+							+ (int)(((long)m.Cz.X.RawValue * v.Z.RawValue) >> FP.FractionalBits)
+					},
+					Y = new FP {
+						RawValue = (int)(((long)m.Cx.Y.RawValue * v.X.RawValue) >> FP.FractionalBits)
+							+ (int)(((long)m.Cy.Y.RawValue * v.Y.RawValue) >> FP.FractionalBits)
+							+ (int)(((long)m.Cz.Y.RawValue * v.Z.RawValue) >> FP.FractionalBits)
+					},
+					Z = new FP {
+						RawValue = (int)(((long)m.Cx.Z.RawValue * v.X.RawValue) >> FP.FractionalBits)
+							+ (int)(((long)m.Cy.Z.RawValue * v.Y.RawValue) >> FP.FractionalBits)
+							+ (int)(((long)m.Cz.Z.RawValue * v.Z.RawValue) >> FP.FractionalBits)
+					},
+				};
+			}
+#endif
+		}
+
+		/// <summary>
+		/// Exact scalar cross product for Solve: shift and narrow each signed product before
+		/// subtraction, preserving FVector3.Cross rounding and unchecked 32-bit wrapping.
+		/// </summary>
+		internal static FVector3 CrossSolverVectors(in FVector3 a, in FVector3 b) {
+#if CHECK_OVERFLOW
+			return FVector3.Cross(a, b);
+#else
+			unchecked {
+				return new FVector3 {
+					X = new FP {
+						RawValue = (int)(((long)a.Y.RawValue * b.Z.RawValue) >> FP.FractionalBits)
+							- (int)(((long)a.Z.RawValue * b.Y.RawValue) >> FP.FractionalBits)
+					},
+					Y = new FP {
+						RawValue = (int)(((long)a.Z.RawValue * b.X.RawValue) >> FP.FractionalBits)
+							- (int)(((long)a.X.RawValue * b.Z.RawValue) >> FP.FractionalBits)
+					},
+					Z = new FP {
+						RawValue = (int)(((long)a.X.RawValue * b.Y.RawValue) >> FP.FractionalBits)
+							- (int)(((long)a.Y.RawValue * b.X.RawValue) >> FP.FractionalBits)
+					},
+				};
+			}
+#endif
+		}
+
+		/// <summary>
+		/// Exact scalar vector subtraction for Solve, retaining the library's -b + a order
+		/// and unchecked wrapping without its vector/FP operator and constructor chain.
+		/// </summary>
+		internal static FVector3 SubtractSolverVectors(in FVector3 a, in FVector3 b) {
+#if CHECK_OVERFLOW
+			return a - b;
+#else
+			unchecked {
+				return new FVector3 {
+					X = new FP { RawValue = -b.X.RawValue + a.X.RawValue },
+					Y = new FP { RawValue = -b.Y.RawValue + a.Y.RawValue },
+					Z = new FP { RawValue = -b.Z.RawValue + a.Z.RawValue },
+				};
+			}
+#endif
+		}
+
+		/// <summary>
+		/// Exact scalar vector addition for Solve, preserving componentwise int wrapping
+		/// without the vector/FP operator and constructor chain.
+		/// </summary>
+		internal static FVector3 AddSolverVectors(in FVector3 a, in FVector3 b) {
+#if CHECK_OVERFLOW
+			return a + b;
+#else
+			unchecked {
+				return new FVector3 {
+					X = new FP { RawValue = a.X.RawValue + b.X.RawValue },
+					Y = new FP { RawValue = a.Y.RawValue + b.Y.RawValue },
+					Z = new FP { RawValue = a.Z.RawValue + b.Z.RawValue },
+				};
+			}
+#endif
+		}
+
+		/// <summary>
+		/// Exact scalar vector scaling for Solve: shift and narrow each signed product
+		/// independently, preserving FP multiplication rounding and unchecked wrapping.
+		/// </summary>
+		internal static FVector3 ScaleSolverVector(in FVector3 v, FP scale) {
+#if CHECK_OVERFLOW
+			return v * scale;
+#else
+			unchecked {
+				return new FVector3 {
+					X = new FP { RawValue = (int)(((long)v.X.RawValue * scale.RawValue) >> FP.FractionalBits) },
+					Y = new FP { RawValue = (int)(((long)v.Y.RawValue * scale.RawValue) >> FP.FractionalBits) },
+					Z = new FP { RawValue = (int)(((long)v.Z.RawValue * scale.RawValue) >> FP.FractionalBits) },
+				};
+			}
+#endif
+		}
+
+		/// <summary>
+		/// Exact scalar dot product for Solve: narrow each shifted product before the original
+		/// left-associated additions, retaining FP rounding and unchecked int wrapping.
+		/// </summary>
+		internal static FP DotSolverVectors(in FVector3 a, in FVector3 b) {
+#if CHECK_OVERFLOW
+			return FVector3.Dot(a, b);
+#else
+			unchecked {
+				return new FP {
+					RawValue = (int)(((long)a.X.RawValue * b.X.RawValue) >> FP.FractionalBits)
+						+ (int)(((long)a.Y.RawValue * b.Y.RawValue) >> FP.FractionalBits)
+						+ (int)(((long)a.Z.RawValue * b.Z.RawValue) >> FP.FractionalBits),
+				};
+			}
+#endif
 		}
 
 		/// <summary>Cold integration inputs, kept apart from the state used by every constraint row.</summary>
@@ -244,6 +401,7 @@ public abstract partial class Core<TWorld> where TWorld : struct, ISessionType, 
 			foreach (ref var body in awakeStates) {
 				body.DeltaPosition = FVector3.Zero;
 				body.DeltaRotation = FQuaternion.Identity;
+				body.DeltaRotationMatrix = FMatrix3.Identity;
 			}
 			runtime.AddTime(PhysicsPhase.SolverPrepare, timestamp);
 
@@ -723,6 +881,7 @@ public abstract partial class Core<TWorld> where TWorld : struct, ISessionType, 
 				body.AngularVelocity = w;
 				body.DeltaPosition += h * v;
 				body.DeltaRotation = FQuaternion.IntegrateRotation(body.DeltaRotation, h * w);
+				body.DeltaRotationMatrix = MakeDeltaRotationMatrix(body.DeltaRotation);
 			}
 		}
 
@@ -749,15 +908,15 @@ public abstract partial class Core<TWorld> where TWorld : struct, ISessionType, 
 				ref var bodyA = ref states[c.IndexA];
 				ref var bodyB = ref states[c.IndexB];
 
-				var dp = bodyB.DeltaPosition - bodyA.DeltaPosition;
+				var dp = SubtractSolverVectors(bodyB.DeltaPosition, bodyA.DeltaPosition);
 				var totalNormalImpulse = FP.Zero;
 				var totalTwistLimit = FP.Zero;
 
 				for (var k = 0; k < c.PointCount; k++) {
 					var pt = c.GetPoint(k);
 
-					var ds = dp + (bodyB.DeltaRotation * pt.RB - bodyA.DeltaRotation * pt.RA);
-					var s = FVector3.Dot(ds, c.Normal) + pt.BaseSeparation;
+					var ds = AddSolverVectors(dp, SubtractSolverVectors(MultiplySolverMatrix(bodyB.DeltaRotationMatrix, pt.RB), MultiplySolverMatrix(bodyA.DeltaRotationMatrix, pt.RA)));
+					var s = DotSolverVectors(ds, c.Normal) + pt.BaseSeparation;
 
 					FP velocityBias = FP.Zero, massScale = FP.One, impulseScale = FP.Zero;
 					if (s > FP.Zero) {
@@ -769,9 +928,9 @@ public abstract partial class Core<TWorld> where TWorld : struct, ISessionType, 
 						impulseScale = c.Softness.ImpulseScale;
 					}
 
-					var vrA = bodyA.LinearVelocity + FVector3.Cross(bodyA.AngularVelocity, pt.RA);
-					var vrB = bodyB.LinearVelocity + FVector3.Cross(bodyB.AngularVelocity, pt.RB);
-					var vn = FVector3.Dot(vrB - vrA, c.Normal);
+					var vrA = AddSolverVectors(bodyA.LinearVelocity, CrossSolverVectors(bodyA.AngularVelocity, pt.RA));
+					var vrB = AddSolverVectors(bodyB.LinearVelocity, CrossSolverVectors(bodyB.AngularVelocity, pt.RB));
+					var vn = DotSolverVectors(SubtractSolverVectors(vrB, vrA), c.Normal);
 
 					var deltaImpulse = -pt.NormalMass * (massScale * vn + velocityBias) - impulseScale * pt.NormalImpulse;
 					var newImpulse = FP.Max(pt.NormalImpulse + deltaImpulse, FP.Zero);
@@ -781,11 +940,11 @@ public abstract partial class Core<TWorld> where TWorld : struct, ISessionType, 
 					totalNormalImpulse += newImpulse;
 					totalTwistLimit += pt.LeverArm * pt.NormalImpulse;
 
-					var p = deltaImpulse * c.Normal;
-					bodyA.LinearVelocity -= bodyA.InvMass * p;
-					bodyA.AngularVelocity -= bodyA.InvInertiaWorld * FVector3.Cross(pt.RA, p);
-					bodyB.LinearVelocity += bodyB.InvMass * p;
-					bodyB.AngularVelocity += bodyB.InvInertiaWorld * FVector3.Cross(pt.RB, p);
+					var p = ScaleSolverVector(c.Normal, deltaImpulse);
+					bodyA.LinearVelocity = SubtractSolverVectors(bodyA.LinearVelocity, ScaleSolverVector(p, bodyA.InvMass));
+					bodyA.AngularVelocity = SubtractSolverVectors(bodyA.AngularVelocity, MultiplySolverMatrix(bodyA.InvInertiaWorld, CrossSolverVectors(pt.RA, p)));
+					bodyB.LinearVelocity = AddSolverVectors(bodyB.LinearVelocity, ScaleSolverVector(p, bodyB.InvMass));
+					bodyB.AngularVelocity = AddSolverVectors(bodyB.AngularVelocity, MultiplySolverMatrix(bodyB.InvInertiaWorld, CrossSolverVectors(pt.RB, p)));
 
 					c.SetPoint(k, pt);
 				}
@@ -795,13 +954,13 @@ public abstract partial class Core<TWorld> where TWorld : struct, ISessionType, 
 				if (!useBias) {
 					// Central twist friction, before rolling resistance and tangent friction (box3d order).
 					if (c.TwistMass > FP.Zero) {
-						var twistSpeed = FVector3.Dot(c.Normal, bodyB.AngularVelocity - bodyA.AngularVelocity);
+						var twistSpeed = DotSolverVectors(c.Normal, SubtractSolverVectors(bodyB.AngularVelocity, bodyA.AngularVelocity));
 						var maxTwistImpulse = FP.Abs(c.Friction * totalTwistLimit);
 						var oldTwistImpulse = c.TwistImpulse;
 						c.TwistImpulse = FP.Clamp(oldTwistImpulse - c.TwistMass * twistSpeed, -maxTwistImpulse, maxTwistImpulse);
-						var twist = (c.TwistImpulse - oldTwistImpulse) * c.Normal;
-						bodyA.AngularVelocity -= bodyA.InvInertiaWorld * twist;
-						bodyB.AngularVelocity += bodyB.InvInertiaWorld * twist;
+						var twist = ScaleSolverVector(c.Normal, c.TwistImpulse - oldTwistImpulse);
+						bodyA.AngularVelocity = SubtractSolverVectors(bodyA.AngularVelocity, MultiplySolverMatrix(bodyA.InvInertiaWorld, twist));
+						bodyB.AngularVelocity = AddSolverVectors(bodyB.AngularVelocity, MultiplySolverMatrix(bodyB.InvInertiaWorld, twist));
 					}
 
 					// Rolling resistance, right before friction (matches box3d's ordering). A
@@ -810,8 +969,8 @@ public abstract partial class Core<TWorld> where TWorld : struct, ISessionType, 
 					// when zero, which is the default (SurfaceMaterial.RollingResistance defaults to
 					// zero), so this has no effect unless a shape opts in.
 					if (c.RollingResistance > FP.Zero) {
-						var deltaRollingImpulse = -(c.RollingMass * (bodyB.AngularVelocity - bodyA.AngularVelocity));
-						var newRollingImpulse = c.RollingImpulse + deltaRollingImpulse;
+						var deltaRollingImpulse = -MultiplySolverMatrix(c.RollingMass, SubtractSolverVectors(bodyB.AngularVelocity, bodyA.AngularVelocity));
+						var newRollingImpulse = AddSolverVectors(c.RollingImpulse, deltaRollingImpulse);
 
 						// Box-clamp rather than box3d's precise Euclidean (disc) clamp, for the same
 						// Fixed32 squaring-overflow reason as the friction cone clamp below.
@@ -821,18 +980,18 @@ public abstract partial class Core<TWorld> where TWorld : struct, ISessionType, 
 							FP.Clamp(newRollingImpulse.Y, -maxRollingImpulse, maxRollingImpulse),
 							FP.Clamp(newRollingImpulse.Z, -maxRollingImpulse, maxRollingImpulse));
 
-						deltaRollingImpulse = newRollingImpulse - c.RollingImpulse;
+						deltaRollingImpulse = SubtractSolverVectors(newRollingImpulse, c.RollingImpulse);
 						c.RollingImpulse = newRollingImpulse;
 
-						bodyA.AngularVelocity -= bodyA.InvInertiaWorld * deltaRollingImpulse;
-						bodyB.AngularVelocity += bodyB.InvInertiaWorld * deltaRollingImpulse;
+						bodyA.AngularVelocity = SubtractSolverVectors(bodyA.AngularVelocity, MultiplySolverMatrix(bodyA.InvInertiaWorld, deltaRollingImpulse));
+						bodyB.AngularVelocity = AddSolverVectors(bodyB.AngularVelocity, MultiplySolverMatrix(bodyB.InvInertiaWorld, deltaRollingImpulse));
 					}
 
-					var vrA = bodyA.LinearVelocity + FVector3.Cross(bodyA.AngularVelocity, c.FrictionAnchorRA);
-					var vrB = bodyB.LinearVelocity + FVector3.Cross(bodyB.AngularVelocity, c.FrictionAnchorRB);
-					var vr = vrB - vrA + c.TangentVelocity;
-					var vtX = FVector3.Dot(vr, c.Tangent1);
-					var vtY = FVector3.Dot(vr, c.Tangent2);
+					var vrA = AddSolverVectors(bodyA.LinearVelocity, CrossSolverVectors(bodyA.AngularVelocity, c.FrictionAnchorRA));
+					var vrB = AddSolverVectors(bodyB.LinearVelocity, CrossSolverVectors(bodyB.AngularVelocity, c.FrictionAnchorRB));
+					var vr = AddSolverVectors(SubtractSolverVectors(vrB, vrA), c.TangentVelocity);
+					var vtX = DotSolverVectors(vr, c.Tangent1);
+					var vtY = DotSolverVectors(vr, c.Tangent2);
 
 					var dImpulseX = -(c.TangentMassXX * vtX + c.TangentMassXY * vtY);
 					var dImpulseY = -(c.TangentMassXY * vtX + c.TangentMassYY * vtY);
@@ -856,11 +1015,11 @@ public abstract partial class Core<TWorld> where TWorld : struct, ISessionType, 
 					c.FrictionImpulseX = newX;
 					c.FrictionImpulseY = newY;
 
-					var p2 = dImpulseX * c.Tangent1 + dImpulseY * c.Tangent2;
-					bodyA.LinearVelocity -= bodyA.InvMass * p2;
-					bodyA.AngularVelocity -= bodyA.InvInertiaWorld * FVector3.Cross(c.FrictionAnchorRA, p2);
-					bodyB.LinearVelocity += bodyB.InvMass * p2;
-					bodyB.AngularVelocity += bodyB.InvInertiaWorld * FVector3.Cross(c.FrictionAnchorRB, p2);
+					var p2 = AddSolverVectors(ScaleSolverVector(c.Tangent1, dImpulseX), ScaleSolverVector(c.Tangent2, dImpulseY));
+					bodyA.LinearVelocity = SubtractSolverVectors(bodyA.LinearVelocity, ScaleSolverVector(p2, bodyA.InvMass));
+					bodyA.AngularVelocity = SubtractSolverVectors(bodyA.AngularVelocity, MultiplySolverMatrix(bodyA.InvInertiaWorld, CrossSolverVectors(c.FrictionAnchorRA, p2)));
+					bodyB.LinearVelocity = AddSolverVectors(bodyB.LinearVelocity, ScaleSolverVector(p2, bodyB.InvMass));
+					bodyB.AngularVelocity = AddSolverVectors(bodyB.AngularVelocity, MultiplySolverMatrix(bodyB.InvInertiaWorld, CrossSolverVectors(c.FrictionAnchorRB, p2)));
 				}
 			}
 		}

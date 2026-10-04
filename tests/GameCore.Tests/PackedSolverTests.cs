@@ -22,6 +22,116 @@ public sealed class PackedSolverTests {
 	}
 
 	[Test]
+	public void CachedDeltaRotationMatchesQuaternionOperatorRawResults() {
+		var random = new Random(734209);
+		for (var i = 0; i < 4096; i++) {
+			Fixed32.FP Next(int bound) => Fixed32.FP.FromRaw(random.Next(-bound, bound + 1));
+			// Include non-unit and negative-W values: caching must not normalize or alter
+			// coefficients, even for static participants whose actual deltas are gathered.
+			var q = new Fixed32.FQuaternion(Next(65536), Next(65536), Next(65536), Next(65536));
+			var v = new Fixed32.FVector3(Next(64 * 65536), Next(64 * 65536), Next(64 * 65536));
+			var expected = q * v;
+			var actual = C.ContactSolverSystem.MakeDeltaRotationMatrix(q) * v;
+			Assert.That(actual.Equals(expected), Is.True, $"rotation raw result {i}");
+		}
+	}
+
+	[Test]
+	public void SolverMatrixProductMatchesRawLibraryResults() {
+		var random = new Random(916721);
+		int[] edges = [int.MinValue, int.MaxValue, -65537, -65536, -65535, -1, 0, 1, 65535, 65536, 65537];
+		for (var i = 0; i < 8192; i++) {
+			Fixed32.FP Next() => Fixed32.FP.FromRaw(i < 512
+				? edges[random.Next(edges.Length)] : (int)random.NextInt64(int.MinValue, (long)int.MaxValue + 1));
+			Fixed32.FVector3 Vector() => new(Next(), Next(), Next());
+			var matrix = new Fixed32.FMatrix3(Vector(), Vector(), Vector());
+			var vector = Vector();
+			var expected = matrix * vector;
+			var actual = C.ContactSolverSystem.MultiplySolverMatrix(matrix, vector);
+			Assert.That(actual.Equals(expected), Is.True, $"matrix raw result {i}");
+		}
+	}
+
+	[Test]
+	public void SolverCrossProductMatchesRawLibraryResults() {
+		var random = new Random(294617);
+		int[] edges = [int.MinValue, int.MaxValue, -65537, -65536, -65535, -1, 0, 1, 65535, 65536, 65537];
+		for (var i = 0; i < 8192; i++) {
+			Fixed32.FP Next() => Fixed32.FP.FromRaw(i < 512
+				? edges[random.Next(edges.Length)] : (int)random.NextInt64(int.MinValue, (long)int.MaxValue + 1));
+			Fixed32.FVector3 Vector() => new(Next(), Next(), Next());
+			var a = Vector();
+			var b = Vector();
+			var expected = Fixed32.FVector3.Cross(a, b);
+			var actual = C.ContactSolverSystem.CrossSolverVectors(a, b);
+			Assert.That(actual.Equals(expected), Is.True, $"cross raw result {i}");
+		}
+	}
+
+	[Test]
+	public void SolverVectorSubtractionMatchesRawLibraryResults() {
+		var random = new Random(460217);
+		int[] edges = [int.MinValue, int.MaxValue, -65537, -65536, -65535, -1, 0, 1, 65535, 65536, 65537];
+		for (var i = 0; i < 8192; i++) {
+			Fixed32.FP Next() => Fixed32.FP.FromRaw(i < 512
+				? edges[random.Next(edges.Length)] : (int)random.NextInt64(int.MinValue, (long)int.MaxValue + 1));
+			Fixed32.FVector3 Vector() => new(Next(), Next(), Next());
+			var a = Vector();
+			var b = Vector();
+			var expected = a - b;
+			var actual = C.ContactSolverSystem.SubtractSolverVectors(a, b);
+			Assert.That(actual.Equals(expected), Is.True, $"vector subtraction raw result {i}");
+		}
+	}
+
+	[Test]
+	public void SolverVectorAdditionMatchesRawLibraryResults() {
+		var random = new Random(617209);
+		int[] edges = [int.MinValue, int.MaxValue, -65537, -65536, -65535, -1, 0, 1, 65535, 65536, 65537];
+		for (var i = 0; i < 8192; i++) {
+			Fixed32.FP Next() => Fixed32.FP.FromRaw(i < 512
+				? edges[random.Next(edges.Length)] : (int)random.NextInt64(int.MinValue, (long)int.MaxValue + 1));
+			Fixed32.FVector3 Vector() => new(Next(), Next(), Next());
+			var a = Vector();
+			var b = Vector();
+			var expected = a + b;
+			var actual = C.ContactSolverSystem.AddSolverVectors(a, b);
+			Assert.That(actual.Equals(expected), Is.True, $"vector addition raw result {i}");
+		}
+	}
+
+	[Test]
+	public void SolverVectorScalingMatchesRawLibraryResults() {
+		var random = new Random(903617);
+		int[] edges = [int.MinValue, int.MaxValue, -65537, -65536, -65535, -1, 0, 1, 65535, 65536, 65537];
+		for (var i = 0; i < 8192; i++) {
+			Fixed32.FP Next() => Fixed32.FP.FromRaw(i < 512
+				? edges[random.Next(edges.Length)] : (int)random.NextInt64(int.MinValue, (long)int.MaxValue + 1));
+			var vector = new Fixed32.FVector3(Next(), Next(), Next());
+			var scale = Next();
+			var actual = C.ContactSolverSystem.ScaleSolverVector(vector, scale);
+			Assert.That(actual.Equals(vector * scale), Is.True, $"vector/scale raw result {i}");
+			Assert.That(actual.Equals(scale * vector), Is.True, $"scale/vector raw result {i}");
+		}
+	}
+
+	[Test]
+	public void SolverDotProductMatchesRawLibraryResults() {
+		var random = new Random(418903);
+		int[] edges = [int.MinValue, int.MaxValue, -65537, -65536, -65535, -1, 0, 1, 65535, 65536, 65537];
+		for (var i = 0; i < 8192; i++) {
+			Fixed32.FP Next() => Fixed32.FP.FromRaw(i < 512
+				? edges[random.Next(edges.Length)] : (int)random.NextInt64(int.MinValue, (long)int.MaxValue + 1));
+			Fixed32.FVector3 Vector() => new(Next(), Next(), Next());
+			var a = Vector();
+			var b = Vector();
+			var expected = Fixed32.FVector3.Dot(a, b);
+			var actual = C.ContactSolverSystem.DotSolverVectors(a, b);
+			Assert.That(actual.RawValue, Is.EqualTo(expected.RawValue), $"dot raw result {i}");
+		}
+	}
+
+	[Test]
 	public void AuthoredLabMatchesEveryPreDTickHash() {
 		var root = new DirectoryInfo(TestContext.CurrentContext.TestDirectory);
 		while (root is not null && !File.Exists(Path.Combine(root.FullName, "Client/maps/level_pipeline_test.level.bytes"))) {

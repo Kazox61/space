@@ -14,5 +14,6 @@ public class GameInterpolationReceiver : IInterpolationReceiver {
 		W.Serializer.CreateWorldSnapshot(ref _buffer);
 		var reader = _buffer.AsReader();
 		WP.Serializer.LoadWorldSnapshot(ref reader, true);
+		ClientPerformanceCapture.RecordInterpolationBytes(_buffer.Position);
 	}
 }
