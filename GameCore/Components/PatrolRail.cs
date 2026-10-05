@@ -1,14 +1,18 @@
 using FFS.Libraries.StaticEcs;
+using Fixed;
 using Fixed64;
 
 namespace Space.GameCore;
 
 /// <summary>
-/// Marks a kinematic <see cref="Body"/> as sliding back and forth along world X between
-/// <see cref="Min"/> and <see cref="Max"/> -- see <see cref="Core{TWorld}.DummyPatrolSystem"/>, which
-/// flips <see cref="Body.LinearVelocity"/>'s sign once the body reaches either end.
+/// Marks a kinematic <see cref="Body"/> as sliding between two world-space stops. A non-negative
+/// <see cref="Zone"/> links a platform to the navigation zone available at <see cref="Start"/>.
 /// </summary>
 public struct PatrolRail : IComponent {
-	public FP Min;
-	public FP Max;
+	public FPos Start;
+	public FPos End;
+	public Fixed32.FP Speed;
+	public bool MovingToEnd;
+	public int DwellTicksRemaining;
+	public int Zone;
 }

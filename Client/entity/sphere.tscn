@@ -2,6 +2,7 @@
 
 [ext_resource type="Script" uid="uid://cip1dwd0y0jcp" path="res://synchronizer/EntityView.cs" id="1_8pulh"]
 [ext_resource type="Script" uid="uid://dgbo3w1kixhiy" path="res://synchronizer/view_behavior/TransformViewBehavior.cs" id="2_veubm"]
+[ext_resource type="Script" path="res://synchronizer/view_behavior/BoxShapeSizeBehavior.cs" id="3_size"]
 
 [sub_resource type="StandardMaterial3D" id="StandardMaterial3D_yqvkn"]
 albedo_color = Color(1, 0, 0, 1)
@@ -10,7 +11,7 @@ albedo_color = Color(1, 0, 0, 1)
 
 [node name="Sphere" type="Node3D" unique_id=1979850678 node_paths=PackedStringArray("_entityBehaviours")]
 script = ExtResource("1_8pulh")
-_entityBehaviours = [NodePath("TransformViewBehavior")]
+_entityBehaviours = [NodePath("TransformViewBehavior"), NodePath("BoxShapeSizeBehavior")]
 
 [node name="MeshInstance3D" type="MeshInstance3D" parent="." unique_id=673944828]
 material_override = SubResource("StandardMaterial3D_yqvkn")
@@ -21,3 +22,7 @@ script = ExtResource("2_veubm")
 _targetNodePosition = NodePath("..")
 _targetNodeRotation = NodePath("..")
 metadata/_custom_type_script = "uid://dgbo3w1kixhiy"
+
+[node name="BoxShapeSizeBehavior" type="Node" parent="." node_paths=PackedStringArray("_target")]
+script = ExtResource("3_size")
+_target = NodePath("../MeshInstance3D")

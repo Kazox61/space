@@ -33,6 +33,9 @@ public struct Shape : IComponent, IComponentConfig<Shape> {
 	/// <summary>The base surface material. Ignored for compound shapes.</summary>
 	public SurfaceMaterial Material;
 
+	/// <summary>Upward launch speed for character movers standing on this shape; zero disables it.</summary>
+	public FP CharacterBounceSpeed;
+
 	/// <summary>Contact filtering data.</summary>
 	public Filter Filter;
 

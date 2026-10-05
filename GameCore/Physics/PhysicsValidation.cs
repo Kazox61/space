@@ -37,6 +37,32 @@ internal static class PhysicsMassValidation {
 	}
 }
 
+internal static class PhysicsSurfaceValidation {
+	public static readonly FP MaximumTangentSpeed = 60.ToFP();
+	public static readonly FP MaximumCharacterBounceSpeed = 30.ToFP();
+
+	public static void Validate(in SurfaceMaterial material, FP characterBounceSpeed) {
+		RequireUnitRange(material.Friction, nameof(material.Friction));
+		RequireUnitRange(material.Restitution, nameof(material.Restitution));
+		RequireUnitRange(material.RollingResistance, nameof(material.RollingResistance));
+		var velocity = material.TangentVelocity;
+		var limit = MaximumTangentSpeed;
+		if (velocity.X < -limit || velocity.X > limit || velocity.Y < -limit || velocity.Y > limit || velocity.Z < -limit || velocity.Z > limit
+			|| FVector3.LengthSqr(velocity) > limit * limit) {
+			throw new ArgumentOutOfRangeException(nameof(material.TangentVelocity), $"Tangent speed must be at most {limit}.");
+		}
+		if (characterBounceSpeed < FP.Zero || characterBounceSpeed > MaximumCharacterBounceSpeed) {
+			throw new ArgumentOutOfRangeException(nameof(characterBounceSpeed), $"Character bounce speed must be in [0, {MaximumCharacterBounceSpeed}].");
+		}
+	}
+
+	private static void RequireUnitRange(FP value, string name) {
+		if (value < FP.Zero || value > FP.One) {
+			throw new ArgumentOutOfRangeException(name, "Material coefficients must be in [0, 1].");
+		}
+	}
+}
+
 public abstract partial class Core<TWorld> {
 	/// <summary>Enforces the deterministic Q16.16 operating envelope at public physics boundaries.</summary>
 	public static class PhysicsValidation {
@@ -132,10 +158,7 @@ public abstract partial class Core<TWorld> {
 			}
 
 			RequireRange(shape.Density, FP.Zero, MaximumDensity, nameof(shape.Density));
-			RequireRange(shape.Material.Friction, FP.Zero, FP.One, nameof(shape.Material.Friction));
-			RequireRange(shape.Material.Restitution, FP.Zero, FP.One, nameof(shape.Material.Restitution));
-			RequireRange(shape.Material.RollingResistance, FP.Zero, FP.One, nameof(shape.Material.RollingResistance));
-			ValidateMagnitude(shape.Material.TangentVelocity, MaximumLinearSpeed, nameof(shape.Material.TangentVelocity));
+			PhysicsSurfaceValidation.Validate(shape.Material, shape.CharacterBounceSpeed);
 
 			var rotationOnly = new FTransform(FVector3.Zero, bodyTransform.Rotation);
 			ValidateWorldBounds(bodyTransform.Position, shape.ComputeAABB(rotationOnly), parameterName);

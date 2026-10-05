@@ -1,0 +1,6 @@
+<Project>
+  <!-- Godot's release export configuration propagates to ordinary .NET project references. -->
+  <PropertyGroup Condition="'$(Configuration)' == 'ExportRelease'">
+    <Optimize>true</Optimize>
+  </PropertyGroup>
+</Project>

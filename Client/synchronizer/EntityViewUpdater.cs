@@ -43,6 +43,7 @@ public partial class EntityViewUpdater : Node {
 	}
 
 	public override void _Process(double delta) {
+		using var timing = ClientPerformanceCapture.Measure(ClientPerformanceCapture.Section.Views);
 		if (!_initialized) {
 			return;
 		}

@@ -1,0 +1,22 @@
+[gd_resource type="Resource" script_class="EntityRecipe" format=3 uid="uid://dw1ljfgtv1t5"]
+
+[ext_resource type="Script" uid="uid://b82fwi3vurpa0" path="res://level_authoring/EntityRecipe.cs" id="1_recipe"]
+[ext_resource type="Script" uid="uid://crcwfs64lq55j" path="res://level_authoring/EntityComponent.cs" id="2_component"]
+[ext_resource type="Script" uid="uid://8hu2s5xd7r4i" path="res://level_authoring/BodyComponent.cs" id="3_body"]
+[ext_resource type="Script" uid="uid://wfp61etn2r1p" path="res://level_authoring/SphereShapeComponent.cs" id="4_sphere"]
+[ext_resource type="Script" uid="uid://cnuquxj8c2tru" path="res://level_authoring/ViewComponent.cs" id="5_view"]
+
+[sub_resource type="Resource" id="Body"]
+script = ExtResource("3_body")
+
+[sub_resource type="Resource" id="Sphere"]
+script = ExtResource("4_sphere")
+
+[sub_resource type="Resource" id="View"]
+script = ExtResource("5_view")
+Asset = 2
+
+[resource]
+script = ExtResource("1_recipe")
+EntityType = 6
+Components = Array[ExtResource("2_component")]([SubResource("Body"), SubResource("Sphere"), SubResource("View")])

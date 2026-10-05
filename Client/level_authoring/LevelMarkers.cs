@@ -5,7 +5,7 @@ using Godot;
 
 namespace Space.Client.LevelAuthoring;
 
-/// <summary>Shared by entity and collider recipes: transform conversion and recipe/override layering.</summary>
+/// <summary>Transform conversion and recipe/override layering for level markers.</summary>
 public static class LevelMarkers {
 	/// <summary>Converts a marker's global transform to fixed point. Markers must have unit, non-mirrored scale.</summary>
 	public static Fixed.FWorldTransform ToFixed(Transform3D globalTransform, string sourcePath) {

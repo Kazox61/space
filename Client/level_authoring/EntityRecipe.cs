@@ -29,11 +29,17 @@ public partial class EntityRecipe : Resource {
 			if (component is BoxShapeComponent box) {
 				size = box.Size;
 			}
+			if (component is SphereShapeComponent sphere) {
+				size = Vector3.One * sphere.Radius * 2f;
+			}
 		}
 		if (overrides is not null) {
 			foreach (var component in overrides) {
 				if (component is BoxShapeComponent box) {
 					size = box.Size;
+				}
+				if (component is SphereShapeComponent sphere) {
+					size = Vector3.One * sphere.Radius * 2f;
 				}
 			}
 		}

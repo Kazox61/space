@@ -50,19 +50,21 @@ public partial class EntitySpawn : Node3D {
 	}
 
 	public override void _Process(double delta) {
+		var boxSize = Recipe?.ResolveBoxSize(Overrides);
 		_outline ??= new BoxOutline(this);
-		_outline.Update(Recipe?.ResolveBoxSize(Overrides));
-		UpdatePreview(Recipe?.ResolveView(Overrides));
+		_outline.Update(boxSize);
+		UpdatePreview(Recipe?.ResolveView(Overrides), boxSize);
 	}
 
 	/// <summary>
 	/// Keeps an instance of the view scene as an internal child. Its state lives on the node (name and a meta tag),
 	/// not in C# fields, so it stays correct across the editor's C# reloads.
 	/// </summary>
-	private void UpdatePreview(ViewAsset? asset) {
+	private void UpdatePreview(ViewAsset? asset, Vector3? boxSize) {
 		var current = FindInternalChild(this, PreviewName);
 		var currentAsset = current?.HasMeta(PreviewAssetMeta) == true ? (ViewAsset?)(ViewAsset)current.GetMeta(PreviewAssetMeta).AsInt32() : null;
 		if (current is not null && currentAsset == asset) {
+			UpdatePreviewSize(current, boxSize);
 			return;
 		}
 		if (current is null && (asset is null || Time.GetTicksMsec() < _nextAttemptMsec)) {
@@ -90,6 +92,16 @@ public partial class EntitySpawn : Node3D {
 		preview.Name = PreviewName;
 		preview.SetMeta(PreviewAssetMeta, (int)viewAsset);
 		AddChild(preview, false, InternalMode.Back);
+		UpdatePreviewSize(preview, boxSize);
+	}
+
+	private static void UpdatePreviewSize(Node preview, Vector3? boxSize) {
+		if (boxSize is not { } size) {
+			return;
+		}
+		if (preview.FindChild("BoxShapeSizeBehavior", recursive: true, owned: false) is BoxShapeSizeBehavior behavior) {
+			behavior.SetSize(size);
+		}
 	}
 
 	internal static Node FindInternalChild(Node parent, string name) {

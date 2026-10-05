@@ -1,0 +1,273 @@
+[gd_scene format=3]
+
+[ext_resource type="Script" path="res://level_authoring/EntitySpawn.cs" id="1_spawn"]
+[ext_resource type="Script" path="res://level_authoring/EntityComponent.cs" id="2_component"]
+[ext_resource type="Script" path="res://level_authoring/BoxShapeComponent.cs" id="3_box"]
+[ext_resource type="Script" path="res://level_authoring/RailMotionComponent.cs" id="4_motion"]
+[ext_resource type="Script" path="res://level_authoring/ZoneLinkComponent.cs" id="5_link"]
+[ext_resource type="Script" path="res://level_authoring/NavZone.cs" id="6_zone"]
+[ext_resource type="Resource" path="res://maps/static_box_recipe.tres" id="7_static"]
+[ext_resource type="Resource" path="res://maps/platform_recipe.tres" id="8_platform"]
+[ext_resource type="Resource" path="res://maps/crate_recipe.tres" id="9_crate"]
+[ext_resource type="Resource" path="res://maps/sphere_recipe.tres" id="10_sphere"]
+
+[sub_resource type="StandardMaterial3D" id="DockMaterial"]
+albedo_color = Color(0.25, 0.35, 0.48, 1)
+roughness = 0.8
+
+[sub_resource type="Resource" id="DockBox"]
+script = ExtResource("3_box")
+Size = Vector3(4, 0.5, 4)
+
+[sub_resource type="BoxMesh" id="DockMesh"]
+size = Vector3(4, 0.5, 4)
+
+[sub_resource type="Resource" id="LandingBox"]
+script = ExtResource("3_box")
+Size = Vector3(8, 0.5, 4)
+
+[sub_resource type="BoxMesh" id="LandingMesh"]
+size = Vector3(8, 0.5, 4)
+
+[sub_resource type="Resource" id="LowRampBox"]
+script = ExtResource("3_box")
+Size = Vector3(12.816006, 0.5, 4)
+
+[sub_resource type="BoxMesh" id="LowRampMesh"]
+size = Vector3(12.816006, 0.5, 4)
+
+[sub_resource type="Resource" id="HighRampBox"]
+script = ExtResource("3_box")
+Size = Vector3(14.705441, 0.5, 4)
+
+[sub_resource type="BoxMesh" id="HighRampMesh"]
+size = Vector3(14.705441, 0.5, 4)
+
+[sub_resource type="Resource" id="ShuttleLink"]
+script = ExtResource("5_link")
+ZoneId = "platform_shuttle"
+
+[sub_resource type="Resource" id="ShuttleMotion"]
+script = ExtResource("4_motion")
+TravelOffset = Vector3(12, 0, 0)
+Speed = 2.0
+
+[sub_resource type="Resource" id="DiagonalLink"]
+script = ExtResource("5_link")
+ZoneId = "platform_diagonal"
+
+[sub_resource type="Resource" id="DiagonalMotion"]
+script = ExtResource("4_motion")
+TravelOffset = Vector3(12, 0, 6)
+Speed = 3.0
+
+[sub_resource type="Resource" id="LowLiftLink"]
+script = ExtResource("5_link")
+ZoneId = "lift_4m"
+
+[sub_resource type="Resource" id="LowLiftMotion"]
+script = ExtResource("4_motion")
+TravelOffset = Vector3(0, 4, 0)
+Speed = 2.0
+
+[sub_resource type="Resource" id="HighLiftLink"]
+script = ExtResource("5_link")
+ZoneId = "lift_8m"
+
+[sub_resource type="Resource" id="HighLiftMotion"]
+script = ExtResource("4_motion")
+TravelOffset = Vector3(0, 8, 0)
+Speed = 4.0
+StartsAtEnd = true
+
+[node name="MotionTests" type="Node3D"]
+
+[node name="AreaLabel" type="Label3D" parent="."]
+position = Vector3(0, 4, 37)
+billboard = 1
+text = "MOVING PLATFORM LAB\nOrange = moving | Blue-grey = fixed docks\nShuttles: left | Elevators + return ramps: right\nAll platforms pause for 3 seconds at each stop"
+font_size = 44
+pixel_size = 0.008
+
+[node name="ShuttleDock" type="Node3D" parent="."]
+position = Vector3(-14, 0.5, 44)
+script = ExtResource("1_spawn")
+Recipe = ExtResource("7_static")
+Overrides = Array[ExtResource("2_component")]([SubResource("DockBox")])
+
+[node name="Mesh" type="MeshInstance3D" parent="ShuttleDock"]
+mesh = SubResource("DockMesh")
+material_override = SubResource("DockMaterial")
+
+[node name="Shuttle" type="Node3D" parent="."]
+position = Vector3(-10, 0.75, 44)
+script = ExtResource("1_spawn")
+Recipe = ExtResource("8_platform")
+Overrides = Array[ExtResource("2_component")]([SubResource("ShuttleLink"), SubResource("ShuttleMotion")])
+
+[node name="ShuttleZone" type="Node3D" parent="."]
+position = Vector3(-10, 1, 44)
+script = ExtResource("6_zone")
+ZoneId = "platform_shuttle"
+Size = Vector3(4, 2, 4)
+
+[node name="ShuttleLabel" type="Label3D" parent="."]
+position = Vector3(-10, 3, 40)
+billboard = 1
+text = "02 | HORIZONTAL SHUTTLE\n12 m travel / 2 m/s\nRide, push props, jump at reversal"
+font_size = 34
+pixel_size = 0.008
+
+[node name="ShuttleCrate" type="Node3D" parent="."]
+position = Vector3(-11, 1.6, 44)
+script = ExtResource("1_spawn")
+Recipe = ExtResource("9_crate")
+
+[node name="ShuttleSphere" type="Node3D" parent="."]
+position = Vector3(-9, 1.6, 44)
+script = ExtResource("1_spawn")
+Recipe = ExtResource("10_sphere")
+
+[node name="DiagonalDock" type="Node3D" parent="."]
+position = Vector3(-14, 0.5, 56)
+script = ExtResource("1_spawn")
+Recipe = ExtResource("7_static")
+Overrides = Array[ExtResource("2_component")]([SubResource("DockBox")])
+
+[node name="Mesh" type="MeshInstance3D" parent="DiagonalDock"]
+mesh = SubResource("DockMesh")
+material_override = SubResource("DockMaterial")
+
+[node name="DiagonalShuttle" type="Node3D" parent="."]
+position = Vector3(-10, 0.75, 56)
+script = ExtResource("1_spawn")
+Recipe = ExtResource("8_platform")
+Overrides = Array[ExtResource("2_component")]([SubResource("DiagonalLink"), SubResource("DiagonalMotion")])
+
+[node name="DiagonalZone" type="Node3D" parent="."]
+position = Vector3(-10, 1, 56)
+script = ExtResource("6_zone")
+ZoneId = "platform_diagonal"
+Size = Vector3(4, 2, 4)
+
+[node name="DiagonalLabel" type="Label3D" parent="."]
+position = Vector3(-10, 3, 52)
+billboard = 1
+text = "03 | DIAGONAL SHUTTLE\n12 m X + 6 m Z / 3 m/s\nCompare diagonal carry and takeoff"
+font_size = 34
+pixel_size = 0.008
+
+[node name="DiagonalCrate" type="Node3D" parent="."]
+position = Vector3(-10, 1.6, 56)
+script = ExtResource("1_spawn")
+Recipe = ExtResource("9_crate")
+
+[node name="LowLiftDock" type="Node3D" parent="."]
+position = Vector3(8, 0.5, 44)
+script = ExtResource("1_spawn")
+Recipe = ExtResource("7_static")
+Overrides = Array[ExtResource("2_component")]([SubResource("DockBox")])
+
+[node name="Mesh" type="MeshInstance3D" parent="LowLiftDock"]
+mesh = SubResource("DockMesh")
+material_override = SubResource("DockMaterial")
+
+[node name="LowLift" type="Node3D" parent="."]
+position = Vector3(12, 0.75, 44)
+script = ExtResource("1_spawn")
+Recipe = ExtResource("8_platform")
+Overrides = Array[ExtResource("2_component")]([SubResource("LowLiftLink"), SubResource("LowLiftMotion")])
+
+[node name="LowLiftZone" type="Node3D" parent="."]
+position = Vector3(12, 1, 44)
+script = ExtResource("6_zone")
+ZoneId = "lift_4m"
+Size = Vector3(4, 2, 4)
+
+[node name="LowLiftLabel" type="Label3D" parent="."]
+position = Vector3(12, 3, 40)
+billboard = 1
+text = "04 | LOW ELEVATOR\n4 m vertical / 2 m/s\nRide to the landing; walk down the ramp"
+font_size = 34
+pixel_size = 0.008
+
+[node name="LowLiftCrate" type="Node3D" parent="."]
+position = Vector3(12, 1.6, 44)
+script = ExtResource("1_spawn")
+Recipe = ExtResource("9_crate")
+
+[node name="LowLanding" type="Node3D" parent="."]
+position = Vector3(18, 4.75, 44)
+script = ExtResource("1_spawn")
+Recipe = ExtResource("7_static")
+Overrides = Array[ExtResource("2_component")]([SubResource("LandingBox")])
+
+[node name="Mesh" type="MeshInstance3D" parent="LowLanding"]
+mesh = SubResource("LandingMesh")
+material_override = SubResource("DockMaterial")
+
+[node name="LowReturnRamp" type="Node3D" parent="."]
+position = Vector3(27.91222, 2.515918, 44)
+rotation = Vector3(0, 0, -0.35877067)
+script = ExtResource("1_spawn")
+Recipe = ExtResource("7_static")
+Overrides = Array[ExtResource("2_component")]([SubResource("LowRampBox")])
+
+[node name="Mesh" type="MeshInstance3D" parent="LowReturnRamp"]
+mesh = SubResource("LowRampMesh")
+material_override = SubResource("DockMaterial")
+
+[node name="HighLiftDock" type="Node3D" parent="."]
+position = Vector3(8, 0.5, 56)
+script = ExtResource("1_spawn")
+Recipe = ExtResource("7_static")
+Overrides = Array[ExtResource("2_component")]([SubResource("DockBox")])
+
+[node name="Mesh" type="MeshInstance3D" parent="HighLiftDock"]
+mesh = SubResource("DockMesh")
+material_override = SubResource("DockMaterial")
+
+[node name="HighLift" type="Node3D" parent="."]
+position = Vector3(12, 0.75, 56)
+script = ExtResource("1_spawn")
+Recipe = ExtResource("8_platform")
+Overrides = Array[ExtResource("2_component")]([SubResource("HighLiftLink"), SubResource("HighLiftMotion")])
+
+[node name="HighLiftZone" type="Node3D" parent="."]
+position = Vector3(12, 1, 56)
+script = ExtResource("6_zone")
+ZoneId = "lift_8m"
+Size = Vector3(4, 2, 4)
+
+[node name="HighLiftLabel" type="Label3D" parent="."]
+position = Vector3(12, 3, 52)
+billboard = 1
+text = "05 | HIGH / FAST ELEVATOR\n8 m vertical / 4 m/s | Starts at top\nCatch the descent or board from the upper deck"
+font_size = 34
+pixel_size = 0.008
+
+[node name="HighLiftCrate" type="Node3D" parent="."]
+position = Vector3(12, 9.6, 56)
+script = ExtResource("1_spawn")
+Recipe = ExtResource("9_crate")
+
+[node name="HighLanding" type="Node3D" parent="."]
+position = Vector3(18, 8.75, 56)
+script = ExtResource("1_spawn")
+Recipe = ExtResource("7_static")
+Overrides = Array[ExtResource("2_component")]([SubResource("LandingBox")])
+
+[node name="Mesh" type="MeshInstance3D" parent="HighLanding"]
+mesh = SubResource("LandingMesh")
+material_override = SubResource("DockMaterial")
+
+[node name="HighReturnRamp" type="Node3D" parent="."]
+position = Vector3(27.855495, 4.545994, 56)
+rotation = Vector3(0, 0, -0.61629694)
+script = ExtResource("1_spawn")
+Recipe = ExtResource("7_static")
+Overrides = Array[ExtResource("2_component")]([SubResource("HighRampBox")])
+
+[node name="Mesh" type="MeshInstance3D" parent="HighReturnRamp"]
+mesh = SubResource("HighRampMesh")
+material_override = SubResource("DockMaterial")

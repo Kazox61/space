@@ -1,0 +1,45 @@
+[gd_scene format=3]
+
+[ext_resource type="Script" path="res://level_authoring/EntitySpawn.cs" id="1_spawn"]
+[ext_resource type="Resource" path="res://maps/crate_recipe.tres" id="2_crate"]
+[ext_resource type="Resource" path="res://maps/sphere_recipe.tres" id="3_sphere"]
+[ext_resource type="Script" path="res://level_authoring/EntityComponent.cs" id="4_component"]
+[ext_resource type="Script" path="res://level_authoring/SurfacePropertiesComponent.cs" id="5_surface"]
+
+[sub_resource type="Resource" id="SphereSurface"]
+script = ExtResource("5_surface")
+RollingResistance = 0.15
+
+[node name="PhysicsStressCluster" type="Node3D"]
+
+[node name="Crate00" type="Node3D" parent="."]
+position = Vector3(0, 1.02, 0)
+script = ExtResource("1_spawn")
+Recipe = ExtResource("2_crate")
+
+[node name="Crate01" type="Node3D" parent="."]
+position = Vector3(0, 2.04, 0)
+script = ExtResource("1_spawn")
+Recipe = ExtResource("2_crate")
+
+[node name="Crate02" type="Node3D" parent="."]
+position = Vector3(0, 3.06, 0)
+script = ExtResource("1_spawn")
+Recipe = ExtResource("2_crate")
+
+[node name="Crate03" type="Node3D" parent="."]
+position = Vector3(0, 4.08, 0)
+script = ExtResource("1_spawn")
+Recipe = ExtResource("2_crate")
+
+[node name="Sphere00" type="Node3D" parent="."]
+position = Vector3(1.5, 2, 0)
+script = ExtResource("1_spawn")
+Recipe = ExtResource("3_sphere")
+Overrides = Array[ExtResource("4_component")]([SubResource("SphereSurface")])
+
+[node name="Sphere01" type="Node3D" parent="."]
+position = Vector3(1.5, 3.25, 0)
+script = ExtResource("1_spawn")
+Recipe = ExtResource("3_sphere")
+Overrides = Array[ExtResource("4_component")]([SubResource("SphereSurface")])

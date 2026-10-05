@@ -3,20 +3,24 @@ using Godot;
 namespace Space.Client.LevelAuthoring;
 
 /// <summary>
-/// Draws a box as orange lines in the editor, on top of everything. Added as an internal child, so it is
+/// Draws a box as lines (orange unless given another color) in the editor, on top of everything. Added as an internal child, so it is
 /// hidden from the scene dock and never saved.
 /// </summary>
 public sealed class BoxOutline {
 	private const string NodeName = "BoxOutline";
-	private static readonly Color Color = new(1f, 0.55f, 0.1f);
+	private static readonly Color DefaultColor = new(1f, 0.55f, 0.1f);
 
 	private readonly Node3D _owner;
+	private readonly Color _color;
 	private MeshInstance3D _instance;
 	private ImmediateMesh _mesh;
 	private Vector3? _drawnSize;
 	private bool _drawn;
 
-	public BoxOutline(Node3D owner) => _owner = owner;
+	public BoxOutline(Node3D owner, Color? color = null) {
+		_owner = owner;
+		_color = color ?? DefaultColor;
+	}
 
 	/// <summary>Redraws when <paramref name="size"/> changed; null clears the outline.</summary>
 	public void Update(Vector3? size) {
@@ -39,7 +43,7 @@ public sealed class BoxOutline {
 				CastShadow = GeometryInstance3D.ShadowCastingSetting.Off,
 				MaterialOverride = new StandardMaterial3D {
 					ShadingMode = BaseMaterial3D.ShadingModeEnum.Unshaded,
-					AlbedoColor = Color,
+					AlbedoColor = _color,
 					NoDepthTest = true,
 				},
 			};
