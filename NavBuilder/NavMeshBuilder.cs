@@ -82,7 +82,7 @@ public static class NavMeshBuilder {
 		var final = Canonicalize(soup.Vertices, soup.Indices, soup.Tags);
 
 		if (final.Tags.Length == 0) {
-			throw new InvalidDataException("Navmesh build removed every triangle.");
+			throw new InvalidDataException("Navmesh build removed every triangle (degenerate input).");
 		}
 
 		var mesh = Assemble(final, cellSize, out var nonManifoldEdges);
@@ -115,6 +115,9 @@ public static class NavMeshBuilder {
 	private static int TagZone(int tag) => (tag >> AreaBits) - 1;
 
 	private static void ValidateInput(ReadOnlySpan<FVector3> vertices, ReadOnlySpan<int> indices, ReadOnlySpan<int> areas, ReadOnlySpan<int> zones, FP cellSize) {
+		if (indices.IsEmpty) {
+			throw new ArgumentException("Navmesh build got no triangles.", nameof(indices));
+		}
 		if (indices.Length % 3 != 0) {
 			throw new ArgumentException($"Index count {indices.Length} is not a multiple of three.", nameof(indices));
 		}

@@ -37,14 +37,8 @@ public static class NavTestSession {
 	}
 
 	private static LevelData Sample(Func<EntityPlacement, bool> keep) {
-		for (var directory = new DirectoryInfo(TestContext.CurrentContext.TestDirectory); directory is not null; directory = directory.Parent) {
-			var candidate = Path.Combine(directory.FullName, "Client", "maps", "level_pipeline_test.level.bytes");
-			if (File.Exists(candidate)) {
-				var data = LevelFile.ReadFromDisk(candidate).Data;
-				return new LevelData(data.Entities.Where(keep), data.Navigation, data.NavZones);
-			}
-		}
-		throw new FileNotFoundException("Could not find the sample level file.");
+		var data = LevelFile.ReadFromDisk(PhysicsSmokeTest.TestLevels.SampleFile(TestContext.CurrentContext.TestDirectory)).Data;
+		return new LevelData(data.Entities.Where(keep), data.Navigation, data.NavZones);
 	}
 
 	/// <summary>The same world setup client and server run.</summary>

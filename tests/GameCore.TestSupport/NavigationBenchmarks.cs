@@ -163,14 +163,8 @@ public static partial class Program {
 	}
 
 	private static LevelData FindSampleLevel() {
-		for (var directory = new DirectoryInfo(AppContext.BaseDirectory); directory is not null; directory = directory.Parent) {
-			var candidate = Path.Combine(directory.FullName, "Client", "maps", "level_pipeline_test.level.bytes");
-			if (File.Exists(candidate)) {
-				var data = LevelFile.ReadFromDisk(candidate).Data;
-				// The sample's crates would add physics cost to both runs; only navigation is measured.
-				return new LevelData(data.Entities.Where(static entity => entity.Type == LevelEntityType.StaticGeometry), data.Navigation);
-			}
-		}
-		throw new FileNotFoundException("Could not find Client/maps/level_pipeline_test.level.bytes.");
+		var data = LevelFile.ReadFromDisk(TestLevels.SampleFile(AppContext.BaseDirectory)).Data;
+		// The sample's crates would add physics cost to both runs; only navigation is measured.
+		return new LevelData(data.Entities.Where(static entity => entity.Type == LevelEntityType.StaticGeometry), data.Navigation);
 	}
 }

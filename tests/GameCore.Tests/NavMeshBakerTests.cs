@@ -173,12 +173,24 @@ public sealed class NavMeshBakerTests {
 	}
 
 	[Test]
+	public void LevelWithoutWalkableGeometryOrZonesHasNoNavigationOrReport() {
+		var level = new LevelData([]);
+
+		var baked = NavMeshBaker.BakeLevel(level, NavBakeSettings.Default, out var report);
+
+		Assert.Multiple(() => {
+			Assert.That(baked.Navigation, Is.Null);
+			Assert.That(report, Is.Null);
+		});
+	}
+
+	[Test]
 	public void LevelWithoutWalkableGeometryRejectsZones() {
 		var zone = Zone("gate", new FPos(P(0), P(0), P(0)));
 		var level = new LevelData([], navZones: [zone]);
 
 		Assert.That(() => NavMeshBaker.BakeLevel(level, NavBakeSettings.Default, out _),
-			Throws.InstanceOf<InvalidDataException>().With.Message.Contains("covers no walkable navmesh"));
+			Throws.InstanceOf<InvalidDataException>().With.Message.Contains("has no walkable static geometry"));
 	}
 
 	[Test]
@@ -265,6 +277,37 @@ public sealed class NavMeshBakerTests {
 	}
 
 	[Test]
+	public void OverlappingZonesBelongToTheLaterOrdinalIdRegardlessOfInputOrder() {
+		NavZoneVolume[] zones = [
+			Zone("a", new FPos(P(-1), P(1, 2), P(0))),
+			Zone("b", new FPos(P(1), P(1, 2), P(0))),
+		];
+		var first = NavMeshBaker.Bake([Ground()], zones, NavBakeSettings.Default);
+		var reversed = NavMeshBaker.Bake([Ground()], zones.Reverse(), NavBakeSettings.Default);
+
+		Assert.Multiple(() => {
+			Assert.That(NavMeshBytes.Of(reversed.Mesh), Is.EqualTo(NavMeshBytes.Of(first.Mesh)));
+			for (var z = 0; z < zones.Length; z++) {
+				Assert.That(reversed.Zones[z].Triangles.ToArray(), Is.EqualTo(first.Zones[z].Triangles.ToArray()));
+			}
+			var query = new NavMeshQuery(first.Mesh);
+			foreach (var (x, owner) in new[] { (-2, "a"), (0, "b"), (2, "b") }) {
+				var triangle = query.FindTriangle(XZ(x, 0));
+				Assert.That(triangle, Is.GreaterThanOrEqualTo(0));
+				Assert.That(first.Zones.Single(zone => zone.Id == owner).Triangles.ToArray(), Does.Contain(triangle), $"owner at x={x}");
+			}
+		});
+	}
+
+	[Test]
+	public void FullyOverwrittenZoneIsRejected() {
+		var position = new FPos(P(0), P(1, 2), P(0));
+
+		Assert.That(() => NavMeshBaker.Bake([Ground()], [Zone("a", position), Zone("b", position)], NavBakeSettings.Default),
+			Throws.InstanceOf<InvalidDataException>().With.Message.Contains("Navigation zone 'a' covers no walkable navmesh"));
+	}
+
+	[Test]
 	public void InvalidZonesFailTheBake() {
 		NavSourceBox[] boxes = [Ground()];
 		var floating = Zone("floating", new FPos(P(0), P(10), P(0)));
@@ -316,11 +359,11 @@ public sealed class NavMeshBakerTests {
 	}
 
 	private static NavZoneVolume[] LoadSampleZones() {
-		return LevelFile.ReadFromDisk(FindRepositoryFile("Client", "maps", "level_pipeline_test.level.bytes")).Data.NavZones.ToArray();
+		return LevelFile.ReadFromDisk(PhysicsSmokeTest.TestLevels.SampleFile(TestContext.CurrentContext.TestDirectory)).Data.NavZones.ToArray();
 	}
 
 	private static NavSourceBox[] LoadSampleBoxes() {
-		return LevelFile.ReadFromDisk(FindRepositoryFile("Client", "maps", "level_pipeline_test.level.bytes")).Data.NavigationSources.ToArray();
+		return LevelFile.ReadFromDisk(PhysicsSmokeTest.TestLevels.SampleFile(TestContext.CurrentContext.TestDirectory)).Data.NavigationSources.ToArray();
 	}
 
 	private static F64.FP P(int numerator, int denominator = 1) {
@@ -335,13 +378,4 @@ public sealed class NavMeshBakerTests {
 		return new F64.FVector3(F64.FConversions.ToFP(x), F64.FConversions.ToFP(y), F64.FConversions.ToFP(z));
 	}
 
-	private static string FindRepositoryFile(params string[] relativePath) {
-		for (var directory = new DirectoryInfo(TestContext.CurrentContext.TestDirectory); directory is not null; directory = directory.Parent) {
-			var candidate = Path.Combine([directory.FullName, .. relativePath]);
-			if (File.Exists(candidate)) {
-				return candidate;
-			}
-		}
-		throw new FileNotFoundException($"Could not find repository file '{Path.Combine(relativePath)}'.");
-	}
 }

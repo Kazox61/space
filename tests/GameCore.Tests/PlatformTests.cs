@@ -181,7 +181,9 @@ public sealed class PlatformTests {
 
 	[Test]
 	public void AgentCrossesPlatformDuringDwellAndNeverEntersWhileItIsAway() {
-		CreateWorld<PlatformTestWorld>(BridgePlatformLevel());
+		CreateWorld<PlatformTestWorld>(BridgePlatformLevel(), registerSystems: () => {
+			Core<PlatformTestWorld>.Systems.GetResource<NavCharacterRes>().SpawnPosition = new F.FVector3(F.FP.FromRatio(-7, 2), F.FP.FromRatio(3, 2), F.FP.Zero);
+		});
 		var follower = FindCharacter<PlatformTestWorld>();
 		follower.Delete<ChasesNearestPlayer>();
 		follower.Ref<Transform>().Position = new F.FVector3(F.FP.FromRatio(-7, 2), F.FP.FromRatio(3, 2), F.FP.Zero);

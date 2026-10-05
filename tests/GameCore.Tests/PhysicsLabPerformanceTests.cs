@@ -43,11 +43,7 @@ public sealed class PhysicsLabPerformanceTests {
 
 	[Test]
 	public void ActiveLabBoxNarrowphaseMatchesAndImprovesOriginal() {
-		var root = new DirectoryInfo(TestContext.CurrentContext.TestDirectory);
-		while (root is not null && !File.Exists(Path.Combine(root.FullName, "Client/maps/level_pipeline_test.level.bytes")))
-			root = root.Parent;
-		Assert.That(root, Is.Not.Null);
-		var level = LevelFile.ReadFromDisk(Path.Combine(root!.FullName, "Client/maps/level_pipeline_test.level.bytes")).Data;
+		var level = LevelFile.ReadFromDisk(PhysicsSmokeTest.TestLevels.SampleFile(TestContext.CurrentContext.TestDirectory)).Data;
 		s_boxPairs.Clear();
 		NavTestSession.CreateWorld<PhysicsToyWorld>(level, registerSystems: () => Systems.Add(new CaptureBoxPairs(), order: 11));
 		var player = W.NewEntity(new Player { PlayerGuid = Guid.NewGuid(), InputChannel = 1 });
@@ -149,11 +145,7 @@ public sealed class PhysicsLabPerformanceTests {
 	[TestCase(true)]
 	[TestCase(false)]
 	public void AuthoredLabTickBudget(bool includeStressProps) {
-		var root = new DirectoryInfo(TestContext.CurrentContext.TestDirectory);
-		while (root is not null && !File.Exists(Path.Combine(root.FullName, "Client/maps/level_pipeline_test.level.bytes")))
-			root = root.Parent;
-		Assert.That(root, Is.Not.Null);
-		var sample = LevelFile.ReadFromDisk(Path.Combine(root!.FullName, "Client/maps/level_pipeline_test.level.bytes")).Data;
+		var sample = LevelFile.ReadFromDisk(PhysicsSmokeTest.TestLevels.SampleFile(TestContext.CurrentContext.TestDirectory)).Data;
 		var level = includeStressProps ? sample : new LevelData(sample.Entities.Where(static e => !e.SourcePath.StartsWith("PhysicsStress/", StringComparison.Ordinal)), sample.Navigation, sample.NavZones);
 		var budgetMiss = false;
 		for (var run = 0; run < 3; run++) {

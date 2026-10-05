@@ -44,11 +44,7 @@ public sealed class BoxSatCachePerformanceTests {
 
 	[Test]
 	public void PairedActiveAndSettledLabFeatureCache() {
-		var root = new DirectoryInfo(TestContext.CurrentContext.TestDirectory);
-		while (root is not null && !File.Exists(Path.Combine(root.FullName, "Client/maps/level_pipeline_test.level.bytes")))
-			root = root.Parent;
-		Assert.That(root, Is.Not.Null);
-		var level = LevelFile.ReadFromDisk(Path.Combine(root!.FullName, "Client/maps/level_pipeline_test.level.bytes")).Data;
+		var level = LevelFile.ReadFromDisk(PhysicsSmokeTest.TestLevels.SampleFile(TestContext.CurrentContext.TestDirectory)).Data;
 		for (var run = 0; run < 3; run++) {
 			NavTestSession.CreateWorld<PhysicsToyWorld>(level, registerSystems: () => Systems.Add(new Capture(), order: 9));
 			var player = W.NewEntity(new Player { PlayerGuid = Guid.Parse("66369dfa-3f62-4e1c-95d9-fac7df1c6233"), InputChannel = 1 });

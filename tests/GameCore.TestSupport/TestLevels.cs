@@ -5,6 +5,19 @@ using Space.GameCore;
 namespace PhysicsSmokeTest;
 
 public static class TestLevels {
+	/// <summary>Locates the committed sample level from a test or runner's output directory.</summary>
+	public static string SampleFile(string startDirectory) => FindRepositoryFile(startDirectory, "Client", "maps", "level_pipeline_test.level.bytes");
+
+	public static string FindRepositoryFile(string startDirectory, params string[] relativePath) {
+		for (var directory = new DirectoryInfo(startDirectory); directory is not null; directory = directory.Parent) {
+			var candidate = Path.Combine([directory.FullName, .. relativePath]);
+			if (File.Exists(candidate)) {
+				return candidate;
+			}
+		}
+		throw new FileNotFoundException($"Could not find repository file '{Path.Combine(relativePath)}'.");
+	}
+
 	/// <summary>The former hardcoded test arena: an 80x1x80 ground (top at y=0.5) and a 4x1x4 box behind spawn.</summary>
 	public static readonly LevelData Arena = new([
 		StaticBox(

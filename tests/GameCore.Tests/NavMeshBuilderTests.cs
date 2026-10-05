@@ -271,6 +271,18 @@ public sealed class NavMeshBuilderTests {
 	}
 
 	[Test]
+	public void EmptyInputHasItsOwnDiagnostic() {
+		Assert.That(() => NavMeshBuilder.Build([], [], [], FP.One),
+			Throws.ArgumentException.With.Property("ParamName").EqualTo("indices").And.Message.Contains("got no triangles"));
+	}
+
+	[Test]
+	public void AllDegenerateInputReportsThatTrianglesWereRemoved() {
+		Assert.That(() => NavMeshBuilder.Build([V(0, 0, 0), V(1, 0, 0), V(2, 0, 0)], [0, 1, 2], [0], FP.One),
+			Throws.InstanceOf<InvalidDataException>().With.Message.EqualTo("Navmesh build removed every triangle (degenerate input)."));
+	}
+
+	[Test]
 	public void InvalidInputIsRejected() {
 		FVector3[] triangle = [V(0, 0, 0), V(4, 0, 0), V(4, 0, 4)];
 		FVector3[] huge = [V(0, 0, 0), V(4, 0, 0), new(NavMeshBuilder.MaxCoordinate + FP.One, FP.Zero, FP.Zero)];

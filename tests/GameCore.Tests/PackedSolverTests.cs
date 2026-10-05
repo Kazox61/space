@@ -133,13 +133,11 @@ public sealed class PackedSolverTests {
 
 	[Test]
 	public void AuthoredLabMatchesEveryPreDTickHash() {
-		var root = new DirectoryInfo(TestContext.CurrentContext.TestDirectory);
-		while (root is not null && !File.Exists(Path.Combine(root.FullName, "Client/maps/level_pipeline_test.level.bytes"))) {
-			root = root.Parent;
-		}
-		Assert.That(root, Is.Not.Null);
-		var level = LevelFile.ReadFromDisk(Path.Combine(root!.FullName, "Client/maps/level_pipeline_test.level.bytes")).Data;
+		var level = LevelFile.ReadFromDisk(PhysicsSmokeTest.TestLevels.SampleFile(TestContext.CurrentContext.TestDirectory)).Data;
 		NavTestSession.CreateWorld<PackedSolverWorld>(level);
+		// The pre-D recording predates spawn-to-navmesh snapping. Keep its initial transform so
+		// these hashes continue to check solver equivalence against the independent recording.
+		NavTestSession.FindCharacter<PackedSolverWorld>().Ref<Transform>().Position = C.Systems.GetResource<NavCharacterRes>().SpawnPosition;
 		var playerGid = C.W.NewEntity(new Player { PlayerGuid = Guid.Parse("609a190b-e3cc-4904-b74c-2f8e5d4cbab0"), InputChannel = 1 }).GID;
 		Assert.That(playerGid.TryUnpack<PackedSolverWorld>(out var player), Is.True);
 		player.Ref<Transform>().Position = new F.FVector3(9 * F.FP.One, F.FP.FromRatio(3, 2), -33 * F.FP.One);

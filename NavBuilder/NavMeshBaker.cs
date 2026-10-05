@@ -45,12 +45,15 @@ public static class NavMeshBaker {
 	/// <summary>
 	/// The level with its navigation baked from its static geometry and navigation zones, replacing
 	/// any it had. A level without <see cref="NavContribution.Walkable"/> static geometry gets no
-	/// navigation and a null report.
+	/// navigation and a null report, unless it declares navigation zones, which are rejected because
+	/// every zone must cover walkable ground.
 	/// </summary>
 	public static LevelData BakeLevel(LevelData level, NavBakeSettings settings, out NavMeshBakeReport? report) {
 		ArgumentNullException.ThrowIfNull(level);
 		if (!level.NavigationSources.Any(static box => box.Navigation == NavContribution.Walkable)) {
-			CollectZones(OrderZones(level.NavZones), []);
+			if (level.NavZones.Count > 0) {
+				throw new InvalidDataException("Level declares navigation zones but has no walkable static geometry; every zone must cover walkable ground.");
+			}
 			report = null;
 			return level.WithNavigation(null);
 		}
@@ -64,8 +67,9 @@ public static class NavMeshBaker {
 	/// <see cref="NavContribution.ObstacleOnly"/> triangles are rasterized as solid, non-walkable
 	/// geometry, so they block and cut clearance but are never stood on. Each zone marks the eroded
 	/// walkable surface inside its volume with its own Recast area, so regions, polygons, and
-	/// therefore navmesh triangles never straddle a zone's boundary. Zones must not overlap; where
-	/// they do, the one with the later id owns the overlap.
+	/// therefore navmesh triangles never straddle a zone's boundary. Zones should not overlap; where
+	/// they do, the one with the later ordinal id owns the overlap. A zone entirely overwritten by
+	/// another is rejected because it covers no walkable navmesh.
 	/// </remarks>
 	public static NavMeshBakeResult Bake(NavTriangleSoup soup, IEnumerable<NavZoneVolume> zones, NavBakeSettings settings) {
 		ArgumentNullException.ThrowIfNull(soup);

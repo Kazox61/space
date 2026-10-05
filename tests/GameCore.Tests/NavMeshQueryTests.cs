@@ -351,12 +351,6 @@ public sealed class NavMeshQueryTests {
 
 	/// <summary>The navmesh shipped in the committed sample level.</summary>
 	private static NavMesh SampleMesh() {
-		for (var directory = new DirectoryInfo(TestContext.CurrentContext.TestDirectory); directory is not null; directory = directory.Parent) {
-			var candidate = Path.Combine(directory.FullName, "Client", "maps", "level_pipeline_test.level.bytes");
-			if (File.Exists(candidate)) {
-				return LevelFile.ReadFromDisk(candidate).Data.Navigation!.Mesh.CreateMesh();
-			}
-		}
-		throw new FileNotFoundException("Could not find the sample level file.");
+		return LevelFile.ReadFromDisk(PhysicsSmokeTest.TestLevels.SampleFile(TestContext.CurrentContext.TestDirectory)).Data.Navigation!.Mesh.CreateMesh();
 	}
 }

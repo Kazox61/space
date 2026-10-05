@@ -369,11 +369,6 @@ public sealed class PhysicsToyTests {
 	}
 
 	private static LevelData Sample() {
-		for (var directory = new DirectoryInfo(TestContext.CurrentContext.TestDirectory); directory is not null; directory = directory.Parent) {
-			var path = Path.Combine(directory.FullName, "Client", "maps", "level_pipeline_test.level.bytes");
-			if (File.Exists(path))
-				return LevelFile.ReadFromDisk(path).Data;
-		}
-		throw new FileNotFoundException("Sample level not found.");
+		return LevelFile.ReadFromDisk(PhysicsSmokeTest.TestLevels.SampleFile(TestContext.CurrentContext.TestDirectory)).Data;
 	}
 }

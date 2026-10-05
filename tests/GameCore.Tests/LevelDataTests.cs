@@ -406,7 +406,7 @@ public sealed class LevelDataTests {
 
 	[Test]
 	public void ExportedSampleContainsDifferentCrateHealthOverrides() {
-		var path = FindRepositoryFile("Client", "maps", "level_pipeline_test.level.bytes");
+		var path = PhysicsSmokeTest.TestLevels.SampleFile(TestContext.CurrentContext.TestDirectory);
 		var level = LevelFile.ReadFromDisk(path);
 		var defaultCrate = level.Data.Entities.Single(static entity => entity.SourcePath == "DefaultCrate");
 		var strongCrate = level.Data.Entities.Single(static entity => entity.SourcePath == "StrongCrate");
@@ -535,16 +535,6 @@ public sealed class LevelDataTests {
 			View: ViewAsset.Crate
 		)
 	);
-
-	private static string FindRepositoryFile(params string[] relativePath) {
-		for (var directory = new DirectoryInfo(TestContext.CurrentContext.TestDirectory); directory is not null; directory = directory.Parent) {
-			var candidate = Path.Combine([directory.FullName, .. relativePath]);
-			if (File.Exists(candidate)) {
-				return candidate;
-			}
-		}
-		throw new FileNotFoundException($"Could not find repository file '{Path.Combine(relativePath)}'.");
-	}
 
 	private sealed class TestRemoteClientListener : IRemoteClientListener {
 		public bool IsListening { get; private set; }

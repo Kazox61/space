@@ -29,6 +29,50 @@ public sealed class NavAgentTests {
 		DestroyIfCreated<NavAgentTestWorldB>();
 	}
 
+	[TestCase(2, 2)]
+	[TestCase(-1, 0)]
+	public void SpawnSnapsToPassableGroundAndPreservesCapsuleOffset(int requestedX, int expectedX) {
+		var mesh = NavMeshFixtures.Strip();
+		var level = new LevelData([], new LevelNavigation(NavBakeSettings.Default, new NavMeshData(mesh)));
+		CreateWorld<NavAgentTestWorldA>(level, registerSystems: () => {
+			Core<NavAgentTestWorldA>.Systems.GetResource<NavCharacterRes>().SpawnPosition = NavMeshFixtures.V(requestedX, 5, 2);
+		});
+
+		var character = FindCharacter<NavAgentTestWorldA>();
+		Assert.That(character.Read<Transform>().Position, Is.EqualTo(NavMeshFixtures.V(expectedX, 1, 2)));
+		var feet = Core<NavAgentTestWorldA>.NavAgentSystem.Feet(character.Read<Transform>(), character.Read<Mover>());
+		Assert.That(feet.Y, Is.EqualTo(F.FP.Zero));
+	}
+
+	[TestCase(false)]
+	[TestCase(true)]
+	public void SpawnIsSkippedWhenNoPassableGroundIsWithinReach(bool blocked) {
+		var mesh = NavMeshFixtures.Strip();
+		if (blocked) {
+			for (var t = 0; t < mesh.TriangleCount; t++) {
+				mesh.Areas[t].IsBlocked = true;
+			}
+		}
+		var level = new LevelData([], new LevelNavigation(NavBakeSettings.Default, new NavMeshData(mesh)));
+		CreateWorld<NavAgentTestWorldA>(level, registerSystems: () => {
+			Core<NavAgentTestWorldA>.Systems.GetResource<NavCharacterRes>().SpawnPosition = NavMeshFixtures.V(blocked ? 2 : -10, 1, 2);
+		});
+
+		foreach (var entity in World<NavAgentTestWorldA>.Query<All<NavAgent>>().Entities()) {
+			Assert.Fail($"spawned an agent without reachable passable ground: {entity}");
+		}
+	}
+
+	[Test]
+	public void SpawnUsesTheFloorNearestTheRequestedFeetHeight() {
+		var level = new LevelData([], new LevelNavigation(NavBakeSettings.Default, new NavMeshData(NavMeshFixtures.TwoFloors())));
+		CreateWorld<NavAgentTestWorldA>(level, registerSystems: () => {
+			Core<NavAgentTestWorldA>.Systems.GetResource<NavCharacterRes>().SpawnPosition = NavMeshFixtures.V(2, 4, 2);
+		});
+
+		Assert.That(FindCharacter<NavAgentTestWorldA>().Read<Transform>().Position, Is.EqualTo(NavMeshFixtures.V(2, 4, 2)));
+	}
+
 	[Test]
 	public void AgentWalksAroundTheSampleObstacle() {
 		CreateWorld<NavAgentTestWorldA>(Level());
